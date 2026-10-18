@@ -1,0 +1,31 @@
+const USER_STATUS = Object.freeze({
+  ACTIVE: 'ACTIVE',
+  IN_PROCESS: 'IN_PROCESS'
+});
+
+const USER_ROLE = Object.freeze({
+  ADMIN: 'ADMIN',
+  HR: 'HR',
+  EMPLOYEE: 'EMPLOYEE'
+});
+
+const OTP_PURPOSE = Object.freeze({
+  CHANGE_PASSWORD: 'CHANGE_PASSWORD',
+  RESET_PASSWORD: 'RESET_PASSWORD'
+});
+
+const TOKEN_PURPOSE = Object.freeze({
+  ACCESS: 'ACCESS',
+  REFRESH: 'REFRESH',
+  PASSWORD_CHANGE: 'PASSWORD_CHANGE'
+});
+
+const REFRESH_COOKIE_NAME = 'eris_refresh';
+
+module.exports = {
+  USER_STATUS,
+  USER_ROLE,
+  OTP_PURPOSE,
+  TOKEN_PURPOSE,
+  REFRESH_COOKIE_NAME
+};
