@@ -6,7 +6,7 @@
   "main": "src/server.js",
   "scripts": {
     "db:check": "node scripts/check-database-connection.js",
-    "check": "node --check src/config/env.js && node --check src/config/database.js && node --check scripts/check-database-connection.js"
+    "check": "node --check src/config/env.js && node --check src/config/database.js && node --check src/common/errors/app-error.js && node --check src/modules/users/users.constants.js && node --check src/modules/users/users.validation.js && node --check src/modules/users/users.repository.js && node --check src/modules/users/users.service.js && node --check src/modules/users/users.controller.js && node --check src/modules/users/users.routes.js && node --check src/modules/users/users.swagger.js"
   },
   "dependencies": {
     "dotenv": "^16.6.1",
