@@ -1,5 +1,5 @@
 const swaggerJsdoc = require('swagger-jsdoc');
-const { authPaths } = require('../modules/auth/auth.openapi');
+const { authPaths } = require('../modules/auth/auth.swagger');
 
 const swaggerSpec = swaggerJsdoc({
   definition: {
