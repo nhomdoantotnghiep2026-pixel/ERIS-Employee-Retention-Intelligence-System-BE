@@ -10,6 +10,10 @@ const { AuthRepository } = require('./modules/auth/auth.repository');
 const { createAuthRouter } = require('./modules/auth/auth.routes');
 const { AuthService } = require('./modules/auth/auth.service');
 const { authenticate } = require('./common/middleware/authenticate');
+const { DepartmentsController } = require('./modules/departments/departments.controller');
+const { DepartmentsRepository } = require('./modules/departments/departments.repository');
+const { createDepartmentsRouter } = require('./modules/departments/departments.routes');
+const { DepartmentsService } = require('./modules/departments/departments.service');
 const { UsersController } = require('./modules/users/users.controller');
 const { UsersRepository } = require('./modules/users/users.repository');
 const { createUsersRouter } = require('./modules/users/users.routes');
@@ -22,11 +26,15 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, { explorer: t
 const authRepository = new AuthRepository(databasePool);
 const authService = new AuthService({ authRepository, mailTransporter, redisClient, ensureRedisConnection });
 const authController = new AuthController(authService);
+const departmentsRepository = new DepartmentsRepository(databasePool);
+const departmentsService = new DepartmentsService({ departmentsRepository });
+const departmentsController = new DepartmentsController(departmentsService);
 const usersRepository = new UsersRepository(databasePool);
 const usersService = new UsersService({ usersRepository });
 const usersController = new UsersController(usersService);
 
 app.use('/api/auth', createAuthRouter(authController));
+app.use('/api/departments', createDepartmentsRouter({ departmentsController, authenticate }));
 app.use('/api/users', createUsersRouter({ usersController, authenticate }));
 
 app.get('/health', (_request, response) => {
