@@ -1,0 +1,35 @@
+const swaggerJsdoc = require('swagger-jsdoc');
+const { authPaths } = require('../modules/auth/auth.openapi');
+
+const swaggerSpec = swaggerJsdoc({
+  definition: {
+    openapi: '3.0.3',
+    info: { title: 'ERIS Backend API', version: '1.0.0', description: 'Employee Retention Intelligence System API documentation.' },
+    servers: [{ url: 'http://localhost:3000', description: 'Local development server' }],
+    tags: [{ name: 'Auth', description: 'Xác thực và quản lý phiên đăng nhập.' }],
+    paths: authPaths,
+    components: {
+      securitySchemes: {
+        bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }
+      },
+      schemas: {
+        LoginRequest: { type: 'object', required: ['email', 'password'], properties: { email: { type: 'string', format: 'email', example: 'admin@eris.com' }, password: { type: 'string', format: 'password', example: 'Password123!' } } },
+        EmailRequest: { type: 'object', required: ['email'], properties: { email: { type: 'string', format: 'email', example: 'user@eris.com' } } },
+        ChangePasswordRequest: { type: 'object', required: ['otp', 'newPassword'], properties: { currentPassword: { type: 'string', format: 'password', description: 'Bắt buộc khi dùng access token của user ACTIVE.' }, otp: { type: 'string', pattern: '^\\d{6}$', example: '123456' }, newPassword: { type: 'string', format: 'password', example: 'NewPassword123!' } } },
+        ResetPasswordRequest: { type: 'object', required: ['email', 'otp', 'newPassword'], properties: { email: { type: 'string', format: 'email' }, otp: { type: 'string', pattern: '^\\d{6}$', example: '123456' }, newPassword: { type: 'string', format: 'password', example: 'NewPassword123!' } } },
+        UserRegisterRequest: { type: 'object', required: ['email', 'roleId'], properties: { email: { type: 'string', format: 'email' }, roleId: { type: 'integer', example: 2 }, employeeId: { type: 'integer', description: 'Bắt buộc khi role là EMPLOYEE.', example: 12 } } },
+        User: { type: 'object', properties: { id: { type: 'integer', example: 3 }, email: { type: 'string', format: 'email', example: 'employee@eris.com' }, fullName: { type: 'string', example: 'Trần Văn A', nullable: true }, role: { type: 'string', example: 'EMPLOYEE' }, status: { type: 'string', enum: ['ACTIVE', 'IN_PROCESS'], example: 'ACTIVE' } } },
+        AccessTokenResponse: { type: 'object', properties: { accessToken: { type: 'string', description: 'JWT access token.' } } },
+        LoginResponse: { oneOf: [{ $ref: '#/components/schemas/AccessTokenResponse' }, { type: 'object', properties: { message: { type: 'string' }, passwordChangeToken: { type: 'string' } } }] },
+        Error: { type: 'object', properties: { message: { type: 'string' } } }
+      },
+      responses: {
+        ValidationError: { description: 'Dữ liệu đầu vào không hợp lệ.', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        UnauthorizedError: { description: 'Thiếu hoặc không hợp lệ thông tin xác thực.', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } }
+      }
+    }
+  },
+  apis: []
+});
+
+module.exports = { swaggerSpec };
