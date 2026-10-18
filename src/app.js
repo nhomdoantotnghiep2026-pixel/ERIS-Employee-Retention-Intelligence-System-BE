@@ -9,6 +9,11 @@ const { AuthController } = require('./modules/auth/auth.controller');
 const { AuthRepository } = require('./modules/auth/auth.repository');
 const { createAuthRouter } = require('./modules/auth/auth.routes');
 const { AuthService } = require('./modules/auth/auth.service');
+const { authenticate } = require('./common/middleware/authenticate');
+const { UsersController } = require('./modules/users/users.controller');
+const { UsersRepository } = require('./modules/users/users.repository');
+const { createUsersRouter } = require('./modules/users/users.routes');
+const { UsersService } = require('./modules/users/users.service');
 
 const app = express();
 
@@ -17,8 +22,12 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, { explorer: t
 const authRepository = new AuthRepository(databasePool);
 const authService = new AuthService({ authRepository, mailTransporter, redisClient, ensureRedisConnection });
 const authController = new AuthController(authService);
+const usersRepository = new UsersRepository(databasePool);
+const usersService = new UsersService({ usersRepository });
+const usersController = new UsersController(usersService);
 
 app.use('/api/auth', createAuthRouter(authController));
+app.use('/api/users', createUsersRouter({ usersController, authenticate }));
 
 app.get('/health', (_request, response) => {
   response.status(200).json({ status: 'ok' });
