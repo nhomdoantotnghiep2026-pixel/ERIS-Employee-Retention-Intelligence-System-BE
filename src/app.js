@@ -14,6 +14,10 @@ const { DepartmentsController } = require('./modules/departments/departments.con
 const { DepartmentsRepository } = require('./modules/departments/departments.repository');
 const { createDepartmentsRouter } = require('./modules/departments/departments.routes');
 const { DepartmentsService } = require('./modules/departments/departments.service');
+const { EmployeesController } = require('./modules/employees/employees.controller');
+const { EmployeesRepository } = require('./modules/employees/employees.repository');
+const { createEmployeesRouter } = require('./modules/employees/employees.routes');
+const { EmployeesService } = require('./modules/employees/employees.service');
 const { PositionsController } = require('./modules/positions/positions.controller');
 const { PositionsRepository } = require('./modules/positions/positions.repository');
 const { createPositionsRouter } = require('./modules/positions/positions.routes');
@@ -33,6 +37,9 @@ const authController = new AuthController(authService);
 const departmentsRepository = new DepartmentsRepository(databasePool);
 const departmentsService = new DepartmentsService({ departmentsRepository });
 const departmentsController = new DepartmentsController(departmentsService);
+const employeesRepository = new EmployeesRepository(databasePool);
+const employeesService = new EmployeesService({ employeesRepository });
+const employeesController = new EmployeesController(employeesService);
 const positionsRepository = new PositionsRepository(databasePool);
 const positionsService = new PositionsService({ positionsRepository });
 const positionsController = new PositionsController(positionsService);
@@ -42,6 +49,7 @@ const usersController = new UsersController(usersService);
 
 app.use('/api/auth', createAuthRouter(authController));
 app.use('/api/departments', createDepartmentsRouter({ departmentsController, authenticate }));
+app.use('/api/employees', createEmployeesRouter({ employeesController, authenticate }));
 app.use('/api/positions', createPositionsRouter({ positionsController, authenticate }));
 app.use('/api/users', createUsersRouter({ usersController, authenticate }));
 
