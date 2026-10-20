@@ -1,4 +1,13 @@
 const { AppError } = require('../../common/errors/app-error');
+const requiredEmployeeFields = ["fullName","email","phone","dateOfBirth","gender","address","departmentId","positionId","hireDate","employmentType","currentSalary"];
+function assertFilled(input, fields) {
+  for (const field of fields) {
+    const value = input[field];
+    if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) {
+      throw new AppError(400, field + ' is required and cannot be empty.');
+    }
+  }
+}
 
 function validatePositiveInteger(value, fieldName) {
   const parsedValue = Number(value);
@@ -67,6 +76,7 @@ function validateCreateEmployeeInput(input) {
     throw new AppError(400, 'Request body must be an object.');
   }
 
+  assertFilled(input, requiredEmployeeFields);
   const allowedFields = new Set([
     'fullName',
     'email',
@@ -74,6 +84,7 @@ function validateCreateEmployeeInput(input) {
     'dateOfBirth',
     'gender',
     'address',
+    'addressRefId',
     'departmentId',
     'positionId',
     'hireDate',
@@ -94,7 +105,11 @@ function validateCreateEmployeeInput(input) {
     throw new AppError(400, 'email must be valid.');
   }
 
+  if (input.addressRefId !== undefined && (typeof input.addressRefId !== 'string' || !input.addressRefId.trim() || input.addressRefId.length > 2000 || typeof input.address !== 'string' || !input.address.trim())) {
+    throw new AppError(400, 'addressRefId requires an address and a valid reference of at most 2000 characters.');
+  }
   return {
+    ...(input.addressRefId ? { addressRefId: input.addressRefId.trim() } : {}),
     fullName: input.fullName.trim(),
     email: email?.toLowerCase() || null,
     phone: validateOptionalString(input.phone, 'phone', 30),
@@ -118,6 +133,7 @@ function validateUpdateEmployeeInput(input) {
     throw new AppError(400, 'Request body must be an object.');
   }
 
+  assertFilled(input, Object.keys(input));
   const immutableFields = ['employeeCode', 'email', 'dateOfBirth', 'hireDate'];
   if (immutableFields.some(field => Object.hasOwn(input, field))) {
     throw new AppError(400, 'employeeCode, email, dateOfBirth and hireDate cannot be updated.');
@@ -188,4 +204,4 @@ function validateListQuery(query) {
   }
   return result;
 }
-module.exports = { validateCreateEmployeeInput, validateUpdateEmployeeInput, validateEmployeeId, validateListQuery };
+module.exports = { validateCreateEmployeeInput, validateUpdateEmployeeInput, validateEmployeeId, validateListQuery, requiredEmployeeFields };

@@ -40,8 +40,9 @@ const departmentsController = new DepartmentsController(departmentsService);
 const employeesRepository = new EmployeesRepository(databasePool);
 const { createDistanceService } = require('./modules/distance/distance.service');
 const { distanceConfig } = require('./config/distance');
+const distanceService = createDistanceService(distanceConfig());
 const employeesService = new EmployeesService({
-  employeesRepository, distanceService: createDistanceService(distanceConfig()),
+  employeesRepository, distanceService,
   mailTransporter, mailFrom: require('./config/env').env.mail.from,
   initialPassword: process.env.INITIAL_USER_PASSWORD
 });
@@ -52,6 +53,10 @@ const positionsController = new PositionsController(positionsService);
 const usersRepository = new UsersRepository(databasePool);
 const usersService = new UsersService({ usersRepository });
 const usersController = new UsersController(usersService);
+
+app.get('/employee-create-demo', (_req, res) => res.sendFile(require('node:path').join(__dirname, '../demo/employee-create/index.html')));
+app.use('/employee-create-demo/assets', express.static(require('node:path').join(__dirname, '../demo/employee-create'), { index: false }));
+app.use('/api/distance', require('./modules/distance/distance.routes').createDistanceRouter({ authenticate, employeesService, distanceService }));
 
 app.use('/api/auth', createAuthRouter(authController));
 app.use('/api/departments', createDepartmentsRouter({ departmentsController, authenticate }));

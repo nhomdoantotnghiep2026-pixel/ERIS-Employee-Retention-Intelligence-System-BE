@@ -4,6 +4,18 @@ class EmployeesRepository {
     this.databasePool = databasePool;
   }
 
+  async preflightCreate(actorId, employee) {
+    const { rows } = await this.databasePool.query(
+      `SELECT
+        (SELECT role.name FROM users INNER JOIN role ON role.id = users.role_id
+         WHERE users.id = $1 AND users.status = 'ACTIVE') AS "actorRole",
+        EXISTS (SELECT 1 FROM employees WHERE lower(email) = lower($2)
+                UNION ALL SELECT 1 FROM users WHERE lower(email) = lower($2)) AS "emailExists",
+        EXISTS (SELECT 1 FROM departments WHERE id = $3 AND status = 'ACTIVE') AS "activeDepartment",
+        EXISTS (SELECT 1 FROM positions WHERE id = $4 AND status = 'ACTIVE') AS "activePosition"`,
+      [actorId, employee.email, employee.departmentId, employee.positionId]);
+    return rows[0];
+  }
   async findAccountByEmail(email) {
     const { rows } = await this.databasePool.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1', [email]);
     return rows[0] || null;
@@ -19,17 +31,18 @@ class EmployeesRepository {
       // Serialize this workflow for case-insensitive email checks, including concurrent HR requests.
       await client.query('SELECT pg_advisory_xact_lock(hashtext(lower($1)))', [employee.email]);
       const repository = new EmployeesRepository(client);
-      if (await repository.findAccountByEmail(employee.email) || await repository.findByEmail(employee.email)) {
-        throw new AppError(409, 'Email is already in use.');
-      }
-      const { rows: roles } = await client.query("SELECT id FROM role WHERE name = 'EMPLOYEE'");
-      if (roles.length !== 1) throw new AppError(503, 'EMPLOYEE role is not configured.');
+      const { rows: checks } = await client.query(
+        `SELECT (SELECT id FROM role WHERE name = 'EMPLOYEE') AS "roleId",
+          EXISTS (SELECT 1 FROM employees WHERE lower(email) = lower($1)
+                  UNION ALL SELECT 1 FROM users WHERE lower(email) = lower($1)) AS "emailExists"`, [employee.email]);
+      if (checks[0].emailExists) throw new AppError(409, 'Email is already in use.');
+      if (!checks[0].roleId) throw new AppError(503, 'EMPLOYEE role is not configured.');
       const record = await repository.create(employee);
       const { rows } = await client.query(
         `INSERT INTO users (email, password_hash, role_id, status, employee_id, full_name)
          VALUES ($1, $2, $3, 'IN_PROCESS', $4, $5)
          RETURNING id, email, role_id AS "roleId", status, employee_id AS "employeeId"`,
-        [employee.email, passwordHash, roles[0].id, record.id, employee.fullName]);
+        [employee.email, passwordHash, checks[0].roleId, record.id, employee.fullName]);
       await client.query('COMMIT');
       return { employee: record, account: { ...rows[0], role: 'EMPLOYEE' } };
     } catch (error) {
