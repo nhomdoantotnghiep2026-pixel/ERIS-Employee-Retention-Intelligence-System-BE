@@ -1,10 +1,36 @@
+const { hashPassword } = require('../../common/utils/password');
 const { AppError } = require('../../common/errors/app-error');
 
+const { resolveEmployeeDistance } = require('../distance/address-resolution');
+function output(row, calculation) {
+  return { ...row, distanceFromHomeKm: row.distanceFromHomeKm == null ? null : Number(row.distanceFromHomeKm),
+    distanceCalculation: calculation || { status: row.distanceFromHomeKm != null ? 'READY' : row.address ? 'UNAVAILABLE' : 'NOT_PROVIDED',
+      reason: row.address && row.distanceFromHomeKm == null ? 'DISTANCE_NOT_AVAILABLE' : null } };
+}
 class EmployeesService {
-  constructor({ employeesRepository }) {
+  constructor({ employeesRepository, distanceService, mailTransporter, mailFrom, initialPassword }) {
     this.employeesRepository = employeesRepository;
+    this.distanceService = distanceService;
+    this.mailTransporter = mailTransporter;
+    this.mailFrom = mailFrom;
+    this.initialPassword = initialPassword;
   }
 
+  async assertHr(actorId) {
+    const actor = await this.employeesRepository.findUserRoleById(actorId);
+    if (actor?.role !== 'HR') throw new AppError(403, 'Only HR can view employees.');
+  }
+  async listEmployees({ actorId, query }) {
+    await this.assertHr(actorId);
+    const result = await this.employeesRepository.list(query);
+    return { ...result, data: result.data.map(row => output(row)) };
+  }
+  async getEmployee({ actorId, employeeId }) {
+    await this.assertHr(actorId);
+    const row = await this.employeesRepository.findById(employeeId);
+    if (!row) throw new AppError(404, 'Employee not found.');
+    return output(row);
+  }
   async createEmployee({ actorId, employee }) {
     const actor = await this.employeesRepository.findUserRoleById(actorId);
     if (actor?.role !== 'HR') {
@@ -23,19 +49,59 @@ class EmployeesService {
       throw new AppError(404, 'Active position not found.');
     }
 
-    return this.employeesRepository.create(employee);
+    if (!employee.email) throw new AppError(400, 'Email is required for the employee account.');
+    if (await this.employeesRepository.findAccountByEmail(employee.email)) throw new AppError(409, 'Email is already in use.');
+    if (typeof this.initialPassword !== 'string' || this.initialPassword.length < 8 || Buffer.byteLength(this.initialPassword) > 72) {
+      throw new AppError(503, 'INITIAL_USER_PASSWORD must contain at least 8 characters and at most 72 UTF-8 bytes.');
+    }
+    if (!this.mailTransporter || !this.mailFrom) throw new AppError(503, 'Account email delivery is not configured.');
+    const calculation = await resolveEmployeeDistance(employee.address, this.distanceService);
+    const passwordHash = await hashPassword(this.initialPassword);
+    const created = await this.employeesRepository.createWithAccount(
+      { ...employee, distanceFromHomeKm: calculation.distanceFromHomeKm }, passwordHash);
+    let emailDelivery = 'SENT';
+    try {
+      const delivery = await this.mailTransporter.sendMail({
+        from: this.mailFrom, to: created.account.email, subject: 'ERIS account setup',
+        text: 'Your ERIS employee account has been created.\nEmail: ' + created.account.email +
+          '\nTemporary password: ' + this.initialPassword +
+          '\nSign in to receive an email OTP, then verify the OTP and choose a new password. Your account remains IN_PROCESS until setup is complete.'
+      });
+      if (delivery?.rejected?.length || (Array.isArray(delivery?.accepted) && !delivery.accepted.length)) emailDelivery = 'FAILED';
+    } catch {
+      emailDelivery = 'FAILED';
+    }
+    return { ...output(created.employee, calculation), account: created.account, emailDelivery,
+      ...(emailDelivery === 'FAILED' ? { warning: 'Profile and account saved. Email delivery failed; do not create again. HR can provide the configured temporary password securely; first login will send the activation OTP.' } : {}) };
+
   }
 
+  async deleteEmployee({ actorId, employeeId }) {
+    await this.assertHr(actorId);
+    return this.employeesRepository.deactivate(employeeId);
+  }
   async updateEmployee({ actorId, employeeId, employee }) {
+    if (['employeeCode', 'email', 'dateOfBirth', 'hireDate'].some(key => Object.hasOwn(employee, key))) {
+      throw new AppError(400, 'employeeCode, email, dateOfBirth and hireDate cannot be updated.');
+    }
     const actor = await this.employeesRepository.findUserRoleById(actorId);
     if (actor?.role !== 'HR') {
       throw new AppError(403, 'Only HR can update employees.');
     }
 
-    if (!await this.employeesRepository.findById(employeeId)) {
+    const current = await this.employeesRepository.findById(employeeId);
+    if (!current) {
       throw new AppError(404, 'Employee not found.');
     }
 
+    if (current.employmentStatus === 'INACTIVE') throw new AppError(409, 'Inactive employees cannot be updated.');
+
+    if (Object.hasOwn(employee, 'email')) {
+      const linked = await this.employeesRepository.findLinkedAccount(employeeId);
+      if (linked && employee.email?.toLowerCase() !== linked.email.toLowerCase()) {
+        throw new AppError(409, 'Login email cannot be changed through the employee profile API.');
+      }
+    }
     if (employee.email && await this.employeesRepository.findByEmail(employee.email, employeeId)) {
       throw new AppError(409, 'Email is already in use.');
     }
@@ -48,7 +114,19 @@ class EmployeesService {
       throw new AppError(404, 'Active position not found.');
     }
 
-    return this.employeesRepository.update(employeeId, employee);
+    let calculation;
+    const changes = { ...employee };
+    if (Object.hasOwn(employee, 'address')) {
+      calculation = await resolveEmployeeDistance(employee.address, this.distanceService);
+      changes.distanceFromHomeKm = calculation.distanceFromHomeKm;
+    }
+    const row = await this.employeesRepository.update(employeeId, changes);
+    if (!row) {
+      const latest = await this.employeesRepository.findById(employeeId);
+      if (latest?.employmentStatus === 'INACTIVE') throw new AppError(409, 'Inactive employees cannot be updated.');
+      throw new AppError(404, 'Employee not found.');
+    }
+    return output(row, calculation);
   }
 }
 
