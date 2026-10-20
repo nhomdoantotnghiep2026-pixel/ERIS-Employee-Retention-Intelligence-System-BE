@@ -32,9 +32,7 @@ const positionsPaths = {
         401: { description: 'Thiếu hoặc sai access token.' },
         403: { description: 'Chỉ tài khoản HR được phép truy cập.' }
       }
-    }
-  },
-  '/api/positions/listPositions': {
+    },
     get: {
       tags: ['Positions'],
       summary: 'Lấy danh sách vị trí công việc (HR)',
@@ -135,6 +133,27 @@ const positionsPaths = {
         401: { description: 'Thiếu hoặc sai access token.' },
         403: { description: 'Chỉ tài khoản HR được phép truy cập.' },
         404: { description: 'Không tìm thấy vị trí công việc.' }
+      }
+    }
+  },
+  '/api/positions/{id}/status': {
+    delete: {
+      tags: ['Positions'],
+      summary: 'Ngừng hoạt động vị trí công việc (HR)',
+      security: [{ bearerAuth: [] }],
+      parameters: [{
+        name: 'id',
+        in: 'path',
+        required: true,
+        schema: { type: 'integer', minimum: 1 }
+      }],
+      responses: {
+        200: { description: 'Vị trí công việc đã được chuyển sang INACTIVE.' },
+        400: { description: 'ID không hợp lệ.' },
+        401: { description: 'Thiếu hoặc sai access token.' },
+        403: { description: 'Chỉ tài khoản HR được phép truy cập.' },
+        404: { description: 'Không tìm thấy vị trí công việc.' },
+        409: { description: 'Position đã INACTIVE hoặc vẫn còn employee ACTIVE.' }
       }
     }
   }

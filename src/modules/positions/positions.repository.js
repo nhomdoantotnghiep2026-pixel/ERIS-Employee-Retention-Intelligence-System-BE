@@ -118,6 +118,39 @@ class PositionsRepository {
 
     return rows[0] || null;
   }
+
+  async hasActiveEmployees(positionId) {
+    const { rows } = await this.databasePool.query(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM employees
+         WHERE position_id = $1
+           AND employment_status = 'ACTIVE'
+       ) AS "hasActiveEmployees"`,
+      [positionId]
+    );
+
+    return rows[0].hasActiveEmployees;
+  }
+
+  async deactivate(id) {
+    const { rows } = await this.databasePool.query(
+      `UPDATE positions
+       SET status = 'INACTIVE',
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING
+         id,
+         code,
+         name,
+         job_level AS "jobLevel",
+         status,
+         updated_at AS "updatedAt"`,
+      [id]
+    );
+
+    return rows[0] || null;
+  }
 }
 
 module.exports = { PositionsRepository };

@@ -11,6 +11,7 @@ class PositionsController {
     this.getPosition = this.getPosition.bind(this);
     this.createPosition = this.createPosition.bind(this);
     this.updatePosition = this.updatePosition.bind(this);
+    this.deactivatePosition = this.deactivatePosition.bind(this);
   }
 
   async listPositions(request, response, next) {
@@ -65,6 +66,23 @@ class PositionsController {
 
       return response.status(200).json({
         message: 'Position updated successfully.',
+        data
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  async deactivatePosition(request, response, next) {
+    try {
+      const positionId = validatePositionId(request.params.id);
+      const data = await this.positionsService.deactivatePosition({
+        actorId: request.auth.userId,
+        positionId
+      });
+
+      return response.status(200).json({
+        message: 'Position deactivated successfully.',
         data
       });
     } catch (error) {
