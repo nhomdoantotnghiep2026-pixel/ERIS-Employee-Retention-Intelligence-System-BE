@@ -51,10 +51,10 @@ const requestJson = async (fetchImpl, url, options, timeoutMs, service) => {
 };
 
 function createDistanceService(config = {}, fetchImpl = globalThis.fetch) {
-  const tomtomKey = config.apiKey;
-  const tomtomBaseUrl = (config.baseUrl || 'https://api.tomtom.com').replace(/\/$/, '');
   const vietmapKey = config.geocodingApiKey;
   const vietmapBaseUrl = (config.geocodingBaseUrl || 'https://maps.vietmap.vn').replace(/\/$/, '');
+  const routingKey = config.apiKey || vietmapKey;
+  const routingBaseUrl = (config.baseUrl || vietmapBaseUrl).replace(/\/$/, '');
   const timeoutMs = config.timeoutMs || 10000;
   const company = config.company;
 
@@ -78,23 +78,25 @@ function createDistanceService(config = {}, fetchImpl = globalThis.fetch) {
     return { lat: result.lat, lng: result.lng, label: result.display || result.address || result.name || field };
   };
 
-  const search = async (query, focus) => {
+  const search = async (query) => {
     requireVietmap();
-    const searchUrl = new URL(`${vietmapBaseUrl}/api/autocomplete/v4`);
+    const searchUrl = new URL(`${vietmapBaseUrl}/api/search/v4`);
     searchUrl.searchParams.set('apikey', vietmapKey);
     searchUrl.searchParams.set('text', text(query, 'query'));
-    searchUrl.searchParams.set('display_type', '6');
-    const rankingFocus = focus || company;
-    if (rankingFocus) searchUrl.searchParams.set('focus', `${rankingFocus.latitude},${rankingFocus.longitude}`);
+    searchUrl.searchParams.set('display_type', '5');
     const matches = await requestJson(fetchImpl, searchUrl, { headers: { Accept: 'application/json' } }, timeoutMs, 'Vietmap');
     if (!Array.isArray(matches)) throw new HttpError(502, 'ROUTING_SERVICE_ERROR', 'Vietmap returned an invalid response');
     return Promise.all(matches.filter(item => item?.ref_id).slice(0, 5).map(async item => {
-      const coordinates = await place(item.ref_id, 'place');
+      const coordinates = await placeDetails(item.ref_id, 'place');
       return {
         refId: item.ref_id,
         name: item.name || '',
         address: item.address || '',
         display: item.display || [item.name, item.address].filter(Boolean).join(', '),
+        isCompleteAddress: !!(coordinates.hs_num && coordinates.street && coordinates.city),
+        resolvedAddress: coordinates.hs_num && coordinates.street && coordinates.city
+          ? [[coordinates.hs_num, coordinates.street].join(' '), coordinates.ward, coordinates.district, coordinates.city].filter(Boolean).join(', ')
+          : coordinates.display || item.display || [item.name, item.address].filter(Boolean).join(', '),
         latitude: coordinates.lat,
         longitude: coordinates.lng,
       };
@@ -136,8 +138,8 @@ function createDistanceService(config = {}, fetchImpl = globalThis.fetch) {
     },
     placeByRefId: placeDetails,
     async calculate(body) {
-      if (!tomtomKey) throw new HttpError(503, 'ROUTING_NOT_CONFIGURED', 'TomTom API key is required');
-      if (!company || !Number.isFinite(company.latitude) || !Number.isFinite(company.longitude) || !company.label) {
+      if (!routingKey) throw new HttpError(503, 'ROUTING_NOT_CONFIGURED', 'Vietmap routing API key is required');
+      if (!company || !Number.isFinite(company.latitude) || !Number.isFinite(company.longitude) || Math.abs(company.latitude) > 90 || Math.abs(company.longitude) > 180 || !company.label) {
         throw new HttpError(503, 'COMPANY_LOCATION_NOT_CONFIGURED', 'Company location is required');
       }
       if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -145,34 +147,42 @@ function createDistanceService(config = {}, fetchImpl = globalThis.fetch) {
       }
       if (Object.keys(body).some(key => key !== 'home')) {
         throw new HttpError(409, 'ADDRESS_CONFIRMATION_REQUIRED',
-          'Select a confirmed home with GET /api/v1/distance/places; the company location is fixed by the server');
+          'Select a confirmed home with GET /api/distance/places; the company location is fixed by the server');
       }
       const home = await location(body.home, 'home');
-      const points = `${home.lat},${home.lng}:${company.latitude},${company.longitude}`;
-      const routeUrl = new URL(`${tomtomBaseUrl}/routing/1/calculateRoute/${points}/json`);
-      routeUrl.searchParams.set('key', tomtomKey);
-      routeUrl.searchParams.set('traffic', 'false');
-      routeUrl.searchParams.set('routeType', 'fastest');
-      routeUrl.searchParams.set('travelMode', 'car');
-      const data = await requestJson(fetchImpl, routeUrl, { headers: { Accept: 'application/json' } }, timeoutMs, 'TomTom');
-      const summary = data?.routes?.[0]?.summary;
-      if (!Number.isFinite(summary?.lengthInMeters) || !Number.isFinite(summary?.travelTimeInSeconds)) {
-        throw new HttpError(422, 'ROUTE_NOT_FOUND', 'A driving route could not be calculated');
+      const routeUrl = new URL(routingBaseUrl + '/api/route/v4');
+      routeUrl.searchParams.set('apikey', routingKey);
+      routeUrl.searchParams.append('point', home.lat + ',' + home.lng);
+      routeUrl.searchParams.append('point', company.latitude + ',' + company.longitude);
+      routeUrl.searchParams.set('vehicle', 'car');
+      routeUrl.searchParams.set('points_encoded', 'true');
+      routeUrl.searchParams.set('alternative', 'false');
+      const routingDepartureTime = new Date().toISOString();
+      routeUrl.searchParams.set('time', routingDepartureTime);
+      const data = await requestJson(fetchImpl, routeUrl, { headers: { Accept: 'application/json' } }, timeoutMs, 'Vietmap routing');
+      if (data?.code === 'OVER_DAILY_LIMIT') throw new HttpError(503, 'ROUTING_RATE_LIMITED', 'Vietmap routing quota reached');
+      if (data?.code === 'ZERO_RESULTS') throw new HttpError(422, 'ROUTE_NOT_FOUND', 'A driving route could not be calculated');
+      if (data?.code !== 'OK') throw new HttpError(502, 'ROUTING_SERVICE_ERROR', 'Vietmap routing returned an unsuccessful response');
+      const summary = data.paths?.[0];
+      if (!Number.isFinite(summary?.distance) || summary.distance < 0 || !Number.isFinite(summary?.time) || summary.time < 0) {
+        throw new HttpError(502, 'ROUTING_SERVICE_ERROR', 'Vietmap routing returned invalid distance or duration');
       }
       const straightLineKm = haversineKm(home, { lat: company.latitude, lng: company.longitude });
-      const routeKm = summary.lengthInMeters / 1000;
+      const routeKm = summary.distance / 1000;
       return {
         distanceFromHomeKm: round(routeKm, 2),
         straightLineDistanceKm: round(straightLineKm, 2),
         routeToStraightLineRatio: straightLineKm === 0 ? null : round(routeKm / straightLineKm, 2),
-        estimatedDurationMinutes: Math.round((summary.travelTimeInSeconds / 60) * 10) / 10,
-        trafficAware: false,
+        estimatedDurationMinutes: Math.round((summary.time / 60000) * 10) / 10,
+        // Route v4 does not return a flag confirming live-traffic coverage.
+        trafficAware: null,
+        routingDepartureTime,
         travelMode: 'car',
         origin: home.label,
         destination: company.label,
         originCoordinates: { latitude: home.lat, longitude: home.lng },
         destinationCoordinates: { latitude: company.latitude, longitude: company.longitude },
-        provider: 'vietmap-geocoding+tomtom-routing',
+        provider: 'vietmap',
       };
     },
   };

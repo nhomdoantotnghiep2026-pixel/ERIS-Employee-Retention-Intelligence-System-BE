@@ -37,7 +37,7 @@ async function parseWorkbook(buffer) {
           if (!['dateOfBirth','hireDate'].includes(field) || !Number.isFinite(value.getTime())) throw new AppError(400, 'Invalid date cell.');
           value = value.toISOString().slice(0,10);
         } else if (typeof value === 'object') {
-          // Do not trust cached formula results or rich/hyperlink objects as profile data.
+        
           throw new AppError(400, `Use plain values, not formulas or objects, in ${field}.`);
         }
         if (['departmentId','positionId','currentSalary'].includes(field) && typeof value === 'string' && value.trim()) value = Number(value);
@@ -65,7 +65,7 @@ function registerEmployeeImport(router, authenticate, service) {
         if (!req.file) throw new AppError(400, 'Upload an Excel file using the file field.');
         const rows = await parseWorkbook(req.file.buffer);
         const results = [];
-        // Process sequentially to avoid bursts of geocoding, SMTP and database requests.
+        
         for (const row of rows) {
           if (!row.input) { results.push(row); continue; }
           try {

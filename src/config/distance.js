@@ -6,8 +6,8 @@ function number(name, fallback, min, max) {
 }
 function distanceConfig() {
   return {
-    apiKey: process.env.TOMTOM_API_KEY,
-    baseUrl: process.env.TOMTOM_BASE_URL || 'https://api.tomtom.com',
+    apiKey: process.env.VIETMAP_API_KEY,
+    baseUrl: process.env.VIETMAP_BASE_URL || 'https://maps.vietmap.vn',
     geocodingApiKey: process.env.VIETMAP_API_KEY,
     geocodingBaseUrl: process.env.VIETMAP_BASE_URL || 'https://maps.vietmap.vn',
     timeoutMs: number('ROUTING_TIMEOUT_MS', 10000, 1000, 30000),

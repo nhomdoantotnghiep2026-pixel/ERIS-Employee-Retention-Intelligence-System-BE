@@ -31,31 +31,29 @@ class EmployeesService {
     if (!row) throw new AppError(404, 'Employee not found.');
     return output(row);
   }
-  async createEmployee({ actorId, employee }) {
-    const actor = await this.employeesRepository.findUserRoleById(actorId);
-    if (actor?.role !== 'HR') {
-      throw new AppError(403, 'Only HR can create employees.');
-    }
-
-    if (employee.email && await this.employeesRepository.findByEmail(employee.email)) {
-      throw new AppError(409, 'Email is already in use.');
-    }
-
-    if (!await this.employeesRepository.findActiveDepartmentById(employee.departmentId)) {
-      throw new AppError(404, 'Active department not found.');
-    }
-
-    if (!await this.employeesRepository.findActivePositionById(employee.positionId)) {
-      throw new AppError(404, 'Active position not found.');
-    }
-
+  async createEmployee({ actorId, employee, distanceCache }) {
+    const checks = await this.employeesRepository.preflightCreate(actorId, employee);
+    if (checks.actorRole !== 'HR') throw new AppError(403, 'Only HR can create employees.');
+    if (checks.emailExists) throw new AppError(409, 'Email is already in use.');
+    if (!checks.activeDepartment) throw new AppError(404, 'Active department not found.');
+    if (!checks.activePosition) throw new AppError(404, 'Active position not found.');
     if (!employee.email) throw new AppError(400, 'Email is required for the employee account.');
-    if (await this.employeesRepository.findAccountByEmail(employee.email)) throw new AppError(409, 'Email is already in use.');
     if (typeof this.initialPassword !== 'string' || this.initialPassword.length < 8 || Buffer.byteLength(this.initialPassword) > 72) {
       throw new AppError(503, 'INITIAL_USER_PASSWORD must contain at least 8 characters and at most 72 UTF-8 bytes.');
     }
     if (!this.mailTransporter || !this.mailFrom) throw new AppError(503, 'Account email delivery is not configured.');
-    const calculation = await resolveEmployeeDistance(employee.address, this.distanceService);
+    // The cache belongs to one import request; no addresses or stale results are retained globally.
+    const cacheKey = JSON.stringify([employee.address.trim(), employee.addressRefId || null]);
+    if (distanceCache && !distanceCache.has(cacheKey)) {
+      distanceCache.set(cacheKey, resolveEmployeeDistance(employee.address, this.distanceService, employee.addressRefId));
+    }
+    const calculation = distanceCache
+      ? await distanceCache.get(cacheKey)
+      : await resolveEmployeeDistance(employee.address, this.distanceService, employee.addressRefId);
+    if (distanceCache && calculation.status !== 'READY') distanceCache.delete(cacheKey);
+    if (calculation.status !== 'READY' || !Number.isFinite(calculation.distanceFromHomeKm) || calculation.distanceFromHomeKm < 0) {
+      throw new AppError(422, 'Employee was not saved because distance could not be calculated: ' + calculation.reason);
+    }
     const passwordHash = await hashPassword(this.initialPassword);
     const created = await this.employeesRepository.createWithAccount(
       { ...employee, distanceFromHomeKm: calculation.distanceFromHomeKm }, passwordHash);
@@ -118,6 +116,9 @@ class EmployeesService {
     const changes = { ...employee };
     if (Object.hasOwn(employee, 'address')) {
       calculation = await resolveEmployeeDistance(employee.address, this.distanceService);
+      if (calculation.status !== 'READY' || !Number.isFinite(calculation.distanceFromHomeKm) || calculation.distanceFromHomeKm < 0) {
+        throw new AppError(422, 'Employee was not updated because distance could not be calculated: ' + calculation.reason);
+      }
       changes.distanceFromHomeKm = calculation.distanceFromHomeKm;
     }
     const row = await this.employeesRepository.update(employeeId, changes);

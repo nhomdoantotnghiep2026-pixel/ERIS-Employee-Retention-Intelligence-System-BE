@@ -95,11 +95,11 @@ employeesPaths['/api/employees/{id}'].get = {
   responses: { 200: { description: 'Trả trực tiếp hồ sơ nhân viên, gồm distanceFromHomeKm và distanceCalculation; không bọc trong data.' }, 400: { description: 'ID nhân viên phải là số nguyên dương.' }, 401: { description: 'Thiếu hoặc sai token truy cập.' }, 403: { description: 'Chỉ tài khoản HR được phép truy cập.' }, 404: { description: 'Không tìm thấy nhân viên.' } }
 };
 for (const [route, method] of [['/api/employees','post'], ['/api/employees/{id}','patch']]) {
-  employeesPaths[route][method].description = 'Hệ thống tự xác định tọa độ bằng Vietmap và tính quãng đường ô tô bằng TomTom trước khi lưu. Không gửi distanceFromHomeKm trong dữ liệu đầu vào. Kết quả trong data gồm distanceFromHomeKm (đơn vị km) và distanceCalculation: READY (đã tính được), UNAVAILABLE (chưa tính được, xem reason) hoặc NOT_PROVIDED (chưa nhập địa chỉ). Không cần bước xem trước hoặc xác nhận thủ công. Nếu chưa tính được, khoảng cách là null và hồ sơ vẫn được lưu.';
+  employeesPaths[route][method].description = 'Hệ thống tự xác định tọa độ và tính quãng đường ô tô bằng Vietmap Route v4 trước khi lưu. Không gửi distanceFromHomeKm trong dữ liệu đầu vào. Kết quả trong data gồm distanceFromHomeKm (đơn vị km) và distanceCalculation: READY (đã tính được), UNAVAILABLE (chưa tính được, xem reason) hoặc NOT_PROVIDED (chưa nhập địa chỉ). Không cần bước xem trước hoặc xác nhận thủ công. Nếu chưa tính được khoảng cách, trả 422 và không lưu hồ sơ/tài khoản.';
 }
 employeesPaths['/api/employees'].post.description += ' Đồng thời tạo tài khoản EMPLOYEE liên kết với hồ sơ, có trạng thái IN_PROCESS; hồ sơ và tài khoản được lưu trong cùng giao dịch. Email là bắt buộc. Mật khẩu ban đầu được gửi qua email. Khi đăng nhập lần đầu, hệ thống gửi OTP qua email và trả passwordChangeToken để thiết lập mật khẩu riêng. Kết quả có account (thông tin tài khoản) và emailDelivery (SENT: gửi thành công; FAILED: gửi thất bại). Không trả mật khẩu hoặc mã hash. Nếu gửi email thất bại, tài khoản đã được lưu, không tạo lại.';
 employeesPaths['/api/employees'].post.responses[503] = { description: 'Chưa cấu hình role EMPLOYEE, mật khẩu ban đầu hoặc dịch vụ gửi email.' };
-employeesPaths['/api/employees/{id}'].patch.description += ' Chỉ tính lại khoảng cách khi gửi trường address. Gửi address: null sẽ xóa địa chỉ và khoảng cách cũ; sửa trường khác giữ nguyên khoảng cách. Không được đổi email đăng nhập đã liên kết qua API này (trả 409).';
+employeesPaths['/api/employees/{id}'].patch.description += ' Chỉ tính lại khoảng cách khi gửi trường address. Không được gửi null hoặc chuỗi rỗng. Đổi địa chỉ mà không tính được distance sẽ trả 422 và giữ dữ liệu cũ; sửa trường khác giữ nguyên khoảng cách. Không được đổi email đăng nhập đã liên kết qua API này (trả 409).';
 const employeePatch = employeesPaths['/api/employees/{id}'].patch;
 for (const field of ['employeeCode', 'email', 'dateOfBirth', 'hireDate']) {
   delete employeePatch.requestBody.content['application/json'].schema.properties[field];
@@ -123,7 +123,7 @@ employeesPaths['/api/employees/{id}'].delete = {
 employeesPaths['/api/employees/import'] = {
   post: {
     tags: ['Employees'], summary: 'Import Excel tạo hồ sơ và tài khoản nhân viên (HR)',
-    description: 'Upload một file .xlsx, tối đa 5 MB và 200 dòng, chỉ một sheet có dữ liệu. Dòng đầu là tên cột giống JSON tạo thủ công. Bắt buộc: fullName, email, departmentId, positionId, hireDate. Tùy chọn: phone, dateOfBirth, gender, address, employmentType, currentSalary. Không gửi employeeCode, distanceFromHomeKm. Ngày nhập dạng YYYY-MM-DD hoặc ô ngày Excel; phone phải là Text để giữ số 0 đầu. Không dùng công thức/hyperlink. Dùng chung validation và luồng tạo thủ công: kiểm tra trùng email, phòng ban/vị trí ACTIVE, lương > 0 nếu nhập; tự tính distance, tạo tài khoản IN_PROCESS và gửi email. Xử lý từng dòng; dòng lỗi không hủy dòng thành công. Response có total, created, failed và results theo số dòng Excel. CREATED với emailDelivery FAILED vẫn đã lưu, không import lại dòng đó. Request xử lý đồng bộ và có thể mất vài phút với file lớn; giữ kết nối đến khi có kết quả.',
+    description: 'Upload một file .xlsx, tối đa 5 MB và 200 dòng, chỉ một sheet có dữ liệu. Dòng đầu là tên cột giống JSON tạo thủ công. Bắt buộc đủ 11 cột và giá trị: fullName, email, phone, dateOfBirth, gender, address, departmentId, positionId, hireDate, employmentType, currentSalary. Không gửi employeeCode, distanceFromHomeKm. Ngày nhập dạng YYYY-MM-DD hoặc ô ngày Excel; phone phải là Text để giữ số 0 đầu. Không dùng công thức/hyperlink. Dùng chung validation và luồng tạo thủ công: kiểm tra trùng email, phòng ban/vị trí ACTIVE, lương > 0; chỉ lưu khi tính được distance; nếu không, dòng đó FAILED và không tạo hồ sơ/tài khoản. Tự tính distance, tạo tài khoản IN_PROCESS và gửi email. Xử lý tối đa 3 dòng đồng thời và giữ thứ tự kết quả theo file; dòng lỗi không hủy dòng thành công. Các địa chỉ giống hệt nhau dùng chung kết quả distance trong một lần import. Response có total, created, failed và results theo số dòng Excel. CREATED với emailDelivery FAILED vẫn đã lưu, không import lại dòng đó. Request xử lý đồng bộ và có thể mất vài phút với file lớn; giữ kết nối đến khi có kết quả.',
     security: [{ bearerAuth: [] }],
     requestBody: { required: true, content: { 'multipart/form-data': { schema: { type: 'object', required: ['file'], properties: { file: { type: 'string', format: 'binary' } } } } } },
     responses: {
@@ -134,4 +134,12 @@ employeesPaths['/api/employees/import'] = {
     }
   }
 };
+employeesPaths['/api/employees'].post.requestBody.content['application/json'].schema.properties.addressRefId = { type: 'string', maxLength: 2000, description: 'Tùy chọn: refId từ gợi ý Vietmap. Phải gửi kèm address. Backend xác minh địa chỉ và dùng đúng tọa độ đã chọn. Nếu không gửi, hệ thống tự tìm như trước.' };
+employeesPaths['/api/employees'].post.responses[422] = { description: 'Không xác minh hoặc định tuyến được địa chỉ đã chọn; chưa tạo hồ sơ.' };
+employeesPaths['/api/employees'].post.requestBody.content['application/json'].schema.required = ["fullName","email","phone","dateOfBirth","gender","address","departmentId","positionId","hireDate","employmentType","currentSalary"];
+for (const operation of [employeesPaths['/api/employees'].post, employeesPaths['/api/employees/{id}'].patch]) {
+  for (const property of Object.values(operation.requestBody.content['application/json'].schema.properties)) delete property.nullable;
+  operation.responses[422] = { description: 'Không tính được distanceFromHomeKm: không lưu hồ sơ/tài khoản mới; cập nhật địa chỉ giữ nguyên dữ liệu cũ.' };
+}
+employeesPaths['/api/employees'].post.description += ' Bắt buộc đầy đủ 11 trường thông tin; không chấp nhận thiếu, null hoặc chuỗi rỗng. addressRefId là tham chiếu kỹ thuật tùy chọn; mã nhân viên và distance do server tạo.';
 module.exports = { employeesPaths };
