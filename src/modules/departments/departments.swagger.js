@@ -1,46 +1,78 @@
+const departmentSchema = {
+  type: 'object',
+  properties: {
+    id: { type: 'integer', example: 1 },
+    code: { type: 'string', example: 'DP001' },
+    name: { type: 'string', example: 'Human Resources' },
+    description: { type: 'string', nullable: true, example: 'Manages people operations.' },
+    status: { type: 'string', enum: ['ACTIVE', 'INACTIVE'], example: 'ACTIVE' },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' }
+  }
+};
+
+const departmentIdParameter = {
+  name: 'id',
+  in: 'path',
+  required: true,
+  description: 'Department ID.',
+  schema: { type: 'integer', minimum: 1 },
+  example: 1
+};
+
+const errorResponse = (description) => ({
+  description,
+  content: {
+    'application/json': {
+      schema: { $ref: '#/components/schemas/Error' }
+    }
+  }
+});
+
+const departmentResponse = (message) => ({
+  type: 'object',
+  required: ['message', 'data'],
+  properties: {
+    message: { type: 'string', example: message },
+    data: departmentSchema
+  }
+});
+
 const departmentsPaths = {
-  '/api/departments/listDepartments': {
+  '/api/departments': {
     get: {
       tags: ['Departments'],
-      summary: 'Lấy danh sách phòng ban (HR)',
+      operationId: 'listDepartments',
+      summary: 'List departments',
+      description: 'Returns all departments. HR role required.',
       security: [{ bearerAuth: [] }],
       responses: {
         200: {
-          description: 'Danh sách phòng ban.',
+          description: 'Departments retrieved successfully.',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
+                required: ['data'],
                 properties: {
-                  data: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        id: { type: 'integer', example: 1 },
-                        code: { type: 'string', example: 'HR' },
-                        name: { type: 'string', example: 'Human Resources' },
-                        description: { type: 'string', nullable: true },
-                        status: { type: 'string', example: 'ACTIVE' }
-                      }
-                    }
-                  }
+                  data: { type: 'array', items: departmentSchema }
                 }
               }
             }
           }
         },
-        401: { description: 'Thiếu hoặc sai access token.' },
-        403: { description: 'Chỉ tài khoản HR được phép truy cập.' }
+        401: errorResponse('Authentication is required.'),
+        403: errorResponse('Only HR users can manage departments.')
       }
-    }
-  },
-  '/api/departments/createDepartments': {
+    },
     post: {
       tags: ['Departments'],
-      summary: 'Tạo phòng ban (HR)',
+      operationId: 'createDepartment',
+      summary: 'Create a department',
+      description: 'Creates a department and assigns its code automatically. HR role required.',
       security: [{ bearerAuth: [] }],
       requestBody: {
+        description: 'Department details.',
         required: true,
         content: {
           'application/json': {
@@ -48,53 +80,59 @@ const departmentsPaths = {
               type: 'object',
               required: ['name'],
               properties: {
-                name: { type: 'string', example: 'Information Technology' },
-                description: { type: 'string', example: 'Phòng công nghệ thông tin' }
+                name: { type: 'string', minLength: 1, maxLength: 150, example: 'Information Technology' },
+                description: { type: 'string', nullable: true, example: 'Owns systems and technology infrastructure.' }
               }
             }
           }
         }
       },
       responses: {
-        201: { description: 'Tạo phòng ban thành công; code được tự sinh theo DP + ID.' },
-        400: { description: 'Dữ liệu đầu vào không hợp lệ.' },
-        401: { description: 'Thiếu hoặc sai access token.' },
-        403: { description: 'Chỉ tài khoản HR được phép truy cập.' }
+        201: {
+          description: 'Department created successfully.',
+          content: {
+            'application/json': {
+              schema: departmentResponse('Department created successfully.')
+            }
+          }
+        },
+        400: errorResponse('Invalid request body.'),
+        401: errorResponse('Authentication is required.'),
+        403: errorResponse('Only HR users can manage departments.')
       }
     }
   },
-  '/api/departments/deleteDepartments/{id}': {
+  '/api/departments/{id}': {
     delete: {
       tags: ['Departments'],
-      summary: 'Ngừng hoạt động phòng ban (HR)',
+      operationId: 'deactivateDepartment',
+      summary: 'Deactivate a department',
+      description: 'Changes the department status to `INACTIVE`. Departments with active employees cannot be deactivated. HR role required.',
       security: [{ bearerAuth: [] }],
-      parameters: [{
-        name: 'id',
-        in: 'path',
-        required: true,
-        schema: { type: 'integer', minimum: 1 }
-      }],
+      parameters: [departmentIdParameter],
       responses: {
-        200: { description: 'Phòng ban đã được chuyển sang INACTIVE.' },
-        400: { description: 'ID không hợp lệ.' },
-        401: { description: 'Thiếu hoặc sai access token.' },
-        403: { description: 'Chỉ tài khoản HR được phép truy cập.' },
-        404: { description: 'Không tìm thấy phòng ban.' },
-        409: { description: 'Phòng ban đã INACTIVE hoặc vẫn còn employee ACTIVE.' }
+        200: {
+          description: 'Department deactivated successfully.',
+          content: {
+            'application/json': {
+              schema: departmentResponse('Department deactivated successfully.')
+            }
+          }
+        },
+        400: errorResponse('Invalid department ID.'),
+        401: errorResponse('Authentication is required.'),
+        403: errorResponse('Only HR users can manage departments.'),
+        404: errorResponse('Department not found.'),
+        409: errorResponse('Department is already inactive or still has active employees.')
       }
-    }
-  },
-  '/api/departments/updateDepartments/{id}': {
+    },
     patch: {
       tags: ['Departments'],
-      summary: 'Cập nhật tên hoặc mô tả phòng ban (HR)',
+      operationId: 'updateDepartment',
+      summary: 'Update a department',
+      description: 'Updates the department name and/or description. HR role required.',
       security: [{ bearerAuth: [] }],
-      parameters: [{
-        name: 'id',
-        in: 'path',
-        required: true,
-        schema: { type: 'integer', minimum: 1 }
-      }],
+      parameters: [departmentIdParameter],
       requestBody: {
         required: true,
         content: {
@@ -103,19 +141,26 @@ const departmentsPaths = {
               type: 'object',
               minProperties: 1,
               properties: {
-                name: { type: 'string', example: 'Information Technology' },
-                description: { type: 'string', nullable: true, example: 'Phụ trách hệ thống và hạ tầng công nghệ' }
+                name: { type: 'string', minLength: 1, maxLength: 150, example: 'Information Technology' },
+                description: { type: 'string', nullable: true, example: 'Owns systems and technology infrastructure.' }
               }
             }
           }
         }
       },
       responses: {
-        200: { description: 'Cập nhật phòng ban thành công.' },
-        400: { description: 'ID hoặc dữ liệu cập nhật không hợp lệ.' },
-        401: { description: 'Thiếu hoặc sai access token.' },
-        403: { description: 'Chỉ tài khoản HR được phép truy cập.' },
-        404: { description: 'Không tìm thấy phòng ban.' }
+        200: {
+          description: 'Department updated successfully.',
+          content: {
+            'application/json': {
+              schema: departmentResponse('Department updated successfully.')
+            }
+          }
+        },
+        400: errorResponse('Invalid department ID or request body.'),
+        401: errorResponse('Authentication is required.'),
+        403: errorResponse('Only HR users can manage departments.'),
+        404: errorResponse('Department not found.')
       }
     }
   }
