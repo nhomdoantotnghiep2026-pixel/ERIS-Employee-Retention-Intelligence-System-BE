@@ -22,7 +22,10 @@ const swaggerSpec = swaggerJsdoc({
         EmailRequest: { type: 'object', required: ['email'], properties: { email: { type: 'string', format: 'email', example: 'user@eris.com' } } },
         ChangePasswordRequest: { type: 'object', required: ['otp', 'newPassword'], properties: { currentPassword: { type: 'string', format: 'password', description: 'Bắt buộc khi dùng access token của user ACTIVE.' }, otp: { type: 'string', pattern: '^\\d{6}$', example: '123456' }, newPassword: { type: 'string', format: 'password', example: 'NewPassword123!' } } },
         ResetPasswordRequest: { type: 'object', required: ['email', 'otp', 'newPassword'], properties: { email: { type: 'string', format: 'email' }, otp: { type: 'string', pattern: '^\\d{6}$', example: '123456' }, newPassword: { type: 'string', format: 'password', example: 'NewPassword123!' } } },
-        UserRegisterRequest: { type: 'object', required: ['email', 'roleId'], properties: { email: { type: 'string', format: 'email' }, roleId: { type: 'integer', example: 2 }, employeeId: { type: 'integer', description: 'Bắt buộc khi role là EMPLOYEE.', example: 12 } } },
+        UserRegisterRequest: { type: 'object', additionalProperties: false, required: ['email'], properties: {
+          email: { type: 'string', format: 'email', maxLength: 255, example: 'hr.new@example.com' },
+          roleId: { type: 'integer', minimum: 1, example: 2, description: 'Tùy chọn; nếu gửi phải là ID của role HR trong database. Bỏ qua để tự dùng HR.' }
+        } },
         User: { type: 'object', properties: { id: { type: 'integer', example: 3 }, email: { type: 'string', format: 'email', example: 'employee@eris.com' }, fullName: { type: 'string', example: 'Trần Văn A', nullable: true }, role: { type: 'string', example: 'EMPLOYEE' }, status: { type: 'string', enum: ['ACTIVE', 'IN_PROCESS'], example: 'ACTIVE' } } },
         AccessTokenResponse: { type: 'object', properties: { accessToken: { type: 'string', description: 'JWT access token.' } } },
         LoginResponse: { oneOf: [{ $ref: '#/components/schemas/AccessTokenResponse' }, { type: 'object', properties: { message: { type: 'string' }, passwordChangeToken: { type: 'string' } } }] },

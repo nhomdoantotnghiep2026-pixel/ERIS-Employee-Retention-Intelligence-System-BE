@@ -143,6 +143,7 @@ function validateUpdateEmployeeInput(input) {
     'phone',
     'gender',
     'address',
+    'addressRefId',
     'departmentId',
     'positionId',
     'employmentType',
@@ -158,7 +159,11 @@ function validateUpdateEmployeeInput(input) {
     throw new AppError(400, 'Request body contains unsupported fields.');
   }
 
+  if (input.addressRefId !== undefined && (typeof input.addressRefId !== 'string' || !input.addressRefId.trim() || input.addressRefId.length > 2000 || typeof input.address !== 'string' || !input.address.trim())) {
+    throw new AppError(400, 'addressRefId requires an address and a valid reference of at most 2000 characters.');
+  }
   const employee = {};
+  if (input.addressRefId !== undefined) employee.addressRefId = input.addressRefId.trim();
 
   if (Object.hasOwn(input, 'fullName')) {
     if (typeof input.fullName !== 'string' || !input.fullName.trim() || input.fullName.trim().length > 150) {

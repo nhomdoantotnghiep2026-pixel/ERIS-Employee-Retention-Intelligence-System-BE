@@ -4,6 +4,34 @@ class EmployeesRepository {
     this.databasePool = databasePool;
   }
 
+  async withTransaction(work) {
+    const client = await this.databasePool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await work(new EmployeesRepository(client));
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      if (error.code === '23505') throw new AppError(409, 'Profile or email already exists.');
+      throw error;
+    } finally { client.release(); }
+  }
+  async findHrTarget(id, lock = false) {
+    const { rows } = await this.databasePool.query(
+      `SELECT u.id, u.email, u.status, u.employee_id AS "employeeId", r.name AS role
+       FROM users u JOIN role r ON r.id = u.role_id WHERE u.id = $1` + (lock ? ' FOR UPDATE OF u' : ''), [id]);
+    return rows[0] || null;
+  }
+  async linkHrProfile(userId, employee) {
+    const { rows } = await this.databasePool.query(
+      `UPDATE users SET employee_id = $2, full_name = $3, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND employee_id IS NULL
+       RETURNING id, email, role_id AS "roleId", status, employee_id AS "employeeId"`,
+      [userId, employee.id, employee.fullName]);
+    if (!rows[0]) throw new AppError(409, 'HR already has a profile.');
+    return { ...rows[0], role: 'HR' };
+  }
   async preflightCreate(actorId, employee) {
     const { rows } = await this.databasePool.query(
       `SELECT
@@ -17,7 +45,10 @@ class EmployeesRepository {
     return rows[0];
   }
   async findAccountByEmail(email) {
-    const { rows } = await this.databasePool.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1', [email]);
+    const { rows } = await this.databasePool.query(
+      `SELECT u.id, u.email, u.status, u.employee_id AS "employeeId", r.name AS role
+       FROM users u JOIN role r ON r.id = u.role_id WHERE lower(u.email) = lower($1) LIMIT 2`, [email]);
+    if (rows.length > 1) throw new AppError(409, 'Multiple accounts use this email; resolve the conflict before linking.');
     return rows[0] || null;
   }
   async findLinkedAccount(employeeId) {
@@ -53,10 +84,10 @@ class EmployeesRepository {
   }
   async findUserRoleById(userId) {
     const { rows } = await this.databasePool.query(
-      `SELECT role.name AS role
+      `SELECT role.name AS role, users.status, users.employee_id AS "employeeId"
        FROM users
        INNER JOIN role ON role.id = users.role_id
-       WHERE users.id = $1
+       WHERE users.id = $1 AND users.status = 'ACTIVE'
        LIMIT 1`,
       [userId]
     );
@@ -201,10 +232,15 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
     return rows[0] || null;
   }
 
-  async deactivate(id) {
+  async deactivate(id, actorId) {
     const client = await this.databasePool.connect();
     try {
       await client.query('BEGIN');
+      if (actorId !== undefined) {
+        const actor = await new EmployeesRepository(client).findHrTarget(actorId, true);
+        if (actor?.role !== 'HR' || actor?.status !== 'ACTIVE') throw new AppError(403, 'Only ACTIVE HR can deactivate profiles.');
+        if (Number(actor.employeeId) === Number(id)) throw new AppError(403, 'You cannot deactivate your own profile.');
+      }
       const { rows } = await client.query('SELECT id, employment_status FROM employees WHERE id = $1 FOR UPDATE', [id]);
       if (!rows[0]) throw new AppError(404, 'Employee not found.');
       if (rows[0].employment_status === 'INACTIVE') throw new AppError(409, 'Employee is already inactive.');
@@ -218,6 +254,16 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
       await client.query('ROLLBACK');
       throw error;
     } finally { client.release(); }
+  }
+  async updateAuthorized(actorId, id, employee) {
+    return this.withTransaction(async repository => {
+      const actor = await repository.findHrTarget(actorId, true);
+      if (actor?.role !== 'HR' || actor?.status !== 'ACTIVE') throw new AppError(403, 'Only ACTIVE HR can update profiles.');
+      if (Number(actor.employeeId) === Number(id) && Object.keys(employee).some(key => !['phone','address','addressRefId','distanceFromHomeKm'].includes(key))) {
+        throw new AppError(403, 'You may only update phone and address on your own profile.');
+      }
+      return repository.update(id, employee);
+    });
   }
   async update(id, employee) {
     const assignments = [];

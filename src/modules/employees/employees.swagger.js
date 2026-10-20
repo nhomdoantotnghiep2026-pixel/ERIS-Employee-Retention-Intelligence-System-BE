@@ -134,12 +134,21 @@ employeesPaths['/api/employees/import'] = {
     }
   }
 };
-employeesPaths['/api/employees'].post.requestBody.content['application/json'].schema.properties.addressRefId = { type: 'string', maxLength: 2000, description: 'Tùy chọn: refId từ gợi ý Vietmap. Phải gửi kèm address. Backend xác minh địa chỉ và dùng đúng tọa độ đã chọn. Nếu không gửi, hệ thống tự tìm như trước.' };
 employeesPaths['/api/employees'].post.responses[422] = { description: 'Không xác minh hoặc định tuyến được địa chỉ đã chọn; chưa tạo hồ sơ.' };
 employeesPaths['/api/employees'].post.requestBody.content['application/json'].schema.required = ["fullName","email","phone","dateOfBirth","gender","address","departmentId","positionId","hireDate","employmentType","currentSalary"];
 for (const operation of [employeesPaths['/api/employees'].post, employeesPaths['/api/employees/{id}'].patch]) {
   for (const property of Object.values(operation.requestBody.content['application/json'].schema.properties)) delete property.nullable;
   operation.responses[422] = { description: 'Không tính được distanceFromHomeKm: không lưu hồ sơ/tài khoản mới; cập nhật địa chỉ giữ nguyên dữ liệu cũ.' };
 }
-employeesPaths['/api/employees'].post.description += ' Bắt buộc đầy đủ 11 trường thông tin; không chấp nhận thiếu, null hoặc chuỗi rỗng. addressRefId là tham chiếu kỹ thuật tùy chọn; mã nhân viên và distance do server tạo.';
+employeesPaths['/api/employees'].post.description += ' Bắt buộc đầy đủ 11 trường thông tin; không chấp nhận thiếu, null hoặc chuỗi rỗng. mã nhân viên và distance do server tạo.';
+employeesPaths['/api/employees/{id}'].patch.description += ' HR chỉ được tự sửa phone và address; các trường khác phải nhờ HR khác sửa.';
+employeesPaths['/api/employees/{id}'].delete.description = 'Xóa mềm hồ sơ và ngừng tài khoản liên kết. Không được tự xóa hồ sơ của mình.';
+// One request schema for both employee account creation and existing HR profile linking.
+employeesPaths['/api/employees'].post.description = 'Tạo hồ sơ với đầy đủ 11 trường bắt buộc. Email chưa có tài khoản: hệ thống tạo tài khoản EMPLOYEE IN_PROCESS và gửi mật khẩu ban đầu qua email. Email thuộc HR khác đã ACTIVE, chưa có hồ sơ: liên kết hồ sơ với tài khoản HR có sẵn, giữ nguyên role/mật khẩu/trạng thái, không gửi lại email (response không có emailDelivery). Không được tự tạo hồ sơ. Email đã có hồ sơ hoặc thuộc tài khoản không phù hợp trả 409. Hệ thống tự sinh employeeId, employeeCode và tính distance; không tính được distance thì không lưu. Luồng này cũng áp dụng cho từng dòng import.';
+employeesPaths['/api/employees'].post.responses[403] = { description: 'Sai quyền hoặc tự tạo hồ sơ cho mình.' };
+employeesPaths['/api/employees'].post.responses[409] = { description: 'Email đã có hồ sơ hoặc tài khoản không đủ điều kiện liên kết.' };
+const createSchema = employeesPaths['/api/employees'].post.requestBody.content['application/json'].schema;
+createSchema.additionalProperties = false;
+createSchema.required = ['fullName','email','phone','dateOfBirth','gender','address','departmentId','positionId','hireDate','employmentType','currentSalary'];
+employeesPaths['/api/employees/import'].post.description += ' Email thuộc HR khác đã ACTIVE và chưa có hồ sơ sẽ liên kết hồ sơ với tài khoản HR đó; không tạo tài khoản mới hoặc gửi lại mật khẩu. Không được import hồ sơ của chính mình.';
 module.exports = { employeesPaths };

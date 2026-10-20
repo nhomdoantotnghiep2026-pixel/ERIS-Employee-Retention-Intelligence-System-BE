@@ -1,6 +1,7 @@
 const { env } = require('../../config/env');
 const { REFRESH_COOKIE_NAME } = require('./auth.constants');
 const {
+  validateRegisterHrInput,
   validateChangePasswordInput,
   validateEmailInput,
   validateLoginInput,
@@ -34,6 +35,7 @@ class AuthController {
   constructor(authService) {
     this.authService = authService;
     this.login = this.login.bind(this);
+    this.registerHr = this.registerHr.bind(this);
     this.me = this.me.bind(this);
     this.refresh = this.refresh.bind(this);
     this.logout = this.logout.bind(this);
@@ -41,6 +43,14 @@ class AuthController {
     this.requestChangePasswordOtp = this.requestChangePasswordOtp.bind(this);
     this.forgotPassword = this.forgotPassword.bind(this);
     this.resetPassword = this.resetPassword.bind(this);
+  }
+
+  async registerHr(request, response, next) {
+    try {
+      const input = validateRegisterHrInput(request.body);
+      const data = await this.authService.registerHr({ actorId: request.auth.userId, input });
+      return response.status(201).json({ message: 'HR account created successfully.', data });
+    } catch (error) { return next(error); }
   }
 
   async login(request, response, next) {

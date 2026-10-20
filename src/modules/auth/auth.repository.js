@@ -1,6 +1,38 @@
+const { AppError } = require('../../common/errors/app-error');
 class AuthRepository {
   constructor(databasePool) {
     this.databasePool = databasePool;
+  }
+
+  async createHrAccount(actorId, input, passwordHash) {
+    const client = await this.databasePool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: actors } = await client.query(
+        `SELECT role.name AS role, users.status FROM users
+         INNER JOIN role ON role.id = users.role_id WHERE users.id = $1 FOR SHARE OF users`, [actorId]);
+      if (actors[0]?.role !== 'ADMIN' || actors[0]?.status !== 'ACTIVE') throw new AppError(403, 'Only an ACTIVE ADMIN can create HR accounts.');
+      const { rows: roles } = await client.query("SELECT id FROM role WHERE name = 'HR'");
+      if (roles.length !== 1) throw new AppError(503, 'HR role is not configured.');
+      if (input.roleId !== undefined && input.roleId !== roles[0].id) throw new AppError(400, 'roleId must identify HR; ADMIN and EMPLOYEE accounts cannot be created here.');
+      await client.query('SELECT pg_advisory_xact_lock(hashtext(lower($1)))', [input.email]);
+      const { rows: checks } = await client.query(
+        `SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = lower($1)
+                        UNION ALL SELECT 1 FROM employees WHERE lower(email) = lower($1)) AS exists`, [input.email]);
+      if (checks[0].exists) throw new AppError(409, 'Email is already in use.');
+      const { rows } = await client.query(
+        `INSERT INTO users (email, password_hash, full_name, role_id, status, employee_id)
+         VALUES ($1, $2, $3, $4, 'IN_PROCESS', NULL)
+         RETURNING id, email, full_name AS "fullName", role_id AS "roleId", status,
+                   employee_id AS "employeeId", created_at AS "createdAt"`,
+        [input.email, passwordHash, null, roles[0].id]);
+      await client.query('COMMIT');
+      return { ...rows[0], role: 'HR' };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      if (error.code === '23505') throw new AppError(409, 'Email is already in use.');
+      throw error;
+    } finally { client.release(); }
   }
 
   async findUserByEmail(email) {

@@ -18,6 +18,7 @@ function createAuthRouter(authController) {
   const router = express.Router();
 
   router.post(AUTH_ROUTES.LOGIN, authController.login);
+  router.post(AUTH_ROUTES.USER_REGISTER, authenticate, authController.registerHr);
   router.get(AUTH_ROUTES.ME, authenticate, authController.me);
   router.post(AUTH_ROUTES.REFRESH, authController.refresh);
   router.post(AUTH_ROUTES.LOGOUT, authController.logout);

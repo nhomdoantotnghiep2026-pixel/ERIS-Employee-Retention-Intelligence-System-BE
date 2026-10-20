@@ -43,7 +43,19 @@ function validateResetPasswordInput(body) {
   return { email, otp, newPassword };
 }
 
+function validateRegisterHrInput(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new AppError(400, 'Request body must be an object.');
+  if (Object.keys(body).some(key => !['email', 'roleId'].includes(key))) {
+    throw new AppError(400, 'Only email and optional roleId are allowed. This endpoint creates HR accounts only.');
+  }
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  if (email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError(400, 'A valid email is required.');
+  if (body.roleId !== undefined && (!Number.isSafeInteger(body.roleId) || body.roleId <= 0)) throw new AppError(400, 'roleId must be a positive integer identifying HR.');
+  return { email, ...(body.roleId !== undefined ? { roleId: body.roleId } : {}) };
+}
+
 module.exports = {
+  validateRegisterHrInput,
   validateLoginInput,
   validateChangePasswordInput,
   validateEmailInput,
