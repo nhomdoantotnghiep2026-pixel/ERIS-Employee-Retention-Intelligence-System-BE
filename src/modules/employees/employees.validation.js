@@ -3,7 +3,7 @@ const { AppError } = require('../../common/errors/app-error');
 function validatePositiveInteger(value, fieldName) {
   const parsedValue = Number(value);
 
-  if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+  if (!Number.isSafeInteger(parsedValue) || parsedValue <= 0) {
     throw new AppError(400, `${fieldName} must be a positive integer.`);
   }
 
@@ -42,11 +42,11 @@ function validateOptionalString(value, fieldName, maxLength) {
   return value.trim() || null;
 }
 
-function validateOptionalNonNegativeNumber(value, fieldName) {
+function validateOptionalPositiveNumber(value, fieldName) {
   if (value === undefined || value === null) return null;
 
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    throw new AppError(400, `${fieldName} must be a non-negative number.`);
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new AppError(400, `${fieldName} must be a number greater than 0.`);
   }
 
   return value;
@@ -74,7 +74,6 @@ function validateCreateEmployeeInput(input) {
     'dateOfBirth',
     'gender',
     'address',
-    'distanceFromHomeKm',
     'departmentId',
     'positionId',
     'hireDate',
@@ -91,7 +90,7 @@ function validateCreateEmployeeInput(input) {
   }
 
   const email = validateOptionalString(input.email, 'email', 255);
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new AppError(400, 'email must be valid.');
   }
 
@@ -106,12 +105,11 @@ function validateCreateEmployeeInput(input) {
       : typeof input.address === 'string'
         ? input.address.trim() || null
         : (() => { throw new AppError(400, 'address must be a string.'); })(),
-    distanceFromHomeKm: validateOptionalNonNegativeNumber(input.distanceFromHomeKm, 'distanceFromHomeKm'),
     departmentId: validatePositiveInteger(input.departmentId, 'departmentId'),
     positionId: validatePositiveInteger(input.positionId, 'positionId'),
     hireDate: validateDate(input.hireDate, 'hireDate', { required: true }),
     employmentType: validateOptionalString(input.employmentType, 'employmentType', 40),
-    currentSalary: validateOptionalNonNegativeNumber(input.currentSalary, 'currentSalary')
+    currentSalary: validateOptionalPositiveNumber(input.currentSalary, 'currentSalary')
   };
 }
 
@@ -120,17 +118,17 @@ function validateUpdateEmployeeInput(input) {
     throw new AppError(400, 'Request body must be an object.');
   }
 
+  const immutableFields = ['employeeCode', 'email', 'dateOfBirth', 'hireDate'];
+  if (immutableFields.some(field => Object.hasOwn(input, field))) {
+    throw new AppError(400, 'employeeCode, email, dateOfBirth and hireDate cannot be updated.');
+  }
   const allowedFields = new Set([
     'fullName',
-    'email',
     'phone',
-    'dateOfBirth',
     'gender',
     'address',
-    'distanceFromHomeKm',
     'departmentId',
     'positionId',
-    'hireDate',
     'employmentType',
     'currentSalary'
   ]);
@@ -153,24 +151,14 @@ function validateUpdateEmployeeInput(input) {
     employee.fullName = input.fullName.trim();
   }
 
-  if (Object.hasOwn(input, 'email')) {
-    const email = validateOptionalString(input.email, 'email', 255);
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      throw new AppError(400, 'email must be valid.');
-    }
-    employee.email = email?.toLowerCase() || null;
-  }
 
   if (Object.hasOwn(input, 'phone')) employee.phone = validateOptionalString(input.phone, 'phone', 30);
-  if (Object.hasOwn(input, 'dateOfBirth')) employee.dateOfBirth = validateDate(input.dateOfBirth, 'dateOfBirth', { mustBePast: true });
   if (Object.hasOwn(input, 'gender')) employee.gender = validateOptionalString(input.gender, 'gender', 20);
   if (Object.hasOwn(input, 'address')) employee.address = validateOptionalText(input.address, 'address');
-  if (Object.hasOwn(input, 'distanceFromHomeKm')) employee.distanceFromHomeKm = validateOptionalNonNegativeNumber(input.distanceFromHomeKm, 'distanceFromHomeKm');
   if (Object.hasOwn(input, 'departmentId')) employee.departmentId = validatePositiveInteger(input.departmentId, 'departmentId');
   if (Object.hasOwn(input, 'positionId')) employee.positionId = validatePositiveInteger(input.positionId, 'positionId');
-  if (Object.hasOwn(input, 'hireDate')) employee.hireDate = validateDate(input.hireDate, 'hireDate', { required: true });
   if (Object.hasOwn(input, 'employmentType')) employee.employmentType = validateOptionalString(input.employmentType, 'employmentType', 40);
-  if (Object.hasOwn(input, 'currentSalary')) employee.currentSalary = validateOptionalNonNegativeNumber(input.currentSalary, 'currentSalary');
+  if (Object.hasOwn(input, 'currentSalary')) employee.currentSalary = validateOptionalPositiveNumber(input.currentSalary, 'currentSalary');
 
   return employee;
 }
@@ -179,4 +167,25 @@ function validateEmployeeId(value) {
   return validatePositiveInteger(value, 'Employee id');
 }
 
-module.exports = { validateCreateEmployeeInput, validateUpdateEmployeeInput, validateEmployeeId };
+function validateListQuery(query) {
+  const allowed = ['page', 'limit', 'q', 'search', 'departmentId', 'positionId', 'employmentStatus'];
+  if (Object.keys(query).some(k => !allowed.includes(k)) || Object.values(query).some(v => typeof v !== 'string')) {
+    throw new AppError(400, 'Unsupported or repeated query parameter.');
+  }
+  if (query.q !== undefined && query.search !== undefined) throw new AppError(400, 'Use q or search, not both.');
+  const result = {};
+  if (query.page !== undefined || query.limit !== undefined) {
+    result.page = validatePositiveInteger(query.page ?? '1', 'page');
+    result.limit = validatePositiveInteger(query.limit ?? '20', 'limit');
+  }
+  if (result.page !== undefined && (result.limit > 100 || !Number.isSafeInteger((result.page - 1) * result.limit))) throw new AppError(400, 'Invalid pagination; limit must not exceed 100.');
+  result.search = (query.q ?? query.search ?? '').trim();
+  if (result.search.length > 100) throw new AppError(400, 'Search must not exceed 100 characters.');
+  for (const key of ['departmentId', 'positionId']) if (query[key] !== undefined) result[key] = validatePositiveInteger(query[key], key);
+  if (query.employmentStatus !== undefined) {
+    if (!query.employmentStatus.trim() || query.employmentStatus.length > 30) throw new AppError(400, 'Invalid employmentStatus.');
+    result.employmentStatus = query.employmentStatus.trim();
+  }
+  return result;
+}
+module.exports = { validateCreateEmployeeInput, validateUpdateEmployeeInput, validateEmployeeId, validateListQuery };

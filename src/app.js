@@ -38,7 +38,13 @@ const departmentsRepository = new DepartmentsRepository(databasePool);
 const departmentsService = new DepartmentsService({ departmentsRepository });
 const departmentsController = new DepartmentsController(departmentsService);
 const employeesRepository = new EmployeesRepository(databasePool);
-const employeesService = new EmployeesService({ employeesRepository });
+const { createDistanceService } = require('./modules/distance/distance.service');
+const { distanceConfig } = require('./config/distance');
+const employeesService = new EmployeesService({
+  employeesRepository, distanceService: createDistanceService(distanceConfig()),
+  mailTransporter, mailFrom: require('./config/env').env.mail.from,
+  initialPassword: process.env.INITIAL_USER_PASSWORD
+});
 const employeesController = new EmployeesController(employeesService);
 const positionsRepository = new PositionsRepository(databasePool);
 const positionsService = new PositionsService({ positionsRepository });
