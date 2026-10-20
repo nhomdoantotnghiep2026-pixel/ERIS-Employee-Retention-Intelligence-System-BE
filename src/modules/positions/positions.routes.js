@@ -5,7 +5,7 @@ function createPositionsRouter({ positionsController, authenticate }) {
 
   router.post('/', authenticate, positionsController.createPosition);
   router.get('/', authenticate, positionsController.listPositions);
-  router.delete('/:id/status', authenticate, positionsController.deactivatePosition);
+  router.delete('/:id', authenticate, positionsController.deactivatePosition);
   router.get('/:id', authenticate, positionsController.getPosition);
   router.patch('/:id', authenticate, positionsController.updatePosition);
 

@@ -134,9 +134,7 @@ const positionsPaths = {
         403: { description: 'Chỉ tài khoản HR được phép truy cập.' },
         404: { description: 'Không tìm thấy vị trí công việc.' }
       }
-    }
-  },
-  '/api/positions/{id}/status': {
+    },
     delete: {
       tags: ['Positions'],
       summary: 'Ngừng hoạt động vị trí công việc (HR)',
