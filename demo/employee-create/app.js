@@ -24,7 +24,7 @@
       const result = await api('/api/auth/login', { method: 'POST', body: JSON.stringify(Object.fromEntries(form)) });
       if (!result.accessToken) throw new Error('Tài khoản cần kích hoạt và đặt mật khẩu trước khi dùng trang này.');
       token = result.accessToken;
-      const [departments, positions] = await Promise.all([api('/api/departments'), api('/api/positions')]);
+      const [departments, positions] = await Promise.all([api('/api/departments/listDepartments'), api('/api/positions/listPositions')]);
       loadSelect('departmentId', departments.data); loadSelect('positionId', positions.data);
       $('loginPanel').hidden = true; $('employee').hidden = false; $('logout').hidden = false; event.target.reset();
       $('employee').elements.hireDate.value = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());

@@ -144,11 +144,11 @@ employeesPaths['/api/employees'].post.description += ' Bắt buộc đầy đủ
 employeesPaths['/api/employees/{id}'].patch.description += ' HR chỉ được tự sửa phone và address; các trường khác phải nhờ HR khác sửa.';
 employeesPaths['/api/employees/{id}'].delete.description = 'Xóa mềm hồ sơ và ngừng tài khoản liên kết. Không được tự xóa hồ sơ của mình.';
 // One request schema for both employee account creation and existing HR profile linking.
-employeesPaths['/api/employees'].post.description = 'Tạo hồ sơ với đầy đủ 11 trường bắt buộc. Email chưa có tài khoản: hệ thống tạo tài khoản EMPLOYEE IN_PROCESS và gửi mật khẩu ban đầu qua email. Email thuộc HR khác đã ACTIVE, chưa có hồ sơ: liên kết hồ sơ với tài khoản HR có sẵn, giữ nguyên role/mật khẩu/trạng thái, không gửi lại email (response không có emailDelivery). Không được tự tạo hồ sơ. Email đã có hồ sơ hoặc thuộc tài khoản không phù hợp trả 409. Hệ thống tự sinh employeeId, employeeCode và tính distance; không tính được distance thì không lưu. Luồng này cũng áp dụng cho từng dòng import.';
+employeesPaths['/api/employees'].post.description = 'Tạo hồ sơ với 11 trường bắt buộc. Kiểm tra email trùng trong employees (không phân biệt hoa/thường). Nếu users đã có tài khoản HR chưa có employeeId, liên kết hồ sơ mới vào tài khoản đó và đồng bộ full_name; giữ nguyên email, role, mật khẩu và trạng thái, không gửi lại mật khẩu. Nếu chưa có tài khoản, hệ thống tự tạo EMPLOYEE IN_PROCESS. Không được tự tạo hồ sơ HR của mình. Tài khoản INACTIVE hoặc tài khoản khác không phù hợp bị từ chối. Hệ thống tự sinh mã/ID và tính distance. Import áp dụng cùng logic cho từng dòng.';
 employeesPaths['/api/employees'].post.responses[403] = { description: 'Sai quyền hoặc tự tạo hồ sơ cho mình.' };
 employeesPaths['/api/employees'].post.responses[409] = { description: 'Email đã có hồ sơ hoặc tài khoản không đủ điều kiện liên kết.' };
 const createSchema = employeesPaths['/api/employees'].post.requestBody.content['application/json'].schema;
 createSchema.additionalProperties = false;
 createSchema.required = ['fullName','email','phone','dateOfBirth','gender','address','departmentId','positionId','hireDate','employmentType','currentSalary'];
-employeesPaths['/api/employees/import'].post.description += ' Email thuộc HR khác đã ACTIVE và chưa có hồ sơ sẽ liên kết hồ sơ với tài khoản HR đó; không tạo tài khoản mới hoặc gửi lại mật khẩu. Không được import hồ sơ của chính mình.';
+employeesPaths['/api/employees/import'].post.description += ' Email thuộc HR khác đang ACTIVE hoặc IN_PROCESS và chưa có hồ sơ sẽ liên kết hồ sơ với tài khoản HR đó; không tạo tài khoản mới hoặc gửi lại mật khẩu. Không được import hồ sơ của chính mình.';
 module.exports = { employeesPaths };
