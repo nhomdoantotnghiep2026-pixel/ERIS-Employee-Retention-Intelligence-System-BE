@@ -142,4 +142,5 @@ for (const operation of [employeesPaths['/api/employees'].post, employeesPaths['
   operation.responses[422] = { description: 'Không tính được distanceFromHomeKm: không lưu hồ sơ/tài khoản mới; cập nhật địa chỉ giữ nguyên dữ liệu cũ.' };
 }
 employeesPaths['/api/employees'].post.description += ' Bắt buộc đầy đủ 11 trường thông tin; không chấp nhận thiếu, null hoặc chuỗi rỗng. addressRefId là tham chiếu kỹ thuật tùy chọn; mã nhân viên và distance do server tạo.';
+employeesPaths['/api/employees'].post.description = 'Tạo hồ sơ với 11 trường bắt buộc. Kiểm tra email trùng trong employees (không phân biệt hoa/thường). Nếu users đã có tài khoản HR chưa có employeeId, liên kết hồ sơ mới vào tài khoản đó và đồng bộ full_name; giữ nguyên email, role, mật khẩu và trạng thái, không gửi lại mật khẩu. Nếu chưa có tài khoản, hệ thống tự tạo EMPLOYEE IN_PROCESS. Không được tự tạo hồ sơ HR của mình. Tài khoản INACTIVE hoặc tài khoản khác không phù hợp bị từ chối. Hệ thống tự sinh mã/ID và tính distance. Import áp dụng cùng logic cho từng dòng.';
 module.exports = { employeesPaths };

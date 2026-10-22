@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ERIS · Chấm công</title>
+  <link rel="icon" href="data:,"><link rel="stylesheet" href="/attendance-demo/assets/style.css">
+  <script defer src="/attendance-demo/assets/app.js"></script>
+</head>
+<body>
+  <header><strong>ERIS</strong><span>CHẤM CÔNG</span><button id="logout" class="secondary" hidden>Đăng xuất</button></header>
+  <main>
+    <p class="eyebrow">BẢN THỬ NGHIỆM</p><h1>Bắt đầu ngày làm việc</h1>
+    <p class="muted">Đăng nhập và xác nhận vị trí của bạn trong phạm vi 100 m từ công ty.</p>
+    <p id="notice" role="status" aria-live="polite"></p>
+    <section id="loginPanel" class="card">
+      <h2>Đăng nhập</h2><p class="muted">Dùng tài khoản đã kích hoạt và có hồ sơ nhân viên.</p>
+      <form id="login">
+        <label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" required>
+        <label for="password">Mật khẩu</label><input id="password" name="password" type="password" autocomplete="current-password" required>
+        <button id="loginButton" type="submit">Đăng nhập</button>
+      </form>
+    </section>
+    <section id="dashboard" class="card" hidden>
+      <p id="welcome" class="muted"></p><h2 id="stateTitle">Đang kiểm tra chấm công…</h2>
+      <p id="stateDetail" class="muted"></p>
+      <dl><div><dt>Ngày làm việc</dt><dd id="day">—</dd></div><div><dt>Giờ check-in</dt><dd id="checkTime">—</dd></div><div><dt>Trạng thái chấm công</dt><dd id="locationStatus">—</dd></div><div><dt>Giờ check-out</dt><dd id="checkoutTime">—</dd></div><div><dt>Thời gian làm việc</dt><dd id="working">0 phút</dd></div><div><dt>Tăng ca</dt><dd id="overtime">0 phút</dd></div></dl>
+      <div class="actions"><button id="openCheck" disabled>Check-in</button><button id="refresh" class="secondary">Tải lại trạng thái</button></div>
+      <p class="footnote">Dữ liệu được lưu trong bảng attendance. Phút làm việc và tăng ca được tính khi check-out.</p>
+    </section>
+  </main>
+  <dialog id="checkDialog" aria-labelledby="dialogTitle" aria-describedby="dialogDescription">
+    <div class="dialog-body"><p class="eyebrow">XÁC NHẬN CÓ MẶT</p><h2 id="dialogTitle">Check-in hôm nay</h2>
+      <p id="dialogDescription" class="muted">Bấm nút bên dưới và cho phép trình duyệt truy cập vị trí. Bạn cần ở trong bán kính 100 m từ công ty.</p>
+      <p id="gpsStatus" role="status" aria-live="polite"></p>
+      <div class="actions"><button id="gpsButton">Lấy GPS và check-in</button><button id="later" class="secondary">Để sau</button></div>
+      <p class="footnote">GPS chỉ được lấy khi bạn bấm nút. Không nhập tọa độ thủ công trên màn hình này.</p>
+    </div>
+  </dialog>
+</body>
+</html>

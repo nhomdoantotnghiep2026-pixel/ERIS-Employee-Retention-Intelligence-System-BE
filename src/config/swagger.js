@@ -25,7 +25,7 @@ const swaggerSpec = swaggerJsdoc({
         UserRegisterRequest: { type: 'object', required: ['email', 'roleId'], properties: { email: { type: 'string', format: 'email' }, roleId: { type: 'integer', example: 2 }, employeeId: { type: 'integer', description: 'Bắt buộc khi role là EMPLOYEE.', example: 12 } } },
         User: { type: 'object', properties: { id: { type: 'integer', example: 3 }, email: { type: 'string', format: 'email', example: 'employee@eris.com' }, fullName: { type: 'string', example: 'Trần Văn A', nullable: true }, role: { type: 'string', example: 'EMPLOYEE' }, status: { type: 'string', enum: ['ACTIVE', 'IN_PROCESS'], example: 'ACTIVE' } } },
         AccessTokenResponse: { type: 'object', properties: { accessToken: { type: 'string', description: 'JWT access token.' } } },
-        LoginResponse: { oneOf: [{ $ref: '#/components/schemas/AccessTokenResponse' }, { type: 'object', properties: { message: { type: 'string' }, passwordChangeToken: { type: 'string' } } }] },
+LoginResponse: { oneOf: [{ $ref: '#/components/schemas/AccessTokenResponse' }, { type: 'object', properties: { message: { type: 'string' }, passwordChangeToken: { type: 'string' } } }] },
         Error: { type: 'object', properties: { message: { type: 'string' } } }
       },
       responses: {

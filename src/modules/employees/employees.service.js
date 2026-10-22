@@ -34,14 +34,21 @@ class EmployeesService {
   async createEmployee({ actorId, employee, distanceCache }) {
     const checks = await this.employeesRepository.preflightCreate(actorId, employee);
     if (checks.actorRole !== 'HR') throw new AppError(403, 'Only HR can create employees.');
-    if (checks.emailExists) throw new AppError(409, 'Email is already in use.');
+    if (checks.emailExists) throw new AppError(409, 'Email already has an employee profile.');
+    const accounts = checks.accounts || [];
+    if (accounts.length > 1) throw new AppError(409, 'Multiple accounts use this email.');
+    const existingAccount = accounts[0];
+    if (existingAccount && Number(existingAccount.id) === Number(actorId)) throw new AppError(403, 'Another HR must create your profile.');
+    if (existingAccount && (existingAccount.role !== 'HR' || existingAccount.employeeId != null || !['ACTIVE','IN_PROCESS'].includes(existingAccount.status))) {
+      throw new AppError(409, 'Existing account cannot be linked: only HR without an employee profile is supported.');
+    }
     if (!checks.activeDepartment) throw new AppError(404, 'Active department not found.');
     if (!checks.activePosition) throw new AppError(404, 'Active position not found.');
     if (!employee.email) throw new AppError(400, 'Email is required for the employee account.');
-    if (typeof this.initialPassword !== 'string' || this.initialPassword.length < 8 || Buffer.byteLength(this.initialPassword) > 72) {
+    if (!existingAccount && (typeof this.initialPassword !== 'string' || this.initialPassword.length < 8 || Buffer.byteLength(this.initialPassword) > 72)) {
       throw new AppError(503, 'INITIAL_USER_PASSWORD must contain at least 8 characters and at most 72 UTF-8 bytes.');
     }
-    if (!this.mailTransporter || !this.mailFrom) throw new AppError(503, 'Account email delivery is not configured.');
+    if (!existingAccount && (!this.mailTransporter || !this.mailFrom)) throw new AppError(503, 'Account email delivery is not configured.');
     // The cache belongs to one import request; no addresses or stale results are retained globally.
     const cacheKey = JSON.stringify([employee.address.trim(), employee.addressRefId || null]);
     if (distanceCache && !distanceCache.has(cacheKey)) {
@@ -54,9 +61,10 @@ class EmployeesService {
     if (calculation.status !== 'READY' || !Number.isFinite(calculation.distanceFromHomeKm) || calculation.distanceFromHomeKm < 0) {
       throw new AppError(422, 'Employee was not saved because distance could not be calculated: ' + calculation.reason);
     }
-    const passwordHash = await hashPassword(this.initialPassword);
+    const passwordHash = existingAccount ? null : await hashPassword(this.initialPassword);
     const created = await this.employeesRepository.createWithAccount(
-      { ...employee, distanceFromHomeKm: calculation.distanceFromHomeKm }, passwordHash);
+      { ...employee, distanceFromHomeKm: calculation.distanceFromHomeKm }, passwordHash, actorId);
+    if (created.accountCreated === false) return { ...output(created.employee, calculation), account: created.account, accountCreated: false };
     let emailDelivery = 'SENT';
     try {
       const delivery = await this.mailTransporter.sendMail({
