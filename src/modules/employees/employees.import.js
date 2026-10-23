@@ -1,10 +1,10 @@
 const ExcelJS = require('exceljs');
 const multer = require('multer');
 const { AppError } = require('../../common/errors/app-error');
-const { validateCreateEmployeeInput } = require('./employees.validation');
+const { validateCreateEmployeeInput, requiredEmployeeFields } = require('./employees.validation');
 
 const fields = ['fullName','email','phone','dateOfBirth','gender','address','departmentId','positionId','hireDate','employmentType','currentSalary'];
-const required = ['fullName','email','departmentId','positionId','hireDate'];
+const required = requiredEmployeeFields;
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 0, parts: 1 },
@@ -37,7 +37,7 @@ async function parseWorkbook(buffer) {
           if (!['dateOfBirth','hireDate'].includes(field) || !Number.isFinite(value.getTime())) throw new AppError(400, 'Invalid date cell.');
           value = value.toISOString().slice(0,10);
         } else if (typeof value === 'object') {
-        
+
           throw new AppError(400, `Use plain values, not formulas or objects, in ${field}.`);
         }
         if (['departmentId','positionId','currentSalary'].includes(field) && typeof value === 'string' && value.trim()) value = Number(value);
@@ -55,6 +55,28 @@ async function parseWorkbook(buffer) {
   return rows;
 }
 
+async function processEmployeeRows(rows, service, actorId, concurrency = 3) {
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 3) throw new AppError(400, 'Import concurrency must be between 1 and 3.');
+  const results = new Array(rows.length);
+  const distanceCache = new Map();
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < rows.length) {
+      const index = nextIndex++, row = rows[index];
+      if (!row.input) { results[index] = row; continue; }
+      try {
+        const data = await service.createEmployee({ actorId, employee: row.input, distanceCache });
+        results[index] = { row: row.row, status: 'CREATED', data };
+      } catch (error) {
+        results[index] = { row: row.row, status: 'FAILED', statusCode: error.statusCode || 500,
+          message: error.statusCode ? error.message : 'Unable to create employee.' };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, rows.length) }, worker));
+  return results;
+}
+
 function registerEmployeeImport(router, authenticate, service) {
   router.post('/import', authenticate, async (req, res, next) => {
     try { await service.assertHr(req.auth.userId); }
@@ -64,22 +86,11 @@ function registerEmployeeImport(router, authenticate, service) {
       try {
         if (!req.file) throw new AppError(400, 'Upload an Excel file using the file field.');
         const rows = await parseWorkbook(req.file.buffer);
-        const results = [];
-        
-        for (const row of rows) {
-          if (!row.input) { results.push(row); continue; }
-          try {
-            const data = await service.createEmployee({ actorId: req.auth.userId, employee: row.input });
-            results.push({ row: row.row, status: 'CREATED', data });
-          } catch (error) {
-            results.push({ row: row.row, status: 'FAILED', statusCode: error.statusCode || 500,
-              message: error.statusCode ? error.message : 'Unable to create employee.' });
-          }
-        }
+        const results = await processEmployeeRows(rows, service, req.auth.userId);
         const created = results.filter(r => r.status === 'CREATED').length;
         res.status(200).json({ total: results.length, created, failed: results.length - created, results });
       } catch (error) { next(error); }
     });
   });
 }
-module.exports = { parseWorkbook, registerEmployeeImport };
+module.exports = { parseWorkbook, registerEmployeeImport, processEmployeeRows };

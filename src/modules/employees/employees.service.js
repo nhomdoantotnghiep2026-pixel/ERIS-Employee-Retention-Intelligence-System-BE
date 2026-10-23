@@ -16,6 +16,36 @@ class EmployeesService {
     this.initialPassword = initialPassword;
   }
 
+  async _createHrProfile({ actorId, hrUserId, employee }) {
+    await this.assertHr(actorId);
+    const checkTarget = target => {
+      if (!target) throw new AppError(404, 'HR account not found.');
+      if (Number(target.id) === Number(actorId)) throw new AppError(403, 'Another HR must create your profile.');
+      if (target.role !== 'HR' || target.status !== 'ACTIVE') throw new AppError(403, 'Target must be an ACTIVE HR.');
+      if (target.employeeId != null) throw new AppError(409, 'HR already has a profile.');
+      if (target.email.trim().toLowerCase() !== employee.email) throw new AppError(400, 'Email must match the selected HR account.');
+    };
+    checkTarget(await this.employeesRepository.findHrTarget(hrUserId));
+    const calculation = await resolveEmployeeDistance(employee.address, this.distanceService, employee.addressRefId);
+    if (calculation.status !== 'READY' || !Number.isFinite(calculation.distanceFromHomeKm) || calculation.distanceFromHomeKm < 0) {
+      throw new AppError(422, 'Profile was not saved because distance could not be calculated: ' + calculation.reason);
+    }
+    return this.employeesRepository.withTransaction(async repository => {
+      // Lock both users in ID order so two HR can create each other's profiles safely.
+      const accounts = new Map();
+      for (const id of [...new Set([actorId, hrUserId])].sort((a,b) => a-b)) accounts.set(id, await repository.findHrTarget(id, true));
+      const actor = accounts.get(actorId);
+      if (actor?.role !== 'HR' || actor?.status !== 'ACTIVE') throw new AppError(403, 'Only ACTIVE HR can create profiles.');
+      checkTarget(accounts.get(hrUserId));
+      await repository.databasePool.query('SELECT pg_advisory_xact_lock(hashtext(lower($1)))', [employee.email]);
+      if (await repository.findByEmail(employee.email)) throw new AppError(409, 'Employee email already exists.');
+      if (!await repository.findActiveDepartmentById(employee.departmentId)) throw new AppError(404, 'Active department not found.');
+      if (!await repository.findActivePositionById(employee.positionId)) throw new AppError(404, 'Active position not found.');
+      const record = await repository.create({ ...employee, distanceFromHomeKm: calculation.distanceFromHomeKm });
+      const account = await repository.linkHrProfile(hrUserId, record);
+      return { ...output(record, calculation), account };
+    });
+  }
   async assertHr(actorId) {
     const actor = await this.employeesRepository.findUserRoleById(actorId);
     if (actor?.role !== 'HR') throw new AppError(403, 'Only HR can view employees.');
@@ -84,7 +114,9 @@ class EmployeesService {
 
   async deleteEmployee({ actorId, employeeId }) {
     await this.assertHr(actorId);
-    return this.employeesRepository.deactivate(employeeId);
+    const actor = await this.employeesRepository.findUserRoleById(actorId);
+    if (Number(actor?.employeeId) === Number(employeeId)) throw new AppError(403, 'You cannot deactivate your own profile.');
+    return this.employeesRepository.deactivate(employeeId, actorId);
   }
   async updateEmployee({ actorId, employeeId, employee }) {
     if (['employeeCode', 'email', 'dateOfBirth', 'hireDate'].some(key => Object.hasOwn(employee, key))) {
@@ -95,6 +127,9 @@ class EmployeesService {
       throw new AppError(403, 'Only HR can update employees.');
     }
 
+    if (Number(actor.employeeId) === Number(employeeId) && Object.keys(employee).some(key => !['phone', 'address', 'addressRefId'].includes(key))) {
+      throw new AppError(403, 'You may only update phone and address on your own profile.');
+    }
     const current = await this.employeesRepository.findById(employeeId);
     if (!current) {
       throw new AppError(404, 'Employee not found.');
@@ -123,13 +158,15 @@ class EmployeesService {
     let calculation;
     const changes = { ...employee };
     if (Object.hasOwn(employee, 'address')) {
-      calculation = await resolveEmployeeDistance(employee.address, this.distanceService);
+      calculation = await resolveEmployeeDistance(employee.address, this.distanceService, employee.addressRefId);
       if (calculation.status !== 'READY' || !Number.isFinite(calculation.distanceFromHomeKm) || calculation.distanceFromHomeKm < 0) {
         throw new AppError(422, 'Employee was not updated because distance could not be calculated: ' + calculation.reason);
       }
       changes.distanceFromHomeKm = calculation.distanceFromHomeKm;
     }
-    const row = await this.employeesRepository.update(employeeId, changes);
+    const row = this.employeesRepository.updateAuthorized
+      ? await this.employeesRepository.updateAuthorized(actorId, employeeId, changes)
+      : await this.employeesRepository.update(employeeId, changes);
     if (!row) {
       const latest = await this.employeesRepository.findById(employeeId);
       if (latest?.employmentStatus === 'INACTIVE') throw new AppError(409, 'Inactive employees cannot be updated.');

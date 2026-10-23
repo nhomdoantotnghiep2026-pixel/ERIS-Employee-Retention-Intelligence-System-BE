@@ -11,11 +11,35 @@ const { env } = require('../../config/env');
 const { OTP_PURPOSE, USER_STATUS } = require('./auth.constants');
 
 class AuthService {
-  constructor({ authRepository, mailTransporter, redisClient, ensureRedisConnection }) {
+  constructor({ authRepository, mailTransporter, redisClient, ensureRedisConnection, initialPassword = process.env.INITIAL_USER_PASSWORD }) {
     this.authRepository = authRepository;
+    this.initialPassword = initialPassword;
     this.mailTransporter = mailTransporter;
     this.redisClient = redisClient;
     this.ensureRedisConnection = ensureRedisConnection;
+  }
+
+  async registerHr({ actorId, input }) {
+    const actor = await this.authRepository.findCurrentUserById(actorId);
+    if (actor?.role !== 'ADMIN' || actor?.status !== USER_STATUS.ACTIVE) throw new AppError(403, 'Only an ACTIVE ADMIN can create HR accounts.');
+    if (typeof this.initialPassword !== 'string' || this.initialPassword.length < 8 || Buffer.byteLength(this.initialPassword) > 72) {
+      throw new AppError(503, 'INITIAL_USER_PASSWORD must contain at least 8 characters and at most 72 UTF-8 bytes.');
+    }
+    if (!this.mailTransporter?.sendMail || !env.mail.from) throw new AppError(503, 'Account email delivery is not configured.');
+    const account = await this.authRepository.createHrAccount(actorId, input, await hashPassword(this.initialPassword));
+    let emailDelivery = 'SENT';
+    try {
+      const delivery = await this.mailTransporter.sendMail({
+        from: env.mail.from, to: account.email, subject: 'ERIS - Thiết lập tài khoản HR',
+        text: 'Tài khoản HR của bạn đã được tạo trên ERIS.\nEmail: ' + account.email +
+          '\nMật khẩu ban đầu: ' + this.initialPassword +
+          '\nĐăng nhập lần đầu để nhận OTP qua email, xác minh OTP và đặt mật khẩu riêng. Tài khoản chỉ ACTIVE sau khi hoàn tất. Sau đó đăng nhập lại bằng mật khẩu mới.'
+      });
+      if (delivery?.rejected?.length || (Array.isArray(delivery?.accepted) && !delivery.accepted.length)) emailDelivery = 'FAILED';
+    } catch { emailDelivery = 'FAILED'; }
+    return { ...account, emailDelivery, ...(emailDelivery === 'FAILED' ? {
+      warning: 'HR account saved in IN_PROCESS, but invitation email failed. Do not create again. ADMIN can provide the configured initial password securely; repair SMTP before first login to receive OTP.'
+    } : {}) };
   }
 
   async login({ email, password }) {

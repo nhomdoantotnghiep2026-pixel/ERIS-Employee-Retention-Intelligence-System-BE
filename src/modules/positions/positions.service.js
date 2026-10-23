@@ -54,6 +54,29 @@ class PositionsService {
 
     return this.positionsRepository.update(positionId, position);
   }
+
+  async deactivatePosition({ actorId, positionId }) {
+    const actor = await this.positionsRepository.findUserRoleById(actorId);
+
+    if (actor?.role !== 'HR') {
+      throw new AppError(403, 'Only HR can deactivate positions.');
+    }
+
+    const position = await this.positionsRepository.findById(positionId);
+    if (!position) {
+      throw new AppError(404, 'Position not found.');
+    }
+
+    if (position.status === 'INACTIVE') {
+      throw new AppError(409, 'Position is already inactive.');
+    }
+
+    if (await this.positionsRepository.hasActiveEmployees(positionId)) {
+      throw new AppError(409, 'Cannot deactivate a position that still has active employees.');
+    }
+
+    return this.positionsRepository.deactivate(positionId);
+  }
 }
 
 module.exports = { PositionsService };

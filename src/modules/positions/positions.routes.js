@@ -4,7 +4,8 @@ function createPositionsRouter({ positionsController, authenticate }) {
   const router = express.Router();
 
   router.post('/', authenticate, positionsController.createPosition);
-  router.get('/listPositions', authenticate, positionsController.listPositions);
+  router.get('/', authenticate, positionsController.listPositions);
+  router.delete('/:id', authenticate, positionsController.deactivatePosition);
   router.get('/:id', authenticate, positionsController.getPosition);
   router.patch('/:id', authenticate, positionsController.updatePosition);
 

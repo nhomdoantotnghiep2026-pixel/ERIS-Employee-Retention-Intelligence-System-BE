@@ -26,9 +26,10 @@ const authPaths = {
   },
   '/api/auth/user_register': {
     post: {
-      tags: ['Auth'], summary: 'ADMIN tạo user HR hoặc EMPLOYEE', security: [{ bearerAuth: [] }],
+      tags: ['Auth'], summary: 'AUTH-05 — ADMIN tạo tài khoản HR', security: [{ bearerAuth: [] }],
+      description: 'Chỉ ADMIN đang ACTIVE được tạo HR. ADMIN chỉ cần nhập email; không nhập fullName hoặc employeeId. Họ tên và liên kết hồ sơ được cập nhật khi HR khác tạo hồ sơ qua POST /api/employees. Email bắt buộc, không được trùng users hoặc employees, không phân biệt hoa/thường. Mật khẩu ban đầu lấy từ INITIAL_USER_PASSWORD và được hash trước khi lưu. Tài khoản mới IN_PROCESS, employeeId là null; không tạo ADMIN/EMPLOYEE ở endpoint này. Email hướng dẫn được gửi sau khi lưu. Nếu data.emailDelivery là FAILED, tài khoản vẫn đã được tạo: không gửi lại request tạo. Đăng nhập lần đầu sẽ gửi OTP và trả passwordChangeToken; xác minh OTP và đổi mật khẩu qua PATCH /api/auth/change-password để ACTIVE, rồi đăng nhập lại. Không trả mật khẩu/hash trong response.',
       requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/UserRegisterRequest' } } } },
-      responses: { 201: { description: 'User được tạo.' }, 400: { $ref: '#/components/responses/ValidationError' }, 401: { $ref: '#/components/responses/UnauthorizedError' }, 403: { description: 'Chỉ ADMIN được phép.' } }
+      responses: { 201: { description: 'Trả message và data: id, email, fullName, roleId, role HR, status IN_PROCESS, employeeId null, createdAt, emailDelivery SENT/FAILED.' }, 400: { $ref: '#/components/responses/ValidationError' }, 401: { $ref: '#/components/responses/UnauthorizedError' }, 403: { description: 'Chỉ ADMIN đang ACTIVE được phép.' }, 409: { description: 'Email đã tồn tại trong users hoặc employees.' }, 503: { description: 'Thiếu role HR, mật khẩu ban đầu hoặc cấu hình gửi email.' } }
     }
   },
   '/api/auth/change-password/otp': {
