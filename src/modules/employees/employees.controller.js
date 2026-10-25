@@ -10,6 +10,7 @@ class EmployeesController {
     this.employeesService = employeesService;
     this.listEmployees = this.listEmployees.bind(this);
     this.getEmployee = this.getEmployee.bind(this);
+    this.getMyProfile = this.getMyProfile.bind(this);
     this.createEmployee = this.createEmployee.bind(this);
     this.deleteEmployee = this.deleteEmployee.bind(this);
     this.updateEmployee = this.updateEmployee.bind(this);
@@ -25,6 +26,12 @@ class EmployeesController {
     try {
       const data = await this.employeesService.getEmployee({ actorId: request.auth.userId, employeeId: validateEmployeeId(request.params.id) });
       return response.json(data);
+    } catch (error) { return next(error); }
+  }
+  async getMyProfile(request, response, next) {
+    try {
+      const data = await this.employeesService.getMyProfile(request.auth.userId);
+      return response.json({ data });
     } catch (error) { return next(error); }
   }
   async createEmployee(request, response, next) {

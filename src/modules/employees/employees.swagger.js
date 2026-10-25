@@ -94,6 +94,19 @@ employeesPaths['/api/employees/{id}'].get = {
   parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer', minimum: 1 } }],
   responses: { 200: { description: 'Trả trực tiếp hồ sơ nhân viên, gồm distanceFromHomeKm và distanceCalculation; không bọc trong data.' }, 400: { description: 'ID nhân viên phải là số nguyên dương.' }, 401: { description: 'Thiếu hoặc sai token truy cập.' }, 403: { description: 'Chỉ tài khoản HR được phép truy cập.' }, 404: { description: 'Không tìm thấy nhân viên.' } }
 };
+employeesPaths['/api/employees/me'] = {
+  get: {
+    tags: ['Employees'],
+    summary: 'Xem hồ sơ nhân viên của chính mình',
+    description: 'Lấy hồ sơ employee được liên kết với user trong access token. Không truyền employee ID. User chưa có hồ sơ employee sẽ nhận 404.',
+    security: [{ bearerAuth: [] }],
+    responses: {
+      200: { description: 'Hồ sơ của user hiện tại, gồm department và position.' },
+      401: { description: 'Thiếu hoặc sai token truy cập.' },
+      404: { description: 'User chưa có hồ sơ employee được liên kết.' }
+    }
+  }
+};
 for (const [route, method] of [['/api/employees','post'], ['/api/employees/{id}','patch']]) {
   employeesPaths[route][method].description = 'Hệ thống tự xác định tọa độ và tính quãng đường ô tô bằng Vietmap Route v4 trước khi lưu. Không gửi distanceFromHomeKm trong dữ liệu đầu vào. Kết quả trong data gồm distanceFromHomeKm (đơn vị km) và distanceCalculation: READY (đã tính được), UNAVAILABLE (chưa tính được, xem reason) hoặc NOT_PROVIDED (chưa nhập địa chỉ). Không cần bước xem trước hoặc xác nhận thủ công. Nếu chưa tính được khoảng cách, trả 422 và không lưu hồ sơ/tài khoản.';
 }

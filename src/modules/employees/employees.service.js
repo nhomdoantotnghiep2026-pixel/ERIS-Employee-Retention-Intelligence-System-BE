@@ -61,6 +61,11 @@ class EmployeesService {
     if (!row) throw new AppError(404, 'Employee not found.');
     return output(row);
   }
+  async getMyProfile(userId) {
+    const row = await this.employeesRepository.findOwnProfileByUserId(userId);
+    if (!row) throw new AppError(404, 'No employee profile is linked to this user.');
+    return output(row);
+  }
   async createEmployee({ actorId, employee, distanceCache }) {
     const checks = await this.employeesRepository.preflightCreate(actorId, employee);
     if (checks.actorRole !== 'HR') throw new AppError(403, 'Only HR can create employees.');
