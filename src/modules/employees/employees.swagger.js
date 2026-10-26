@@ -17,7 +17,8 @@ const employeesPaths = {
                 phone: { type: 'string', example: '0901234567' },
                 dateOfBirth: { type: 'string', format: 'date', example: '2000-01-15' },
                 gender: { type: 'string', example: 'MALE' },
-                address: { type: 'string', example: '68 Út Tịch, Phường 4, Quận Tân Bình, Thành phố Hồ Chí Minh' },                departmentId: { type: 'integer', minimum: 1, example: 1 },
+                address: { type: 'string', example: '68 Út Tịch, Phường 4, Quận Tân Bình, Thành phố Hồ Chí Minh' },
+                departmentId: { type: 'integer', minimum: 1, example: 1 },
                 positionId: { type: 'integer', minimum: 1, example: 2 },
                 hireDate: { type: 'string', format: 'date', example: '2026-10-19' },
                 employmentType: { type: 'string', example: 'FULL_TIME' },
@@ -61,7 +62,8 @@ const employeesPaths = {
                 phone: { type: 'string', nullable: true },
                 dateOfBirth: { type: 'string', format: 'date', nullable: true },
                 gender: { type: 'string', nullable: true },
-                address: { type: 'string', nullable: true },                departmentId: { type: 'integer', minimum: 1 },
+                address: { type: 'string', nullable: true },
+                departmentId: { type: 'integer', minimum: 1 },
                 positionId: { type: 'integer', minimum: 1 },
                 hireDate: { type: 'string', format: 'date' },
                 employmentType: { type: 'string', nullable: true },
@@ -93,6 +95,19 @@ employeesPaths['/api/employees/{id}'].get = {
   tags: ['Employees'], summary: 'Xem chi tiết nhân viên (HR)', security: [{ bearerAuth: [] }],
   parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer', minimum: 1 } }],
   responses: { 200: { description: 'Trả trực tiếp hồ sơ nhân viên, gồm distanceFromHomeKm và distanceCalculation; không bọc trong data.' }, 400: { description: 'ID nhân viên phải là số nguyên dương.' }, 401: { description: 'Thiếu hoặc sai token truy cập.' }, 403: { description: 'Chỉ tài khoản HR được phép truy cập.' }, 404: { description: 'Không tìm thấy nhân viên.' } }
+};
+employeesPaths['/api/employees/me'] = {
+  get: {
+    tags: ['Employees'],
+    summary: 'Xem hồ sơ nhân viên của chính mình',
+    description: 'Lấy hồ sơ employee được liên kết với user trong access token. Không truyền employee ID. User chưa có hồ sơ employee sẽ nhận 404.',
+    security: [{ bearerAuth: [] }],
+    responses: {
+      200: { description: 'Hồ sơ của user hiện tại, gồm department và position.' },
+      401: { description: 'Thiếu hoặc sai token truy cập.' },
+      404: { description: 'User chưa có hồ sơ employee được liên kết.' }
+    }
+  }
 };
 for (const [route, method] of [['/api/employees','post'], ['/api/employees/{id}','patch']]) {
   employeesPaths[route][method].description = 'Hệ thống tự xác định tọa độ và tính quãng đường ô tô bằng Vietmap Route v4 trước khi lưu. Không gửi distanceFromHomeKm trong dữ liệu đầu vào. Kết quả trong data gồm distanceFromHomeKm (đơn vị km) và distanceCalculation: READY (đã tính được), UNAVAILABLE (chưa tính được, xem reason) hoặc NOT_PROVIDED (chưa nhập địa chỉ). Không cần bước xem trước hoặc xác nhận thủ công. Nếu chưa tính được khoảng cách, trả 422 và không lưu hồ sơ/tài khoản.';

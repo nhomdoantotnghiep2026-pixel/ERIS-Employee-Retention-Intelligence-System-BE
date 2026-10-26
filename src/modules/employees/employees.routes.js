@@ -6,6 +6,7 @@ function createEmployeesRouter({ employeesController, authenticate }) {
   registerEmployeeImport(router, authenticate, employeesController.employeesService);
 
   router.get('/', authenticate, employeesController.listEmployees);
+  router.get('/me', authenticate, employeesController.getMyProfile);
   router.get('/:id', authenticate, employeesController.getEmployee);
   router.post('/', authenticate, employeesController.createEmployee);
   router.delete('/:id', authenticate, employeesController.deleteEmployee);

@@ -258,6 +258,44 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
     return rows[0] || null;
   }
 
+  async findOwnProfileByUserId(userId) {
+    const { rows } = await this.databasePool.query(
+      `SELECT
+         employees.id,
+         employees.employee_code AS "employeeCode",
+         employees.full_name AS "fullName",
+         employees.email,
+         employees.phone,
+         employees.date_of_birth AS "dateOfBirth",
+         employees.gender,
+         employees.address,
+         employees.distance_from_home_km AS "distanceFromHomeKm",
+         employees.hire_date AS "hireDate",
+         employees.employment_type AS "employmentType",
+         employees.employment_status AS "employmentStatus",
+         employees.current_salary AS "currentSalary",
+         employees.created_at AS "createdAt",
+         employees.updated_at AS "updatedAt",
+         departments.id AS "departmentId",
+         departments.code AS "departmentCode",
+         departments.name AS "departmentName",
+         positions.id AS "positionId",
+         positions.code AS "positionCode",
+         positions.name AS "positionName",
+         positions.job_level AS "jobLevel"
+       FROM users
+       INNER JOIN employees ON employees.id = users.employee_id
+       LEFT JOIN departments ON departments.id = employees.department_id
+       LEFT JOIN positions ON positions.id = employees.position_id
+       WHERE users.id = $1
+         AND users.status = 'ACTIVE'
+       LIMIT 1`,
+      [userId]
+    );
+
+    return rows[0] || null;
+  }
+
   async deactivate(id, actorId) {
     const client = await this.databasePool.connect();
     try {
