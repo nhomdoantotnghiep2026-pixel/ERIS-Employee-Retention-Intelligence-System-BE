@@ -54,12 +54,20 @@ const usersRepository = new UsersRepository(databasePool);
 const usersService = new UsersService({ usersRepository });
 const usersController = new UsersController(usersService);
 
+app.get('/employee-education-demo', (_req,res) => { res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/employee-education/index.html')); });
+app.use('/employee-education-demo/assets', express.static(require('node:path').join(__dirname,'../demo/employee-education'),{index:false,etag:false,setHeaders:res=>res.set('Cache-Control','no-store')}));
 app.get('/employee-create-demo', (_req, res) => res.sendFile(require('node:path').join(__dirname, '../demo/employee-create/index.html')));
 app.use('/employee-create-demo/assets', express.static(require('node:path').join(__dirname, '../demo/employee-create'), { index: false }));
 app.use('/api/distance', require('./modules/distance/distance.routes').createDistanceRouter({ authenticate, employeesService, distanceService }));
 
 app.use('/api/auth', createAuthRouter(authController));
 app.use('/api/departments', createDepartmentsRouter({ departmentsController, authenticate }));
+const { EducationRepository } = require('./modules/employee-education/education.repository');
+const { EducationService } = require('./modules/employee-education/education.service');
+const { createEducationRouter, createAllEducationRouter } = require('./modules/employee-education/education.routes');
+const educationService = new EducationService(new EducationRepository(databasePool));
+app.use('/api/employee-educations', createAllEducationRouter({ service: educationService, authenticate }));
+app.use('/api/employees/:employeeId/educations', createEducationRouter({ service: educationService, authenticate }));
 app.use('/api/employees', createEmployeesRouter({ employeesController, authenticate }));
 app.use('/api/positions', createPositionsRouter({ positionsController, authenticate }));
 app.use('/api/users', createUsersRouter({ usersController, authenticate }));
