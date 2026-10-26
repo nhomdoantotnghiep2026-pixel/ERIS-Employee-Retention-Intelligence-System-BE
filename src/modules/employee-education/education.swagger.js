@@ -25,6 +25,19 @@ function operation(summary, { id = false, body = false, create = false } = {}) {
   };
 }
 const educationPaths = {
+  '/api/employees/me/educations': {
+    get: {
+      tags: ['Employee Education'],
+      summary: 'Xem bằng cấp của chính mình',
+      description: 'Tài khoản EMPLOYEE hoặc HR đang ACTIVE và có hồ sơ nhân viên ACTIVE chỉ xem được các bằng cấp ACTIVE của chính mình. Backend lấy employeeId từ tài khoản đăng nhập.',
+      security: [{ bearerAuth: [] }],
+      responses: {
+        200: { description: 'data là danh sách bằng cấp đang ACTIVE của chính người đăng nhập.' },
+        401: { description: 'Thiếu hoặc sai access token.' },
+        403: { description: 'Tài khoản hoặc hồ sơ chưa ACTIVE.' }
+      }
+    }
+  },
   '/api/employees/{employeeId}/educations': {
     post: operation('Thêm bằng cấp cho nhân viên (HR)', { body: true, create: true }),
     get: operation('Xem bằng cấp của nhân viên (HR)')
@@ -43,4 +56,13 @@ const educationPaths = {
     get: { tags: ['Employee Education'], summary: 'Nhân viên đủ điều kiện xem bằng cấp (HR)', description: 'Chỉ trả nhân viên có hồ sơ ACTIVE và tài khoản liên kết ACTIVE.', security: [{ bearerAuth: [] }], responses: { 200: { description: 'data gồm id, employeeCode, fullName, dateOfBirth và employmentStatus.' }, 401: { description: 'Thiếu hoặc sai token.' }, 403: { description: 'Chỉ HR ACTIVE.' } } }
   }
 };
+for (const [path, method] of [
+  ['/api/employees/{employeeId}/educations', 'post'],
+  ['/api/employees/{employeeId}/educations/{educationId}', 'patch'],
+  ['/api/employees/{employeeId}/educations/{educationId}', 'delete']
+]) {
+  const api = educationPaths[path][method];
+  api.description += ' HR không được tự thay đổi bằng cấp của mình; một HR khác phải thực hiện.';
+  api.responses[403] = { description: 'Chỉ HR ACTIVE; không được tự thay đổi bằng cấp của mình.' };
+}
 module.exports = { educationPaths };

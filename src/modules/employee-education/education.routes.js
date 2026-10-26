@@ -35,4 +35,12 @@ function createAllEducationRouter({service,authenticate}) {
   });
   return router;
 }
-module.exports = { createEducationRouter, createAllEducationRouter };
+function createOwnEducationRouter({service,authenticate}) {
+  const router=express.Router();
+  router.get('/',authenticate,async(req,res,next)=>{
+    try { res.set('Cache-Control','no-store, private'); res.json(await service.listOwn(req.auth.userId)); }
+    catch(error){next(error);}
+  });
+  return router;
+}
+module.exports = { createEducationRouter, createAllEducationRouter, createOwnEducationRouter };

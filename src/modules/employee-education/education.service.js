@@ -15,6 +15,7 @@ class EducationService {
   async activeEmployees(actorId) { await this.repository.assertHr(actorId); return {data:await this.repository.activeEmployees()}; }
   async institutions(actorId,query) { await this.repository.assertHr(actorId); return this.searchInstitutions(query); }
   async listAll(actorId) { return {data:await this.repository.listAllForHr(actorId)}; }
+  async listOwn(actorId) { return {data:await this.repository.listOwn(actorId)}; }
   async list(actorId, employeeId) {
     return this.repository.withHrEmployee(actorId,employeeId,false,async repo => ({data:await repo.list(employeeId)}));
   }
