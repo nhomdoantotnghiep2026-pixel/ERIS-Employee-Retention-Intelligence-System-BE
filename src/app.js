@@ -69,6 +69,11 @@ app.get('/health', (_request, response) => {
 });
 
 
+const { createAttendanceService } = require('./modules/attendance/attendance.service');
+const { AttendanceRepository } = require('./modules/attendance/attendance.repository');
+const { attendanceConfig } = require('./modules/attendance/attendance.config');
+const attendanceService = createAttendanceService(attendanceConfig(), new AttendanceRepository(databasePool));
+app.use('/api/v1/attendance', require('./modules/attendance/attendance.routes').createAttendanceRouter({ service: attendanceService, authenticate, databasePool }));
 app.use(errorHandler);
 
 module.exports = { app };

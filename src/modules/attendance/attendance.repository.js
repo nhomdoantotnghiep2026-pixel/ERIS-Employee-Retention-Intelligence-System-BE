@@ -8,6 +8,18 @@ const columns = `id, employee_id AS "employeeId", to_char(work_date, 'YYYY-MM-DD
   to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') || '+07:00' AS "updatedAt"`;
 class AttendanceRepository {
   constructor(pool) { this.pool = pool; }
+  async list() {
+    const { rows } = await this.pool.query(`SELECT a.*, e.employee_code AS "employeeCode", e.full_name AS "fullName"
+      FROM (SELECT ${columns} FROM public.attendance) a
+      JOIN employees e ON e.id=a."employeeId"
+      ORDER BY a."workDate" DESC, a.id DESC`);
+    return { data: rows };
+  }
+  async findById(id) {
+    const {rows}=await this.pool.query(`SELECT a.*,e.employee_code AS "employeeCode",e.full_name AS "fullName"
+      FROM (SELECT ${columns} FROM public.attendance WHERE id=$1) a JOIN employees e ON e.id=a."employeeId"`,[id]);
+    return rows[0]||null;
+  }
   async find(employeeId, date) {
     return (await this.pool.query(`SELECT ${columns} FROM public.attendance WHERE employee_id=$1 AND work_date=$2::date`, [employeeId, date])).rows[0] || null;
   }
