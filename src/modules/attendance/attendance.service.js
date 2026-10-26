@@ -32,7 +32,12 @@ function createAttendanceService(config, repository, clock=()=>new Date()) {
     const row=await repository.record({userId:user.id,employeeId:user.employeeId,date:day.date,instant:now.toISOString(),action,attendanceStatus});
     return {...gps,persisted:true,storage:'postgresql',mockMode:false,attendance:row};
   }
+  function assertHr(user) {
+    if(user?.status!=='ACTIVE'||user?.role_name!=='HR') error('FORBIDDEN','Only ACTIVE HR can view attendance history.',403);
+  }
   return {
+    async list(user) { assertHr(user); return repository.list(); },
+    async detail(user,id) { assertHr(user); const row=await repository.findById(id); if(!row) error('NOT_FOUND','Attendance record not found.',404); return {data:row}; },
     configuration:()=>({companyLocation:{latitude:settings.latitude,longitude:settings.longitude},allowedRadiusMeters:settings.radiusMeters,maximumAccuracyMeters:settings.maxAccuracyMeters,timeZone:zone,workStart:'08:00',workEnd:'17:00',lunchStart:'12:00',lunchEnd:'13:00',storage:'postgresql',mockMode:false}),
     async today(user) {
       const now=clock(),day=localDay(now),row=await repository.find(user.employeeId,day.date);
