@@ -1,3 +1,4 @@
+const { educationPaths } = require('../modules/employee-education/education.swagger');
 const { attendancePaths } = require('../modules/attendance/attendance.swagger');
 const swaggerJsdoc = require('swagger-jsdoc');
 const { authPaths } = require('../modules/auth/auth.swagger');
@@ -13,7 +14,7 @@ const swaggerSpec = swaggerJsdoc({
     info: { title: 'ERIS Backend API', version: '1.0.0', description: 'Employee Retention Intelligence System API documentation.' },
     servers: [{ url: 'http://localhost:3000', description: 'Local development server' }],
     tags: [{ name: 'Auth', description: 'Xác thực và quản lý phiên đăng nhập.' }],
-    paths: { ...attendancePaths, ...authPaths, ...departmentsPaths, ...employeesPaths, ...positionsPaths, ...usersPaths, ...distancePaths },
+    paths: { ...educationPaths, ...attendancePaths, ...authPaths, ...departmentsPaths, ...employeesPaths, ...positionsPaths, ...usersPaths, ...distancePaths },
     components: {
       securitySchemes: {
         bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }
