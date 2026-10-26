@@ -4,12 +4,33 @@ const columns = `id, employee_id AS "employeeId", CASE WHEN education_level IN (
   created_at AS "createdAt", updated_at AS "updatedAt"`;
 class EducationRepository {
   constructor(pool) { this.pool = pool; }
+  async listOwn(actorId) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: accounts } = await client.query(`SELECT u.employee_id AS "employeeId"
+        FROM users u JOIN role r ON r.id=u.role_id
+        JOIN employees e ON e.id=u.employee_id
+        WHERE u.id=$1 AND u.status='ACTIVE' AND r.name IN ('EMPLOYEE','HR')
+          AND e.employment_status='ACTIVE' FOR SHARE OF u,e`, [actorId]);
+      if (!accounts[0]) throw new AppError(403, 'Tài khoản chưa có hồ sơ nhân viên đang hoạt động.');
+      const rows = await new EducationRepository(client).list(accounts[0].employeeId);
+      await client.query('COMMIT');
+      return rows;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally { client.release(); }
+  }
   async withHrEmployee(actorId, employeeId, write, work) {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const { rows: users } = await client.query(`SELECT u.status, r.name AS role FROM users u JOIN role r ON r.id=u.role_id WHERE u.id=$1 FOR SHARE OF u`, [actorId]);
+      const { rows: users } = await client.query(`SELECT u.status, u.employee_id AS "employeeId", r.name AS role FROM users u JOIN role r ON r.id=u.role_id WHERE u.id=$1 FOR SHARE OF u`, [actorId]);
       if (users[0]?.status !== 'ACTIVE' || users[0]?.role !== 'HR') throw new AppError(403, 'Only ACTIVE HR can manage employee education.');
+      if (write && Number(users[0].employeeId) === Number(employeeId)) {
+        throw new AppError(403, 'HR không được tự thêm, sửa hoặc xóa bằng cấp của mình; hãy để HR khác thực hiện.');
+      }
       const { rows: employees } = await client.query(`SELECT id, employment_status, to_char(date_of_birth,'YYYY-MM-DD') AS "dateOfBirth" FROM employees WHERE id=$1 FOR SHARE`, [employeeId]);
       if (!employees[0]) throw new AppError(404, 'Employee not found.');
       if (employees[0].employment_status !== 'ACTIVE') throw new AppError(409, 'Employee profile must be ACTIVE.');
