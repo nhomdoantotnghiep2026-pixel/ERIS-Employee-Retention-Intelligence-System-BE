@@ -22,6 +22,10 @@ const { PositionsController } = require('./modules/positions/positions.controlle
 const { PositionsRepository } = require('./modules/positions/positions.repository');
 const { createPositionsRouter } = require('./modules/positions/positions.routes');
 const { PositionsService } = require('./modules/positions/positions.service');
+const { SurveysController } = require('./modules/surveys/surveys.controller');
+const { SurveysRepository } = require('./modules/surveys/surveys.repository');
+const { createSurveysRouter } = require('./modules/surveys/surveys.routes');
+const { SurveysService } = require('./modules/surveys/surveys.service');
 const { UsersController } = require('./modules/users/users.controller');
 const { UsersRepository } = require('./modules/users/users.repository');
 const { createUsersRouter } = require('./modules/users/users.routes');
@@ -50,6 +54,9 @@ const employeesController = new EmployeesController(employeesService);
 const positionsRepository = new PositionsRepository(databasePool);
 const positionsService = new PositionsService({ positionsRepository });
 const positionsController = new PositionsController(positionsService);
+const surveysRepository = new SurveysRepository(databasePool);
+const surveysService = new SurveysService({ surveysRepository });
+const surveysController = new SurveysController(surveysService);
 const usersRepository = new UsersRepository(databasePool);
 const usersService = new UsersService({ usersRepository });
 const usersController = new UsersController(usersService);
@@ -62,6 +69,7 @@ app.use('/api/auth', createAuthRouter(authController));
 app.use('/api/departments', createDepartmentsRouter({ departmentsController, authenticate }));
 app.use('/api/employees', createEmployeesRouter({ employeesController, authenticate }));
 app.use('/api/positions', createPositionsRouter({ positionsController, authenticate }));
+app.use('/api/surveys', createSurveysRouter({ surveysController, authenticate }));
 app.use('/api/users', createUsersRouter({ usersController, authenticate }));
 
 app.get('/health', (_request, response) => {
