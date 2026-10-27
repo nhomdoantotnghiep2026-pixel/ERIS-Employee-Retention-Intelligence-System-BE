@@ -45,7 +45,7 @@ class JobHistoriesRepository {
   }
 
   async targetPosition(id) {
-    const { rows } = await this.pool.query('SELECT id,name,job_level AS "jobLevel",status FROM positions WHERE id=$1 FOR SHARE', [id]);
+    const { rows } = await this.pool.query('SELECT id,name,job_level AS "jobLevel",department_id AS "departmentId",status FROM positions WHERE id=$1 FOR SHARE', [id]);
     return rows[0] || null;
   }
 

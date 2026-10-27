@@ -1,7 +1,8 @@
 const {
   validatePositionId,
   validateCreatePositionInput,
-  validateUpdatePositionInput
+  validateUpdatePositionInput,
+  validatePositionListQuery
 } = require('./positions.validation');
 
 class PositionsController {
@@ -16,7 +17,7 @@ class PositionsController {
 
   async listPositions(request, response, next) {
     try {
-      const data = await this.positionsService.listPositions(request.auth.userId);
+      const data = await this.positionsService.listPositions(request.auth.userId, validatePositionListQuery(request.query));
       return response.status(200).json({ data });
     } catch (error) {
       return next(error);

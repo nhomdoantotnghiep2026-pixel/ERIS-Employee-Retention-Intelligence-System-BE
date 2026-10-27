@@ -77,13 +77,15 @@ class EducationRepository {
     const {rows}=await this.pool.query(`SELECT ${columns} FROM public.employee_educations WHERE employee_id=$1 AND id=$2 AND status='ACTIVE' FOR UPDATE`,[employeeId,id]);
     return rows[0]||null;
   }
-  async list(employeeId) {
-    return (await this.pool.query(`SELECT ${columns} FROM public.employee_educations WHERE employee_id=$1 AND status='ACTIVE' ORDER BY graduation_year DESC NULLS LAST, id DESC`, [employeeId])).rows;
+  async list(employeeId, includeInProcess = false) {
+    return (await this.pool.query(`SELECT ${columns} FROM public.employee_educations WHERE employee_id=$1
+      AND status = ANY($2::varchar[]) ORDER BY graduation_year DESC NULLS LAST, id DESC`, [employeeId, includeInProcess ? ['ACTIVE', 'IN_PROCESS'] : ['ACTIVE']])).rows;
   }
-  async create(employeeId, data) {
+  async create(employeeId, data, status = 'ACTIVE') {
+    if (!['ACTIVE', 'IN_PROCESS'].includes(status)) throw new AppError(400, 'Invalid initial education status.');
     return (await this.pool.query(`INSERT INTO public.employee_educations
-      (employee_id,education_level,field_of_study,institution,graduation_year)
-      VALUES ($1,$2,$3,$4,$5) RETURNING ${columns}`, [employeeId,data.educationLevel,data.fieldOfStudy,data.institution,data.graduationYear])).rows[0];
+      (employee_id,education_level,field_of_study,institution,graduation_year,status)
+      VALUES ($1,$2,$3,$4,$5,$6) RETURNING ${columns}`, [employeeId,data.educationLevel,data.fieldOfStudy,data.institution,data.graduationYear,status])).rows[0];
   }
   async update(employeeId, id, data) {
     const fields = {educationLevel:'education_level',fieldOfStudy:'field_of_study',institution:'institution',graduationYear:'graduation_year'};

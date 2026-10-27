@@ -1,6 +1,8 @@
 const { AppError } = require('../../common/errors/app-error');
 const { JobHistoriesRepository } = require('../job-histories/job-histories.repository');
 const { recordJobChange } = require('../job-histories/job-histories.transition');
+const { EmployeeBackgroundRepository } = require('./employee-background.repository');
+const { normalizePhone, phoneKey, phoneKeySql } = require('./employee-phone');
 class EmployeesRepository {
   constructor(databasePool) {
     this.databasePool = databasePool;
@@ -43,9 +45,27 @@ class EmployeesRepository {
         (SELECT COALESCE(jsonb_agg(jsonb_build_object('id',u.id,'role',r.name,'status',u.status,'employeeId',u.employee_id)), '[]'::jsonb)
          FROM users u JOIN role r ON r.id=u.role_id WHERE lower(u.email)=lower($2)) AS accounts,
         EXISTS (SELECT 1 FROM departments WHERE id = $3 AND status = 'ACTIVE') AS "activeDepartment",
-        EXISTS (SELECT 1 FROM positions WHERE id = $4 AND status = 'ACTIVE') AS "activePosition"`,
-      [actorId, employee.email, employee.departmentId, employee.positionId]);
+        EXISTS (SELECT 1 FROM positions WHERE id = $4 AND status = 'ACTIVE') AS "activePosition",
+        (SELECT department_id FROM positions WHERE id=$4) AS "positionDepartmentId",
+        EXISTS (SELECT 1 FROM employees WHERE ${phoneKeySql}=$5) AS "phoneExists"`,
+      [actorId, employee.email, employee.departmentId, employee.positionId, phoneKey(employee.phone)]);
     return rows[0];
+  }
+  async assertPositionDepartment(positionId, departmentId) {
+    const { rows } = await this.databasePool.query(`SELECT p.department_id AS "departmentId", p.status AS "positionStatus", d.status AS "departmentStatus"
+      FROM positions p JOIN departments d ON d.id=$2 WHERE p.id=$1 FOR SHARE OF p,d`, [positionId, departmentId]);
+    const record = rows[0];
+    if (!record || record.positionStatus !== 'ACTIVE' || record.departmentStatus !== 'ACTIVE') throw new AppError(404, 'Phòng ban hoặc vị trí không còn ACTIVE.');
+    if (Number(record.departmentId) !== Number(departmentId)) throw new AppError(400, 'Vị trí công việc không thuộc phòng ban đã chọn.');
+  }
+  async findByPhone(phone, excludedEmployeeId = null) {
+    const { rows } = await this.databasePool.query(`SELECT id FROM employees
+      WHERE ${phoneKeySql}=$1 AND ($2::integer IS NULL OR id<>$2) LIMIT 1`, [phoneKey(phone), excludedEmployeeId]);
+    return rows[0] || null;
+  }
+  async assertPhoneAvailable(phone, excludedEmployeeId = null) {
+    await this.databasePool.query("SELECT pg_advisory_xact_lock(hashtextextended('employees.phone:' || $1, 0))", [phoneKey(phone)]);
+    if (await this.findByPhone(phone, excludedEmployeeId)) throw new AppError(409, 'Số điện thoại đã được sử dụng trong hồ sơ nhân viên khác.');
   }
   async findAccountByEmail(email) {
     const { rows } = await this.databasePool.query(
@@ -82,6 +102,7 @@ class EmployeesRepository {
       }
       if (!await repository.findActiveDepartmentById(employee.departmentId)) throw new AppError(404, 'Active department not found.');
       if (!await repository.findActivePositionById(employee.positionId)) throw new AppError(404, 'Active position not found.');
+      await repository.assertPositionDepartment(employee.positionId, employee.departmentId);
       const record = await repository.create(employee, account?.status === 'ACTIVE' ? 'ACTIVE' : 'IN_PROCESS');
       let saved;
       if (account) {
@@ -110,13 +131,21 @@ class EmployeesRepository {
           endDate: null
         }, 'HIRE')
         : null;
+      const backgrounds = new EmployeeBackgroundRepository(client);
+      const background = await backgrounds.create(record.id, employee, saved.status === 'ACTIVE' ? 'ACTIVE' : 'IN_PROCESS');
       await client.query('COMMIT');
-      return { employee: record, account: saved, accountCreated: !account, initialJobHistory };
+      return { employee: { ...record, ...background }, account: saved, accountCreated: !account, initialJobHistory };
     } catch (error) {
       await client.query('ROLLBACK');
       if (error.code === '23505') throw new AppError(409, 'Employee or account already exists.');
       throw error;
     } finally { client.release(); }
+  }
+  async createBackground(employeeId, employee) {
+    return new EmployeeBackgroundRepository(this.databasePool).create(employeeId, employee);
+  }
+  async findBackground(employeeId, includePending = false) {
+    return new EmployeeBackgroundRepository(this.databasePool).find(employeeId, includePending);
   }
   async findUserRoleById(userId) {
     const { rows } = await this.databasePool.query(
@@ -161,7 +190,7 @@ class EmployeesRepository {
 
   async findActivePositionById(id) {
     const { rows } = await this.databasePool.query(
-      `SELECT id
+      `SELECT id, department_id AS "departmentId"
        FROM positions
        WHERE id = $1
          AND status = 'ACTIVE'
@@ -196,6 +225,8 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
     return { data: rows, pagination: paginated ? { page: query.page, limit: query.limit, total, totalPages: Math.ceil(total / query.limit) } : { page: 1, limit: null, total, totalPages: total ? 1 : 0 } };
   }
   async create(employee, employmentStatus = 'ACTIVE') {
+    const phone = normalizePhone(employee.phone);
+    await this.assertPhoneAvailable(phone);
     const { rows } = await this.databasePool.query(
       `WITH new_employee_id AS (
          SELECT nextval(pg_get_serial_sequence('employees', 'id')) AS id
@@ -243,7 +274,7 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
       [
         employee.fullName,
         employee.email,
-        employee.phone,
+        phone,
         employee.dateOfBirth,
         employee.gender,
         employee.address,
@@ -342,6 +373,9 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
       const current = await histories.employee(id, true);
       if (!current) return null;
       if (current.status === 'INACTIVE') throw new AppError(409, 'Inactive employees cannot be updated.');
+      if (Object.hasOwn(employee, 'departmentId') || Object.hasOwn(employee, 'positionId')) {
+        await repository.assertPositionDepartment(employee.positionId ?? current.positionId, employee.departmentId ?? current.departmentId);
+      }
       const jobHistory = current.status === 'ACTIVE'
         ? await recordJobChange(histories, current, employee)
         : null;
@@ -351,6 +385,11 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
     });
   }
   async update(id, employee) {
+    if (Object.hasOwn(employee, 'phone')) {
+      const phone = normalizePhone(employee.phone);
+      await this.assertPhoneAvailable(phone, id);
+      employee = { ...employee, phone };
+    }
     const assignments = [];
     const values = [];
     const fields = [

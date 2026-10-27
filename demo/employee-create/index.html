@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tạo hồ sơ nhân viên · ERIS</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/employee-create-demo/assets/style.css">
+  <script src="/employee-create-demo/assets/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="/employee-create-demo">ERIS <span>NHÂN SỰ</span></a><div id="session" hidden><span id="actor-name"></span><button id="logout" class="quiet" type="button">Đổi tài khoản</button></div><span class="badge">BẢN THỬ NGHIỆM</span></header>
+  <main>
+    <section id="auth-panel" class="login-layout">
+      <div><p class="eyebrow">HỒ SƠ NHÂN SỰ</p><h1>Một hồ sơ.<br>Đầy đủ thông tin.</h1><p class="intro">Tạo tài khoản, lưu học vấn và kinh nghiệm làm việc, tính quãng đường từ nhà đến công ty.</p><div class="login-note">Chọn phòng ban trước. Hệ thống sẽ hiển thị đúng những vị trí thuộc phòng ban đó.</div></div>
+      <div class="card login-card"><h2>Đăng nhập HR</h2><p class="muted">Dùng tài khoản HR đã kích hoạt.</p><div id="auth-message" class="notice" role="alert" hidden></div>
+        <form id="login-form"><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">Đăng nhập</button></form>
+        <details class="token-details"><summary>Dùng access token có sẵn</summary><form id="token-form"><label>Access token<textarea name="token" rows="3" autocomplete="off" required placeholder="Dán access token của HR"></textarea></label><button type="submit" class="secondary">Kết nối</button></form></details>
+      </div>
+    </section>
+    <section id="workspace" hidden>
+      <div class="page-title"><div><p class="eyebrow">NHÂN VIÊN MỚI</p><h1>Tạo hồ sơ nhân viên</h1><p class="muted">Điền thông tin và chọn địa chỉ để tính quãng đường đến công ty.</p></div><a href="/api-docs" target="_blank" rel="noopener" class="text-link">Mở Swagger ↗</a></div>
+      <div id="status" class="notice" role="alert" hidden></div>
+      <section id="success-panel" class="card success-card" hidden aria-live="polite"><span class="success-mark">✓</span><h2>Đã tạo hồ sơ nhân viên</h2><p id="success-description"></p><dl id="success-summary" class="result-grid"></dl><div id="success-warning" class="notice" hidden></div><details><summary>Xem dữ liệu trả về</summary><pre id="response-json"></pre></details><button id="new-employee" type="button" class="primary">Tạo hồ sơ khác</button></section>
+      <div id="editor" class="editor-layout">
+        <form id="employee-form" autocomplete="off">
+          <fieldset id="employee-fields">
+            <section class="card"><div class="section-title"><span class="step">01</span><div><h2>Thông tin cá nhân</h2><p class="muted">Các trường có dấu * là bắt buộc.</p></div></div><div class="fields">
+              <label class="full">Họ và tên *<input name="fullName" required maxlength="150" placeholder="Nguyễn Văn A"></label>
+              <label>Email tài khoản *<input name="email" type="email" required maxlength="255" placeholder="nhanvien@congty.com"><small>Dùng để gửi thông tin kích hoạt tài khoản.</small></label>
+              <label>Số điện thoại *<input name="phone" type="tel" required maxlength="30" placeholder="0901234567"></label>
+              <label>Ngày sinh *<input name="dateOfBirth" type="date" required></label>
+              <label>Giới tính *<select name="gender" required><option value="">Chọn giới tính</option><option value="MALE">Nam</option><option value="FEMALE">Nữ</option><option value="OTHER">Khác</option></select></label>
+            </div></section>
+            <section class="card"><div class="section-title"><span class="step">02</span><div><h2>Công việc hiện tại</h2><p class="muted">Phòng ban và vị trí được liên kết với nhau.</p></div></div><div class="fields">
+              <label>Phòng ban *<select id="department" name="departmentId" required disabled><option value="">Đang tải phòng ban…</option></select></label>
+              <label>Vị trí công việc *<select id="position" name="positionId" required disabled><option value="">Chọn phòng ban trước</option></select></label>
+              <p id="position-hint" class="field-note full" role="status">Chọn một phòng ban để xem các vị trí đang hoạt động.</p>
+              <label>Ngày vào làm *<input name="hireDate" type="date" required></label>
+              <label>Loại hợp đồng *<select name="employmentType" required><option value="FULL_TIME">Toàn thời gian</option><option value="PART_TIME">Bán thời gian</option><option value="CONTRACT">Hợp đồng</option><option value="INTERNSHIP">Thực tập</option></select></label>
+              <label class="full">Lương hiện tại (VNĐ) *<input name="currentSalary" type="number" min="0.01" step="0.01" required placeholder="18000000"></label>
+            </div></section>
+            <section class="card"><div class="section-title"><span class="step">03</span><div><h2>Địa chỉ nhà</h2><p class="muted">Quãng đường sẽ được tính tự động khi lưu hồ sơ.</p></div></div><label>Số nhà, đường, phường/xã, tỉnh/thành phố *<div class="autocomplete"><input id="address" name="address" required maxlength="1000" placeholder="Nhập ít nhất 3 ký tự để tìm địa chỉ" autocomplete="off"><div id="address-results" class="suggestions" role="listbox" hidden></div></div></label><p id="address-hint" class="field-note" role="status">Chọn gợi ý có số nhà, hoặc nhập địa chỉ đầy đủ để hệ thống xác định.</p></section>
+            <section class="card"><div class="section-title"><span class="step">04</span><div><h2>Học vấn</h2><p class="muted">Ít nhất một bằng cấp. Chọn trường từ danh sách gợi ý.</p></div></div><div id="education-list"></div><button id="add-education" type="button" class="secondary">＋ Thêm bằng cấp</button></section>
+            <section class="card"><div class="section-title"><span class="step">05</span><div><h2>Kinh nghiệm làm việc</h2><p class="muted">Các công ty đã làm trước đây. Tháng/năm được lưu với ngày 01.</p></div></div><p id="no-experience" class="empty-note">Chưa có kinh nghiệm? Bạn có thể bỏ qua phần này.</p><div id="experience-list"></div><button id="add-experience" type="button" class="secondary">＋ Thêm kinh nghiệm</button></section>
+            <div class="submit-row"><p>Hồ sơ mới sẽ chờ kích hoạt tài khoản qua email.</p><button id="create-button" type="submit" class="primary">Tạo hồ sơ và tài khoản →</button></div>
+          </fieldset>
+        </form>
+        <aside><div class="card guide"><p class="eyebrow">TRƯỚC KHI LƯU</p><h3>Thông tin hồ sơ mới</h3><ol><li>Hồ sơ và tài khoản chờ kích hoạt</li><li>Bằng cấp lưu với IN_PROCESS</li><li>Kinh nghiệm lưu với IN_PROCESS</li><li>Quãng đường được tính khi tạo</li></ol><hr><p>Khi tài khoản kích hoạt qua email, học vấn và kinh nghiệm đang IN_PROCESS sẽ cùng chuyển sang ACTIVE.</p><p>Nếu thông tin chưa hợp lệ hoặc chưa tính được quãng đường, hồ sơ sẽ chưa được lưu.</p><p id="department-summary" class="selection-summary">Chưa chọn phòng ban</p></div></aside>
+      </div>
+    </section>
+  </main>
+  <template id="education-template"><article class="subcard education-card"><div class="subcard-title"><h3>Bằng cấp <span data-number></span></h3><button type="button" class="remove quiet">Bỏ bằng cấp</button></div><div class="fields"><label>Trình độ *<select data-field="educationLevel" required><option value="1">Cao đẳng</option><option value="2" selected>Cử nhân</option><option value="3">Thạc sĩ</option><option value="4">Tiến sĩ</option></select></label><label>Năm tốt nghiệp<input data-field="graduationYear" type="number" min="1900" step="1" placeholder="2022"><small>Tối thiểu năm sinh + 21.</small></label><label class="full">Chuyên ngành<input data-field="fieldOfStudy" maxlength="150" placeholder="Công nghệ thông tin"></label><label class="full">Trường / cơ sở đào tạo *<div class="autocomplete"><input data-field="institution" required maxlength="150" placeholder="Gõ tên trường rồi chọn một gợi ý" autocomplete="off"><div class="suggestions" role="listbox" hidden></div></div></label><p class="field-note full school-hint" role="status">Tên trường được xác minh khi lưu hồ sơ.</p></div></article></template>
+  <template id="experience-template"><article class="subcard experience-card"><div class="subcard-title"><h3>Kinh nghiệm <span data-number></span></h3><button type="button" class="remove quiet">Bỏ kinh nghiệm</button></div><div class="fields"><label>Tên công ty *<input data-field="companyName" required maxlength="150" placeholder="Công ty ABC"></label><label>Chức danh *<input data-field="positionTitle" required maxlength="150" placeholder="Backend Developer"></label><label>Bắt đầu (tháng/năm) *<input data-field="startDate" type="month" required></label><label>Kết thúc (tháng/năm)<input data-field="endDate" type="month"><small>Để trống nếu chưa kết thúc.</small></label></div></article></template>
+</body>
+</html>

@@ -157,4 +157,9 @@ const positionsPaths = {
   }
 };
 
+positionsPaths['/api/positions'].get.parameters = [{ name: 'departmentId', in: 'query', required: false,
+  schema: { type: 'integer', minimum: 1 }, description: 'Chỉ trả vị trí thuộc phòng ban này. Bỏ qua để xem tất cả.' }];
+positionsPaths['/api/positions'].get.description = 'Danh sách có departmentId để liên kết với phòng ban; màn hình tạo nhân viên chỉ cho chọn vị trí ACTIVE của phòng ban đã chọn.';
+positionsPaths['/api/positions'].get.responses[200].content['application/json'].schema.properties.data.items.properties.departmentId = { type: 'integer', nullable: true };
+positionsPaths['/api/positions'].get.responses[400] = { description: 'departmentId hoặc tham số không hợp lệ.' };
 module.exports = { positionsPaths };

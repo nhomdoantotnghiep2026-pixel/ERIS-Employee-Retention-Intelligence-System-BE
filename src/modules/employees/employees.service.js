@@ -9,12 +9,13 @@ function output(row, calculation) {
       reason: row.address && row.distanceFromHomeKm == null ? 'DISTANCE_NOT_AVAILABLE' : null } };
 }
 class EmployeesService {
-  constructor({ employeesRepository, distanceService, mailTransporter, mailFrom, initialPassword }) {
+  constructor({ employeesRepository, distanceService, mailTransporter, mailFrom, initialPassword, educationService }) {
     this.employeesRepository = employeesRepository;
     this.distanceService = distanceService;
     this.mailTransporter = mailTransporter;
     this.mailFrom = mailFrom;
     this.initialPassword = initialPassword;
+    this.educationService = educationService;
   }
 
   async _createHrProfile({ actorId, hrUserId, employee }) {
@@ -27,6 +28,7 @@ class EmployeesService {
       if (target.email.trim().toLowerCase() !== employee.email) throw new AppError(400, 'Email must match the selected HR account.');
     };
     checkTarget(await this.employeesRepository.findHrTarget(hrUserId));
+    employee = await this.prepareBackground(actorId, employee);
     const calculation = await resolveEmployeeDistance(employee.address, this.distanceService, employee.addressRefId);
     if (calculation.status !== 'READY' || !Number.isFinite(calculation.distanceFromHomeKm) || calculation.distanceFromHomeKm < 0) {
       throw new AppError(422, 'Profile was not saved because distance could not be calculated: ' + calculation.reason);
@@ -42,18 +44,25 @@ class EmployeesService {
       if (await repository.findByEmail(employee.email)) throw new AppError(409, 'Employee email already exists.');
       if (!await repository.findActiveDepartmentById(employee.departmentId)) throw new AppError(404, 'Active department not found.');
       if (!await repository.findActivePositionById(employee.positionId)) throw new AppError(404, 'Active position not found.');
+      await repository.assertPositionDepartment(employee.positionId, employee.departmentId);
       const record = await repository.create({ ...employee, distanceFromHomeKm: calculation.distanceFromHomeKm });
       const account = await repository.linkHrProfile(hrUserId, record);
       const initialJobHistory = await new JobHistoriesRepository(repository.databasePool).insert(record.id, {
         departmentId: employee.departmentId, positionId: employee.positionId,
         startDate: employee.hireDate, endDate: null
       }, 'HIRE');
-      return { ...output(record, calculation), account, initialJobHistory };
+      const background = await repository.createBackground(record.id, employee);
+      return { ...output(record, calculation), ...background, account, initialJobHistory };
     });
   }
   async assertHr(actorId) {
     const actor = await this.employeesRepository.findUserRoleById(actorId);
     if (actor?.role !== 'HR') throw new AppError(403, 'Only HR can view employees.');
+  }
+  async prepareBackground(actorId, employee) {
+    if (!this.educationService) throw new AppError(503, 'Education service is not configured.');
+    const educations = await this.educationService.prepareForEmployeeCreation(actorId, employee.educations, employee.dateOfBirth);
+    return { ...employee, educations };
   }
   async listEmployees({ actorId, query }) {
     await this.assertHr(actorId);
@@ -64,17 +73,18 @@ class EmployeesService {
     await this.assertHr(actorId);
     const row = await this.employeesRepository.findById(employeeId);
     if (!row) throw new AppError(404, 'Employee not found.');
-    return output(row);
+    return { ...output(row), ...await this.employeesRepository.findBackground(employeeId, row.employmentStatus === 'IN_PROCESS') };
   }
   async getMyProfile(userId) {
     const row = await this.employeesRepository.findOwnProfileByUserId(userId);
     if (!row) throw new AppError(404, 'No employee profile is linked to this user.');
-    return output(row);
+    return { ...output(row), ...await this.employeesRepository.findBackground(row.id) };
   }
   async createEmployee({ actorId, employee, distanceCache }) {
     const checks = await this.employeesRepository.preflightCreate(actorId, employee);
     if (checks.actorRole !== 'HR') throw new AppError(403, 'Only HR can create employees.');
     if (checks.emailExists) throw new AppError(409, 'Email already has an employee profile.');
+    if (checks.phoneExists) throw new AppError(409, 'Số điện thoại đã được sử dụng trong hồ sơ nhân viên khác.');
     const accounts = checks.accounts || [];
     if (accounts.length > 1) throw new AppError(409, 'Multiple accounts use this email.');
     const existingAccount = accounts[0];
@@ -84,11 +94,13 @@ class EmployeesService {
     }
     if (!checks.activeDepartment) throw new AppError(404, 'Active department not found.');
     if (!checks.activePosition) throw new AppError(404, 'Active position not found.');
+    if (Number(checks.positionDepartmentId) !== Number(employee.departmentId)) throw new AppError(400, 'Vị trí công việc không thuộc phòng ban đã chọn.');
     if (!employee.email) throw new AppError(400, 'Email is required for the employee account.');
     if (!existingAccount && (typeof this.initialPassword !== 'string' || this.initialPassword.length < 8 || Buffer.byteLength(this.initialPassword) > 72)) {
       throw new AppError(503, 'INITIAL_USER_PASSWORD must contain at least 8 characters and at most 72 UTF-8 bytes.');
     }
     if (!existingAccount && (!this.mailTransporter || !this.mailFrom)) throw new AppError(503, 'Account email delivery is not configured.');
+    employee = await this.prepareBackground(actorId, employee);
     // The cache belongs to one import request; no addresses or stale results are retained globally.
     const cacheKey = JSON.stringify([employee.address.trim(), employee.addressRefId || null]);
     if (distanceCache && !distanceCache.has(cacheKey)) {
@@ -146,6 +158,9 @@ class EmployeesService {
     }
 
     if (current.employmentStatus === 'INACTIVE') throw new AppError(409, 'Inactive employees cannot be updated.');
+    if (Object.hasOwn(employee, 'phone') && await this.employeesRepository.findByPhone(employee.phone, employeeId)) {
+      throw new AppError(409, 'Số điện thoại đã được sử dụng trong hồ sơ nhân viên khác.');
+    }
 
     if (Object.hasOwn(employee, 'email')) {
       const linked = await this.employeesRepository.findLinkedAccount(employeeId);
@@ -163,6 +178,12 @@ class EmployeesService {
 
     if (Object.hasOwn(employee, 'positionId') && !await this.employeesRepository.findActivePositionById(employee.positionId)) {
       throw new AppError(404, 'Active position not found.');
+    }
+    if (Object.hasOwn(employee, 'departmentId') || Object.hasOwn(employee, 'positionId')) {
+      const target = await this.employeesRepository.findActivePositionById(employee.positionId ?? current.positionId);
+      if (!target || Number(target.departmentId) !== Number(employee.departmentId ?? current.departmentId)) {
+        throw new AppError(400, 'Vị trí công việc không thuộc phòng ban đã chọn.');
+      }
     }
 
     let calculation;

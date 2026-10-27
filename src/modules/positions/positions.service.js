@@ -5,14 +5,14 @@ class PositionsService {
     this.positionsRepository = positionsRepository;
   }
 
-  async listPositions(actorId) {
+  async listPositions(actorId, departmentId = null) {
     const actor = await this.positionsRepository.findUserRoleById(actorId);
 
     if (actor?.role !== 'HR') {
       throw new AppError(403, 'Only HR can view positions.');
     }
 
-    return this.positionsRepository.findAll();
+    return this.positionsRepository.findAll(departmentId);
   }
 
   async getPosition({ actorId, positionId }) {
