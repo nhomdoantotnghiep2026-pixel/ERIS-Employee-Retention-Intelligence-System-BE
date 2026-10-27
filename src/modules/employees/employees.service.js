@@ -2,6 +2,7 @@ const { hashPassword } = require('../../common/utils/password');
 const { AppError } = require('../../common/errors/app-error');
 
 const { resolveEmployeeDistance } = require('../distance/address-resolution');
+const { JobHistoriesRepository } = require('../job-histories/job-histories.repository');
 function output(row, calculation) {
   return { ...row, distanceFromHomeKm: row.distanceFromHomeKm == null ? null : Number(row.distanceFromHomeKm),
     distanceCalculation: calculation || { status: row.distanceFromHomeKm != null ? 'READY' : row.address ? 'UNAVAILABLE' : 'NOT_PROVIDED',
@@ -43,7 +44,11 @@ class EmployeesService {
       if (!await repository.findActivePositionById(employee.positionId)) throw new AppError(404, 'Active position not found.');
       const record = await repository.create({ ...employee, distanceFromHomeKm: calculation.distanceFromHomeKm });
       const account = await repository.linkHrProfile(hrUserId, record);
-      return { ...output(record, calculation), account };
+      const initialJobHistory = await new JobHistoriesRepository(repository.databasePool).insert(record.id, {
+        departmentId: employee.departmentId, positionId: employee.positionId,
+        startDate: employee.hireDate, endDate: null
+      }, 'HIRE');
+      return { ...output(record, calculation), account, initialJobHistory };
     });
   }
   async assertHr(actorId) {
@@ -99,7 +104,7 @@ class EmployeesService {
     const passwordHash = existingAccount ? null : await hashPassword(this.initialPassword);
     const created = await this.employeesRepository.createWithAccount(
       { ...employee, distanceFromHomeKm: calculation.distanceFromHomeKm }, passwordHash, actorId);
-    if (created.accountCreated === false) return { ...output(created.employee, calculation), account: created.account, accountCreated: false };
+    if (created.accountCreated === false) return { ...output(created.employee, calculation), account: created.account, accountCreated: false, initialJobHistory: created.initialJobHistory };
     let emailDelivery = 'SENT';
     try {
       const delivery = await this.mailTransporter.sendMail({
@@ -112,7 +117,7 @@ class EmployeesService {
     } catch {
       emailDelivery = 'FAILED';
     }
-    return { ...output(created.employee, calculation), account: created.account, emailDelivery,
+    return { ...output(created.employee, calculation), account: created.account, initialJobHistory: created.initialJobHistory, emailDelivery,
       ...(emailDelivery === 'FAILED' ? { warning: 'Profile and account saved. Email delivery failed; do not create again. HR can provide the configured temporary password securely; first login will send the activation OTP.' } : {}) };
 
   }

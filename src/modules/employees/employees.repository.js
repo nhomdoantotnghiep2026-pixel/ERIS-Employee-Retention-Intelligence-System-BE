@@ -1,4 +1,6 @@
 const { AppError } = require('../../common/errors/app-error');
+const { JobHistoriesRepository } = require('../job-histories/job-histories.repository');
+const { recordJobChange } = require('../job-histories/job-histories.transition');
 class EmployeesRepository {
   constructor(databasePool) {
     this.databasePool = databasePool;
@@ -80,7 +82,7 @@ class EmployeesRepository {
       }
       if (!await repository.findActiveDepartmentById(employee.departmentId)) throw new AppError(404, 'Active department not found.');
       if (!await repository.findActivePositionById(employee.positionId)) throw new AppError(404, 'Active position not found.');
-      const record = await repository.create(employee);
+      const record = await repository.create(employee, account?.status === 'ACTIVE' ? 'ACTIVE' : 'IN_PROCESS');
       let saved;
       if (account) {
         const result = await client.query(
@@ -100,8 +102,16 @@ class EmployeesRepository {
           [employee.email,passwordHash,roles[0].id,record.id,employee.fullName]);
         saved = { ...result.rows[0], role: 'EMPLOYEE' };
       }
+      const initialJobHistory = saved.status === 'ACTIVE'
+        ? await new JobHistoriesRepository(client).insert(record.id, {
+          departmentId: employee.departmentId,
+          positionId: employee.positionId,
+          startDate: employee.hireDate,
+          endDate: null
+        }, 'HIRE')
+        : null;
       await client.query('COMMIT');
-      return { employee: record, account: saved, accountCreated: !account };
+      return { employee: record, account: saved, accountCreated: !account, initialJobHistory };
     } catch (error) {
       await client.query('ROLLBACK');
       if (error.code === '23505') throw new AppError(409, 'Employee or account already exists.');
@@ -185,7 +195,7 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
       paginated ? [...values, query.limit, (query.page - 1) * query.limit] : values);
     return { data: rows, pagination: paginated ? { page: query.page, limit: query.limit, total, totalPages: Math.ceil(total / query.limit) } : { page: 1, limit: null, total, totalPages: total ? 1 : 0 } };
   }
-  async create(employee) {
+  async create(employee, employmentStatus = 'ACTIVE') {
     const { rows } = await this.databasePool.query(
       `WITH new_employee_id AS (
          SELECT nextval(pg_get_serial_sequence('employees', 'id')) AS id
@@ -204,12 +214,13 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
          position_id,
          hire_date,
          employment_type,
-         current_salary
+         current_salary,
+         employment_status
        )
        SELECT
          id,
          'EMP' || LPAD(id::text, 3, '0'),
-         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
        FROM new_employee_id
        RETURNING
          id,
@@ -241,7 +252,8 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
         employee.positionId,
         employee.hireDate,
         employee.employmentType,
-        employee.currentSalary
+        employee.currentSalary,
+        employmentStatus
       ]
     );
 
@@ -326,7 +338,16 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
       if (Number(actor.employeeId) === Number(id) && Object.keys(employee).some(key => !['phone','address','addressRefId','distanceFromHomeKm'].includes(key))) {
         throw new AppError(403, 'You may only update phone and address on your own profile.');
       }
-      return repository.update(id, employee);
+      const histories = new JobHistoriesRepository(repository.databasePool);
+      const current = await histories.employee(id, true);
+      if (!current) return null;
+      if (current.status === 'INACTIVE') throw new AppError(409, 'Inactive employees cannot be updated.');
+      const jobHistory = current.status === 'ACTIVE'
+        ? await recordJobChange(histories, current, employee)
+        : null;
+      const updated = await repository.update(id, employee);
+      if (!updated && jobHistory) throw new AppError(409, 'Employee changed during job update.');
+      return updated && jobHistory ? { ...updated, jobHistory } : updated;
     });
   }
   async update(id, employee) {

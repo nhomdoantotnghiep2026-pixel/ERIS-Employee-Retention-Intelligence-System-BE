@@ -1,3 +1,4 @@
+const { validateAttendanceId } = require('./attendance.validation');
 const express = require('express');
 const { AppError } = require('../../common/errors/app-error');
 
@@ -23,10 +24,19 @@ function createAttendanceRouter({ service, authenticate, databasePool }) {
     try { res.json(await work(req)); }
     catch (error) { next(error); }
   };
-  router.get('/config', handler(() => service.configuration()));
-  router.get('/today', handler(req => service.today(req.attendanceUser)));
-  router.post('/check-in', handler(req => service.checkIn(req.attendanceUser, req.body)));
-  router.post('/check-out', handler(req => service.checkOut(req.attendanceUser, req.body)));
+  const requireProfile = (_req, _res, next) => {
+    const user=_req.attendanceUser;
+    if(user.employeeId==null) return next(new AppError(403,'An employee profile is required for attendance.'));
+    if(user.employmentStatus!=='ACTIVE') return next(new AppError(403,'An ACTIVE employee profile is required for attendance.'));
+    next();
+  };
+  const requireHr = (req, _res, next) => req.attendanceUser.role_name==='HR' ? next() : next(new AppError(403,'Only HR can view attendance history.'));
+  router.get('/', requireHr, handler(req => service.list(req.attendanceUser)));
+  router.get('/config', requireProfile, handler(() => service.configuration()));
+  router.get('/today', requireProfile, handler(req => service.today(req.attendanceUser)));
+  router.post('/check-in', requireProfile, handler(req => service.checkIn(req.attendanceUser, req.body)));
+  router.post('/check-out', requireProfile, handler(req => service.checkOut(req.attendanceUser, req.body)));
+  router.get('/:id', requireHr, handler(req => service.detail(req.attendanceUser, validateAttendanceId(req.params.id))));
   // Keep business error codes local to attendance, matching the current app's message format.
   router.use((error, req, res, next) => {
     if (error instanceof AppError) return res.status(error.statusCode).json({ message: error.message, ...(error.code ? { code: error.code } : {}) });

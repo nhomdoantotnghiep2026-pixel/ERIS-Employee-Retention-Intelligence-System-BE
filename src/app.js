@@ -18,6 +18,9 @@ const { EmployeesController } = require('./modules/employees/employees.controlle
 const { EmployeesRepository } = require('./modules/employees/employees.repository');
 const { createEmployeesRouter } = require('./modules/employees/employees.routes');
 const { EmployeesService } = require('./modules/employees/employees.service');
+const { JobHistoriesRepository } = require('./modules/job-histories/job-histories.repository');
+const { JobHistoriesService } = require('./modules/job-histories/job-histories.service');
+const { createJobHistoriesRouter, createOwnJobHistoriesRouter } = require('./modules/job-histories/job-histories.routes');
 const { PositionsController } = require('./modules/positions/positions.controller');
 const { PositionsRepository } = require('./modules/positions/positions.repository');
 const { createPositionsRouter } = require('./modules/positions/positions.routes');
@@ -61,12 +64,29 @@ const usersRepository = new UsersRepository(databasePool);
 const usersService = new UsersService({ usersRepository });
 const usersController = new UsersController(usersService);
 
+app.get('/employee-education-demo', (_req,res) => { res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/employee-education/index.html')); });
+app.use('/employee-education-demo/assets', express.static(require('node:path').join(__dirname,'../demo/employee-education'),{index:false,etag:false,setHeaders:res=>res.set('Cache-Control','no-store')}));
 app.get('/employee-create-demo', (_req, res) => res.sendFile(require('node:path').join(__dirname, '../demo/employee-create/index.html')));
 app.use('/employee-create-demo/assets', express.static(require('node:path').join(__dirname, '../demo/employee-create'), { index: false }));
 app.use('/api/distance', require('./modules/distance/distance.routes').createDistanceRouter({ authenticate, employeesService, distanceService }));
 
 app.use('/api/auth', createAuthRouter(authController));
 app.use('/api/departments', createDepartmentsRouter({ departmentsController, authenticate }));
+const { EducationRepository } = require('./modules/employee-education/education.repository');
+const { EducationService } = require('./modules/employee-education/education.service');
+const { createEducationRouter, createAllEducationRouter, createOwnEducationRouter } = require('./modules/employee-education/education.routes');
+const educationService = new EducationService(new EducationRepository(databasePool));
+const jobHistoriesService = new JobHistoriesService(new JobHistoriesRepository(databasePool));
+app.use('/api/employee-educations', createAllEducationRouter({ service: educationService, authenticate }));
+app.use('/api/employees/me/educations', createOwnEducationRouter({ service: educationService, authenticate }));
+app.use('/api/employees/me/job-histories', createOwnJobHistoriesRouter({ service: jobHistoriesService, authenticate }));
+app.use('/api/employees/:employeeId/educations', createEducationRouter({ service: educationService, authenticate }));
+app.use('/api/employees/:employeeId/job-histories', createJobHistoriesRouter({
+  service: jobHistoriesService, authenticate
+}));
+app.use('/api/job-histories', createJobHistoriesRouter({
+  service: jobHistoriesService, authenticate
+}));
 app.use('/api/employees', createEmployeesRouter({ employeesController, authenticate }));
 app.use('/api/positions', createPositionsRouter({ positionsController, authenticate }));
 app.use('/api/surveys', createSurveysRouter({ surveysController, authenticate }));
@@ -77,6 +97,11 @@ app.get('/health', (_request, response) => {
 });
 
 
+const { createAttendanceService } = require('./modules/attendance/attendance.service');
+const { AttendanceRepository } = require('./modules/attendance/attendance.repository');
+const { attendanceConfig } = require('./modules/attendance/attendance.config');
+const attendanceService = createAttendanceService(attendanceConfig(), new AttendanceRepository(databasePool));
+app.use('/api/v1/attendance', require('./modules/attendance/attendance.routes').createAttendanceRouter({ service: attendanceService, authenticate, databasePool }));
 app.use(errorHandler);
 
 module.exports = { app };

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="vi">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ERIS · Bằng cấp nhân viên</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/employee-education-demo/assets/style.css"><script defer src="/employee-education-demo/assets/app.js"></script></head>
+<body>
+<header><strong>ERIS</strong><span>HỒ SƠ HỌC VẤN</span><button id="logout" class="secondary" hidden>Đăng xuất</button></header>
+<main><p class="eyebrow">BẢN THỬ NGHIỆM</p><h1>Bằng cấp nhân viên</h1><p class="muted">Thêm, sửa, xóa bằng cấp và tìm trường trên toàn cầu.</p><p id="notice" role="status" aria-live="polite"></p>
+<section id="loginPanel" class="card login"><h2>Đăng nhập HR</h2><form id="login"><label for="email">Email</label><input id="email" type="email" autocomplete="username" required><label for="password">Mật khẩu</label><input id="password" type="password" autocomplete="current-password" required><button id="loginButton" type="submit">Đăng nhập</button></form></section>
+<div id="workspace" hidden>
+<section class="card"><p id="identity" class="muted"></p><label for="employee">Nhân viên</label><select id="employee"><option value="">Chọn nhân viên</option></select><p id="employeeInfo" class="muted small"></p></section>
+<div class="layout">
+<section class="card"><h2 id="formTitle">Thêm bằng cấp</h2><form id="education">
+<label for="level">Trình độ <span>*</span></label><select id="level" required><option value="">Chọn trình độ</option><option value="1">1 · Cao đẳng</option><option value="2">2 · Cử nhân</option><option value="3">3 · Thạc sĩ</option><option value="4">4 · Tiến sĩ</option></select>
+<label for="major">Chuyên ngành</label><input id="major" maxlength="150" placeholder="Ví dụ: Công nghệ thông tin">
+<label for="institution">Trường / cơ sở đào tạo <span>*</span></label><div class="suggest-wrap"><input id="institution" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggestions" autocomplete="off" maxlength="150" placeholder="Gõ từ 2 ký tự: Bách khoa, Ngoại thương…"><ul id="suggestions" role="listbox" hidden></ul></div>
+<p id="searchStatus" class="small muted" aria-live="polite">Bắt buộc chọn trường từ gợi ý ROR hoặc Vietmap; không nhận tên tự nhập.</p><p id="selectedSchool" class="small selected" hidden></p><p id="levelWarning" class="small advisory" role="status" aria-live="polite" hidden></p>
+<label for="year">Năm tốt nghiệp</label><input id="year" type="number" min="1900" step="1" placeholder="Ví dụ: 2024"><p id="yearHint" class="small muted">Năm tốt nghiệp ≥ năm sinh + 21, không vượt năm hiện tại.</p>
+<p class="small muted">Trình độ và trường từ gợi ý là bắt buộc. Các ô khác để trống sẽ gửi null. Dữ liệu được lưu vào database thật khi bạn bấm lưu.</p>
+<div class="actions"><button id="save" type="submit" disabled>Lưu bằng cấp</button><button id="cancelEdit" type="button" class="secondary">Làm mới form</button></div>
+</form></section>
+<section class="card list"><div class="heading"><h2>Danh sách bằng cấp</h2><button id="reload" class="secondary" type="button">Tải lại</button></div><label class="check"><input id="all" type="checkbox"> Xem tất cả nhân viên</label><p id="listStatus" class="small muted" aria-live="polite">Chọn nhân viên để xem bằng cấp.</p>
+<div class="table-wrap"><table><thead><tr><th>Nhân viên</th><th>Bằng cấp / ngành</th><th>Trường / năm</th><th>Thao tác</th></tr></thead><tbody id="rows"></tbody></table></div></section>
+</div></div></main>
+</body></html>

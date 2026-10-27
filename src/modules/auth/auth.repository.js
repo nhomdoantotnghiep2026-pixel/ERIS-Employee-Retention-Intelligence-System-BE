@@ -1,4 +1,5 @@
 const { AppError } = require('../../common/errors/app-error');
+const { JobHistoriesRepository } = require('../job-histories/job-histories.repository');
 class AuthRepository {
   constructor(databasePool) {
     this.databasePool = databasePool;
@@ -116,16 +117,47 @@ class AuthRepository {
   }
 
   async updatePassword(userId, passwordHash, status) {
-    const { rows } = await this.databasePool.query(
-      `UPDATE users
-       SET password_hash = $2,
-           status = $3
-       WHERE id = $1
-       RETURNING id`,
-      [userId, passwordHash, status]
-    );
-
-    return rows[0] || null;
+    const client = await this.databasePool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: accounts } = await client.query(
+        'SELECT id, status, employee_id AS "employeeId" FROM users WHERE id = $1 FOR UPDATE', [userId]);
+      const account = accounts[0];
+      if (!account) throw new AppError(404, 'Account not found.');
+      const activating = account.status === 'IN_PROCESS' && status === 'ACTIVE';
+      const { rows } = await client.query(
+        `UPDATE users SET password_hash = $2, status = $3 WHERE id = $1 RETURNING id`,
+        [userId, passwordHash, status]);
+      if (activating && account.employeeId != null) {
+        const { rows: profiles } = await client.query(
+          `SELECT id, employment_status AS status, department_id AS "departmentId",
+                  position_id AS "positionId", to_char(hire_date, 'YYYY-MM-DD') AS "hireDate"
+           FROM employees WHERE id = $1 FOR UPDATE`, [account.employeeId]);
+        const profile = profiles[0];
+        if (!profile || profile.status === 'INACTIVE') {
+          throw new AppError(409, 'Employee profile cannot be activated.');
+        }
+        if (profile.status === 'IN_PROCESS') {
+          await client.query(
+            `UPDATE employees SET employment_status = 'ACTIVE', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+            [profile.id]);
+        }
+        const histories = new JobHistoriesRepository(client);
+        if (!await histories.latest(profile.id)) {
+          await histories.insert(profile.id, {
+            departmentId: profile.departmentId,
+            positionId: profile.positionId,
+            startDate: profile.hireDate,
+            endDate: null
+          }, 'HIRE');
+        }
+      }
+      await client.query('COMMIT');
+      return rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally { client.release(); }
   }
 }
 
