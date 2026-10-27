@@ -1,4 +1,7 @@
 const { AppError } = require('../../common/errors/app-error');
+const { normalizePhone } = require('./employee-phone');
+const { validateEducation, validateGraduationYear } = require('../employee-education/education.validation');
+const { validateWorkExperiences } = require('../work-experiences/work-experiences.validation');
 const requiredEmployeeFields = ["fullName","email","phone","dateOfBirth","gender","address","departmentId","positionId","hireDate","employmentType","currentSalary"];
 function assertFilled(input, fields) {
   for (const field of fields) {
@@ -89,7 +92,9 @@ function validateCreateEmployeeInput(input) {
     'positionId',
     'hireDate',
     'employmentType',
-    'currentSalary'
+    'currentSalary',
+    'educations',
+    'workExperiences'
   ]);
 
   if (Object.keys(input).some((field) => !allowedFields.has(field))) {
@@ -108,12 +113,29 @@ function validateCreateEmployeeInput(input) {
   if (input.addressRefId !== undefined && (typeof input.addressRefId !== 'string' || !input.addressRefId.trim() || input.addressRefId.length > 2000 || typeof input.address !== 'string' || !input.address.trim())) {
     throw new AppError(400, 'addressRefId requires an address and a valid reference of at most 2000 characters.');
   }
+  const dateOfBirth = validateDate(input.dateOfBirth, 'dateOfBirth', { mustBePast: true });
+  if (!Array.isArray(input.educations) || !input.educations.length || input.educations.length > 20) {
+    throw new AppError(400, 'educations bắt buộc là mảng từ 1 đến 20 bằng cấp.');
+  }
+  const educationKeys = new Set();
+  const educations = input.educations.map((entry, index) => {
+    try {
+      const record = validateEducation(entry);
+      validateGraduationYear(record, dateOfBirth);
+      const key = JSON.stringify([record.educationLevel, record.institutionRefId, record.fieldOfStudy?.toLowerCase(), record.graduationYear]);
+      if (educationKeys.has(key)) throw new AppError(400, 'Bằng cấp bị trùng trong cùng hồ sơ.');
+      educationKeys.add(key);
+      return record;
+    } catch (error) { throw new AppError(error.statusCode || 400, `educations[${index}]: ${error.message}`); }
+  });
   return {
+    educations,
+    workExperiences: validateWorkExperiences(input.workExperiences, dateOfBirth),
     ...(input.addressRefId ? { addressRefId: input.addressRefId.trim() } : {}),
     fullName: input.fullName.trim(),
     email: email?.toLowerCase() || null,
-    phone: validateOptionalString(input.phone, 'phone', 30),
-    dateOfBirth: validateDate(input.dateOfBirth, 'dateOfBirth', { mustBePast: true }),
+    phone: normalizePhone(input.phone),
+    dateOfBirth,
     gender: validateOptionalString(input.gender, 'gender', 20),
     address: input.address === undefined || input.address === null
       ? null
@@ -173,7 +195,7 @@ function validateUpdateEmployeeInput(input) {
   }
 
 
-  if (Object.hasOwn(input, 'phone')) employee.phone = validateOptionalString(input.phone, 'phone', 30);
+  if (Object.hasOwn(input, 'phone')) employee.phone = normalizePhone(input.phone);
   if (Object.hasOwn(input, 'gender')) employee.gender = validateOptionalString(input.gender, 'gender', 20);
   if (Object.hasOwn(input, 'address')) employee.address = validateOptionalText(input.address, 'address');
   if (Object.hasOwn(input, 'departmentId')) employee.departmentId = validatePositiveInteger(input.departmentId, 'departmentId');

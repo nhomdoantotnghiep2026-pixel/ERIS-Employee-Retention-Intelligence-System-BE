@@ -45,11 +45,18 @@ const departmentsRepository = new DepartmentsRepository(databasePool);
 const departmentsService = new DepartmentsService({ departmentsRepository });
 const departmentsController = new DepartmentsController(departmentsService);
 const employeesRepository = new EmployeesRepository(databasePool);
+const { EducationRepository } = require('./modules/employee-education/education.repository');
+const { EducationService } = require('./modules/employee-education/education.service');
+const educationService = new EducationService(new EducationRepository(databasePool));
+const { WorkExperiencesRepository } = require('./modules/work-experiences/work-experiences.repository');
+const { WorkExperiencesService } = require('./modules/work-experiences/work-experiences.service');
+const { createWorkExperiencesRouter } = require('./modules/work-experiences/work-experiences.routes');
+const workExperiencesService = new WorkExperiencesService(new WorkExperiencesRepository(databasePool));
 const { createDistanceService } = require('./modules/distance/distance.service');
 const { distanceConfig } = require('./config/distance');
 const distanceService = createDistanceService(distanceConfig());
 const employeesService = new EmployeesService({
-  employeesRepository, distanceService,
+  employeesRepository, distanceService, educationService,
   mailTransporter, mailFrom: require('./config/env').env.mail.from,
   initialPassword: process.env.INITIAL_USER_PASSWORD
 });
@@ -66,18 +73,17 @@ const usersController = new UsersController(usersService);
 
 app.get('/employee-education-demo', (_req,res) => { res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/employee-education/index.html')); });
 app.use('/employee-education-demo/assets', express.static(require('node:path').join(__dirname,'../demo/employee-education'),{index:false,etag:false,setHeaders:res=>res.set('Cache-Control','no-store')}));
-app.get('/employee-create-demo', (_req, res) => res.sendFile(require('node:path').join(__dirname, '../demo/employee-create/index.html')));
-app.use('/employee-create-demo/assets', express.static(require('node:path').join(__dirname, '../demo/employee-create'), { index: false }));
+app.get('/employee-create-demo', (_req, res) => { res.set('Cache-Control', 'no-store'); res.sendFile(require('node:path').join(__dirname, '../demo/employee-create/index.html')); });
+app.use('/employee-create-demo/assets', express.static(require('node:path').join(__dirname, '../demo/employee-create'), { index: false, etag: false, setHeaders: res => res.set('Cache-Control', 'no-store') }));
 app.use('/api/distance', require('./modules/distance/distance.routes').createDistanceRouter({ authenticate, employeesService, distanceService }));
 
 app.use('/api/auth', createAuthRouter(authController));
 app.use('/api/departments', createDepartmentsRouter({ departmentsController, authenticate }));
-const { EducationRepository } = require('./modules/employee-education/education.repository');
-const { EducationService } = require('./modules/employee-education/education.service');
 const { createEducationRouter, createAllEducationRouter, createOwnEducationRouter } = require('./modules/employee-education/education.routes');
-const educationService = new EducationService(new EducationRepository(databasePool));
 const jobHistoriesService = new JobHistoriesService(new JobHistoriesRepository(databasePool));
 app.use('/api/employee-educations', createAllEducationRouter({ service: educationService, authenticate }));
+app.use('/api/employee-work-experiences', createWorkExperiencesRouter({ service: workExperiencesService, authenticate, all: true }));
+app.use('/api/employees/:employeeId/work-experiences', createWorkExperiencesRouter({ service: workExperiencesService, authenticate }));
 app.use('/api/employees/me/educations', createOwnEducationRouter({ service: educationService, authenticate }));
 app.use('/api/employees/me/job-histories', createOwnJobHistoriesRouter({ service: jobHistoriesService, authenticate }));
 app.use('/api/employees/:employeeId/educations', createEducationRouter({ service: educationService, authenticate }));

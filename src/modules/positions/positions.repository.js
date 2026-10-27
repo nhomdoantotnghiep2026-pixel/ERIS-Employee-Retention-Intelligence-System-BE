@@ -16,17 +16,20 @@ class PositionsRepository {
     return rows[0] || null;
   }
 
-  async findAll() {
+  async findAll(departmentId = null) {
     const { rows } = await this.databasePool.query(
       `SELECT
          id,
          code,
          name,
          job_level AS "jobLevel",
+         department_id AS "departmentId",
          description,
          status
        FROM positions
-       ORDER BY id ASC`
+       WHERE ($1::integer IS NULL OR department_id=$1)
+       ORDER BY id ASC`,
+      [departmentId]
     );
 
     return rows;
@@ -39,6 +42,7 @@ class PositionsRepository {
          code,
          name,
          job_level AS "jobLevel",
+         department_id AS "departmentId",
          description,
          status,
          created_at AS "createdAt",

@@ -1,5 +1,6 @@
 const { AppError } = require('../../common/errors/app-error');
 const { JobHistoriesRepository } = require('../job-histories/job-histories.repository');
+const { EmployeeBackgroundRepository } = require('../employees/employee-background.repository');
 class AuthRepository {
   constructor(databasePool) {
     this.databasePool = databasePool;
@@ -151,6 +152,7 @@ class AuthRepository {
             endDate: null
           }, 'HIRE');
         }
+        await new EmployeeBackgroundRepository(client).activate(profile.id);
       }
       await client.query('COMMIT');
       return rows[0];

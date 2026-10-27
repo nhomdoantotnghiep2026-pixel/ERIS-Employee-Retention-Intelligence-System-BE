@@ -34,6 +34,7 @@ async function recordJobChange(repo, current, changes, today = todayInVietnam())
   const position = await repo.targetPosition(positionId);
   if (department?.status !== 'ACTIVE') throw new AppError(404, 'Không tìm thấy phòng ban ACTIVE.');
   if (position?.status !== 'ACTIVE') throw new AppError(404, 'Không tìm thấy vị trí ACTIVE.');
+  if (Number(position.departmentId) !== departmentId) throw new AppError(400, 'Vị trí công việc không thuộc phòng ban đã chọn.');
 
   const latest = await repo.latest(current.id);
   const oldEndDate = previousDay(today);

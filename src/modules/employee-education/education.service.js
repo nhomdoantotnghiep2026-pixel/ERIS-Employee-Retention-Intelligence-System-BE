@@ -13,6 +13,17 @@ class EducationService {
     return {...fields,institution:school.institution};
   }
   async activeEmployees(actorId) { await this.repository.assertHr(actorId); return {data:await this.repository.activeEmployees()}; }
+  async prepareForEmployeeCreation(actorId, educations, dateOfBirth) {
+    const records = [];
+    for (const [index, data] of educations.entries()) {
+      try {
+        const input = await this.verifySchool(actorId, validateEducation(data));
+        validateGraduationYear(input, dateOfBirth);
+        records.push(input);
+      } catch (error) { throw new AppError(error.statusCode || 503, `educations[${index}]: ${error.message}`); }
+    }
+    return records;
+  }
   async institutions(actorId,query) { await this.repository.assertHr(actorId); return this.searchInstitutions(query); }
   async listAll(actorId) { return {data:await this.repository.listAllForHr(actorId)}; }
   async listOwn(actorId) { return {data:await this.repository.listOwn(actorId)}; }

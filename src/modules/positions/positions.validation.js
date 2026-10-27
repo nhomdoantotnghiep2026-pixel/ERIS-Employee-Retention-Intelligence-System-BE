@@ -81,4 +81,12 @@ function validateUpdatePositionInput(input) {
   return position;
 }
 
-module.exports = { validatePositionId, validateCreatePositionInput, validateUpdatePositionInput };
+function validatePositionListQuery(query) {
+  if (Object.keys(query).some(key => key !== 'departmentId')) throw new AppError(400, 'Only departmentId is supported.');
+  if (query.departmentId === undefined) return null;
+  if (typeof query.departmentId !== 'string' || !/^[1-9]\d*$/.test(query.departmentId) || Number(query.departmentId) > 2147483647) {
+    throw new AppError(400, 'departmentId must be a positive integer.');
+  }
+  return Number(query.departmentId);
+}
+module.exports = { validatePositionId, validateCreatePositionInput, validateUpdatePositionInput, validatePositionListQuery };
