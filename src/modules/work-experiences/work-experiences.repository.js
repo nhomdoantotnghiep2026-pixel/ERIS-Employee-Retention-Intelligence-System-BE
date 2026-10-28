@@ -15,8 +15,8 @@ class WorkExperiencesRepository {
       if (actor?.status !== 'ACTIVE' || actor.role !== 'HR') throw new AppError(403, 'Chỉ HR ACTIVE được quản lý kinh nghiệm làm việc.');
       let employee;
       if (employeeId !== undefined) {
-        if (write && Number(actor.employeeId) === employeeId) throw new AppError(403, 'HR khác phải xóa kinh nghiệm của bạn.');
-        const { rows } = await client.query(`SELECT id, employee_code AS "employeeCode", full_name AS "fullName", employment_status AS "employmentStatus"
+        if (write && Number(actor.employeeId) === employeeId) throw new AppError(403, 'HR khác phải thêm hoặc xóa kinh nghiệm của bạn.');
+        const { rows } = await client.query(`SELECT id, employee_code AS "employeeCode", full_name AS "fullName", employment_status AS "employmentStatus", to_char(date_of_birth, 'YYYY-MM-DD') AS "dateOfBirth"
           FROM employees WHERE id=$1 FOR SHARE`, [employeeId]);
         employee = rows[0];
         if (!employee) throw new AppError(404, 'Không tìm thấy nhân viên.');
