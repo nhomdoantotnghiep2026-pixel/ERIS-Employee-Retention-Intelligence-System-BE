@@ -1,10 +1,11 @@
+const { auditChildMethods } = require('../audit_logs/audit.repository');
 const { AppError } = require('../../common/errors/app-error');
 const columns = `id, employee_id AS "employeeId", company_name AS "companyName", position_title AS "positionTitle",
   to_char(start_date, 'YYYY-MM-DD') AS "startDate", to_char(end_date, 'YYYY-MM-DD') AS "endDate",
   status, created_at AS "createdAt", updated_at AS "updatedAt"`;
 
 class WorkExperiencesRepository {
-  constructor(pool) { this.pool = pool; }
+  constructor(pool, auditActorId = null) { this.pool = pool; this.auditActorId = auditActorId; }
   async withHr(actorId, employeeId, write, work) {
     const client = await this.pool.connect();
     try {
@@ -15,8 +16,8 @@ class WorkExperiencesRepository {
       if (actor?.status !== 'ACTIVE' || actor.role !== 'HR') throw new AppError(403, 'Chỉ HR ACTIVE được quản lý kinh nghiệm làm việc.');
       let employee;
       if (employeeId !== undefined) {
-        if (write && Number(actor.employeeId) === employeeId) throw new AppError(403, 'HR khác phải xóa kinh nghiệm của bạn.');
-        const { rows } = await client.query(`SELECT id, employee_code AS "employeeCode", full_name AS "fullName", employment_status AS "employmentStatus"
+        if (write && Number(actor.employeeId) === employeeId) throw new AppError(403, 'HR khác phải thêm hoặc xóa kinh nghiệm của bạn.');
+        const { rows } = await client.query(`SELECT id, employee_code AS "employeeCode", full_name AS "fullName", employment_status AS "employmentStatus", to_char(date_of_birth, 'YYYY-MM-DD') AS "dateOfBirth"
           FROM employees WHERE id=$1 FOR SHARE`, [employeeId]);
         employee = rows[0];
         if (!employee) throw new AppError(404, 'Không tìm thấy nhân viên.');
@@ -26,7 +27,7 @@ class WorkExperiencesRepository {
           if (!accounts[0]) throw new AppError(409, 'Tài khoản nhân viên phải ACTIVE để xem kinh nghiệm.');
         }
       }
-      const result = await work(new WorkExperiencesRepository(client), employee);
+      const result = await work(new WorkExperiencesRepository(client, actorId), employee);
       await client.query('COMMIT');
       return result;
     } catch (error) { await client.query('ROLLBACK'); throw error; }
@@ -57,4 +58,5 @@ class WorkExperiencesRepository {
       WHERE employee_id=$1 AND id=$2 AND status='ACTIVE' RETURNING ${columns}`, [employeeId, experienceId])).rows[0] || null;
   }
 }
+auditChildMethods(WorkExperiencesRepository, { create: {table:'employee_work_experiences',action:'CREATE'}, deactivate: {table:'employee_work_experiences',action:'SOFT_DELETE',idIndex:1} });
 module.exports = { WorkExperiencesRepository };

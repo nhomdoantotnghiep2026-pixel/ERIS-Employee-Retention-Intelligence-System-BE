@@ -1,3 +1,4 @@
+const { randomUUID } = require('node:crypto');
 const ExcelJS = require('exceljs');
 const multer = require('multer');
 const { AppError } = require('../../common/errors/app-error');
@@ -137,7 +138,7 @@ function parseRelatedSheets(sheets) {
   });
 }
 
-async function processEmployeeRows(rows, service, actorId, concurrency = 3) {
+async function processEmployeeRows(rows, service, actorId, concurrency = 3, importId = randomUUID()) {
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 3) throw new AppError(400, 'Import concurrency must be between 1 and 3.');
   const results = new Array(rows.length);
   const distanceCache = new Map();
@@ -147,7 +148,7 @@ async function processEmployeeRows(rows, service, actorId, concurrency = 3) {
       const index = nextIndex++, row = rows[index];
       if (!row.input) { results[index] = row; continue; }
       try {
-        const data = await service.createEmployee({ actorId, employee: row.input, distanceCache });
+        const data = await service.createEmployee({ actorId, employee: row.input, distanceCache, auditContext: { source: 'IMPORT', importId, row: row.row } });
         results[index] = { row: row.row, status: 'CREATED', data };
       } catch (error) {
         results[index] = { row: row.row, status: 'FAILED', statusCode: error.statusCode || 500,
@@ -168,9 +169,17 @@ function registerEmployeeImport(router, authenticate, service) {
       try {
         if (!req.file) throw new AppError(400, 'Upload an Excel file using the file field.');
         const rows = await parseWorkbook(req.file.buffer);
-        const results = await processEmployeeRows(rows, service, req.auth.userId);
+        const importId = randomUUID();
+        const results = await processEmployeeRows(rows, service, req.auth.userId, 3, importId);
         const created = results.filter(r => r.status === 'CREATED').length;
-        res.status(200).json({ total: results.length, created, failed: results.length - created, results });
+        let auditWarning;
+        try {
+          await service.employeesRepository.recordImportAudit(req.auth.userId, {
+            importId, total: results.length, created, failed: results.length - created,
+            rows: results.map(row => ({ row: row.row, status: row.status, ...(row.status === 'CREATED' ? { employeeId: row.data.id } : {}) }))
+          });
+        } catch { auditWarning = 'Đã xử lý import, nhưng chưa lưu được log tổng kết. Log tạo từng hồ sơ thành công đã được lưu; không import lại các dòng thành công.'; }
+        res.status(200).json({ importId, ...(auditWarning ? { auditWarning } : {}), total: results.length, created, failed: results.length - created, results });
       } catch (error) { next(error); }
     });
   });

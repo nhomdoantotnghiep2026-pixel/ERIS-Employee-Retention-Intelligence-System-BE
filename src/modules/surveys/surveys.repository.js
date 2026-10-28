@@ -1,3 +1,4 @@
+const { snapshot, writeAudit, auditMutation, transaction } = require('../audit_logs/audit.repository');
 const { DEFAULT_SURVEY_QUESTIONS } = require('./surveys.constants');
 const { AppError } = require('../../common/errors/app-error');
 
@@ -64,6 +65,8 @@ class SurveysRepository {
         questions.push(rows[0]);
       }
 
+      await writeAudit(client, { actorId: createdBy, entityType: 'surveys', entityId: savedSurvey.id, action: 'CREATE',
+        newValue: { ...await snapshot(client, 'surveys', savedSurvey.id), questions } });
       await client.query('COMMIT');
       return { ...savedSurvey, questions };
     } catch (error) {
@@ -334,7 +337,12 @@ class SurveysRepository {
     return rows;
   }
 
-  async publish(id) {
+  async publish(id, actorId) {
+    return transaction(this.databasePool, client => auditMutation(client,
+      { actorId, table: 'surveys', id, action: 'PUBLISH' },
+      () => new SurveysRepository(client)._publish(id)));
+  }
+  async _publish(id) {
     const { rows } = await this.databasePool.query(
       `UPDATE surveys
        SET status = 'ACTIVE',

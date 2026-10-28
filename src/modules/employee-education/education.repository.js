@@ -1,9 +1,10 @@
+const { auditChildMethods } = require('../audit_logs/audit.repository');
 const { AppError } = require('../../common/errors/app-error');
 const columns = `id, employee_id AS "employeeId", CASE WHEN education_level IN ('1','2','3','4') THEN education_level::integer ELSE NULL END AS "educationLevel",
   field_of_study AS "fieldOfStudy", institution, graduation_year AS "graduationYear", status,
   created_at AS "createdAt", updated_at AS "updatedAt"`;
 class EducationRepository {
-  constructor(pool) { this.pool = pool; }
+  constructor(pool, auditActorId = null) { this.pool = pool; this.auditActorId = auditActorId; }
   async listOwn(actorId) {
     const client = await this.pool.connect();
     try {
@@ -38,7 +39,7 @@ class EducationRepository {
         const {rows:accounts}=await client.query("SELECT id FROM users WHERE employee_id=$1 AND status='ACTIVE' FOR SHARE",[employeeId]);
         if(!accounts[0])throw new AppError(409,'Employee account must be ACTIVE to view education.');
       }
-      const result = await work(new EducationRepository(client), employees[0]);
+      const result = await work(new EducationRepository(client, actorId), employees[0]);
       await client.query('COMMIT'); return result;
     } catch (error) {
       await client.query('ROLLBACK');
@@ -99,4 +100,5 @@ class EducationRepository {
       WHERE employee_id=$1 AND id=$2 AND status='ACTIVE' RETURNING ${columns}`, [employeeId,id])).rows[0] || null;
   }
 }
+auditChildMethods(EducationRepository, { create: {table:'employee_educations',action:'CREATE'}, update: {table:'employee_educations',action:'UPDATE',idIndex:1}, delete: {table:'employee_educations',action:'SOFT_DELETE',idIndex:1} });
 module.exports = { EducationRepository };

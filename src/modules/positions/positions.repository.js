@@ -1,3 +1,4 @@
+const { auditMutation, transaction } = require('../audit_logs/audit.repository');
 class PositionsRepository {
   constructor(databasePool) {
     this.databasePool = databasePool;
@@ -56,7 +57,12 @@ class PositionsRepository {
     return rows[0] || null;
   }
 
-  async create({ name, jobLevel, description }) {
+  async create(data, actorId) {
+    return transaction(this.databasePool, client => auditMutation(client,
+      { actorId, table: 'positions', id: null, action: 'CREATE' },
+      () => new PositionsRepository(client)._create(data)));
+  }
+  async _create({ name, jobLevel, description }) {
     const { rows } = await this.databasePool.query(
       `WITH new_position_id AS (
          SELECT nextval(pg_get_serial_sequence('positions', 'id')) AS id
@@ -84,7 +90,12 @@ class PositionsRepository {
     return rows[0];
   }
 
-  async update(id, position) {
+  async update(id, data, actorId) {
+    return transaction(this.databasePool, client => auditMutation(client,
+      { actorId, table: 'positions', id: id, action: 'UPDATE' },
+      () => new PositionsRepository(client)._update(id, data)));
+  }
+  async _update(id, position) {
     const assignments = [];
     const values = [];
 
@@ -137,7 +148,12 @@ class PositionsRepository {
     return rows[0].hasActiveEmployees;
   }
 
-  async deactivate(id) {
+  async deactivate(id, actorId) {
+    return transaction(this.databasePool, client => auditMutation(client,
+      { actorId, table: 'positions', id: id, action: 'SOFT_DELETE' },
+      () => new PositionsRepository(client)._deactivate(id)));
+  }
+  async _deactivate(id) {
     const { rows } = await this.databasePool.query(
       `UPDATE positions
        SET status = 'INACTIVE',

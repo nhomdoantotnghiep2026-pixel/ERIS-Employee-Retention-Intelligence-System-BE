@@ -20,7 +20,7 @@ class DepartmentsService {
 
   async createDepartment({ actorId, department }) {
     await this.assertHr(actorId);
-    return this.departmentsRepository.create(department);
+    return this.departmentsRepository.create(department, actorId);
   }
 
   async deactivateDepartment({ actorId, departmentId }) {
@@ -39,7 +39,7 @@ class DepartmentsService {
       throw new AppError(409, 'Cannot deactivate a department that still has active employees.');
     }
 
-    return this.departmentsRepository.deactivate(departmentId);
+    return this.departmentsRepository.deactivate(departmentId, actorId);
   }
 
   async updateDepartment({ actorId, departmentId, department }) {
@@ -50,7 +50,7 @@ class DepartmentsService {
       throw new AppError(404, 'Department not found.');
     }
 
-    return this.departmentsRepository.update(departmentId, department);
+    return this.departmentsRepository.update(departmentId, department, actorId);
   }
 }
 

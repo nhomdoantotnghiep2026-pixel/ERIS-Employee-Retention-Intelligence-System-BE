@@ -10,6 +10,11 @@ function createWorkExperiencesRouter({ service, authenticate, all = false }) {
         : await service.list(req.auth.userId, validateId(req.params.employeeId, 'employeeId')));
     } catch (error) { next(error); }
   });
+  if (!all) router.post('/', async (req, res, next) => {
+    try {
+      res.status(201).json(await service.create(req.auth.userId, validateId(req.params.employeeId, 'employeeId'), req.body));
+    } catch (error) { next(error); }
+  });
   if (!all) router.delete('/:experienceId', async (req, res, next) => {
     try {
       res.json(await service.delete(req.auth.userId, validateId(req.params.employeeId, 'employeeId'), validateId(req.params.experienceId, 'experienceId')));

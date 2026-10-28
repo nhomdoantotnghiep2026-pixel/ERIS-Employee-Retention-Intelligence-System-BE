@@ -80,7 +80,7 @@ class EmployeesService {
     if (!row) throw new AppError(404, 'No employee profile is linked to this user.');
     return { ...output(row), ...await this.employeesRepository.findBackground(row.id) };
   }
-  async createEmployee({ actorId, employee, distanceCache }) {
+  async createEmployee({ actorId, employee, distanceCache, auditContext }) {
     const checks = await this.employeesRepository.preflightCreate(actorId, employee);
     if (checks.actorRole !== 'HR') throw new AppError(403, 'Only HR can create employees.');
     if (checks.emailExists) throw new AppError(409, 'Email already has an employee profile.');
@@ -115,7 +115,7 @@ class EmployeesService {
     }
     const passwordHash = existingAccount ? null : await hashPassword(this.initialPassword);
     const created = await this.employeesRepository.createWithAccount(
-      { ...employee, distanceFromHomeKm: calculation.distanceFromHomeKm }, passwordHash, actorId);
+      { ...employee, distanceFromHomeKm: calculation.distanceFromHomeKm }, passwordHash, actorId, auditContext);
     if (created.accountCreated === false) return { ...output(created.employee, calculation), account: created.account, accountCreated: false, initialJobHistory: created.initialJobHistory };
     let emailDelivery = 'SENT';
     try {
