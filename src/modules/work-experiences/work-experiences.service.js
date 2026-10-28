@@ -1,4 +1,5 @@
 const { AppError } = require('../../common/errors/app-error');
+const { validateWorkExperience } = require('./work-experiences.validation');
 class WorkExperiencesService {
   constructor(repository) { this.repository = repository; }
   async listAll(actorId) {
@@ -6,6 +7,12 @@ class WorkExperiencesService {
   }
   async list(actorId, employeeId) {
     return this.repository.withHr(actorId, employeeId, false, async (repo, employee) => ({ employee, data: await repo.list(employeeId) }));
+  }
+  async create(actorId, employeeId, data) {
+    return this.repository.withHr(actorId, employeeId, true, async (repo, employee) => {
+      const input = validateWorkExperience(data, employee.dateOfBirth);
+      return { message: 'Đã thêm kinh nghiệm làm việc.', data: await repo.create(employeeId, input) };
+    });
   }
   async delete(actorId, employeeId, experienceId) {
     return this.repository.withHr(actorId, employeeId, true, async repo => {
