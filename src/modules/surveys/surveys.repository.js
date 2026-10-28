@@ -406,7 +406,17 @@ class SurveysRepository {
          COUNT(survey_answers.id) FILTER (
            WHERE survey_responses.submitted_at IS NOT NULL
              AND survey_answers.score = 4
-         )::integer AS "score4"
+          )::integer AS "score4",
+         COALESCE(
+           jsonb_agg(
+             jsonb_build_object('score', survey_answers.score, 'comment', survey_answers.comment)
+             ORDER BY survey_answers.id
+           ) FILTER (
+             WHERE survey_responses.submitted_at IS NOT NULL
+               AND survey_responses.survey_id = survey_questions.survey_id
+               AND survey_answers.id IS NOT NULL
+           ), '[]'::jsonb
+         ) AS answers
        FROM survey_questions
        LEFT JOIN survey_answers ON survey_answers.question_id = survey_questions.id
        LEFT JOIN survey_responses ON survey_responses.id = survey_answers.response_id

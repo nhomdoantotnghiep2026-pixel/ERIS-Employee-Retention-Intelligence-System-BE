@@ -286,7 +286,7 @@ const surveysPaths = {
     get: {
       tags: ['Surveys'],
       summary: 'Xem kết quả tổng hợp khảo sát (HR)',
-      description: 'Chỉ tính response đã submit; không trả employeeId, câu trả lời cá nhân hoặc comment.',
+      description: 'Chỉ tính lượt đã gửi hoàn tất. Mỗi câu có thêm answers: [{score, comment}], giữ nguyên nhận xét null và trả [] nếu chưa có câu trả lời. Không trả tên, employeeId hoặc responseId của người trả lời.',
       security: [{ bearerAuth: [] }],
       parameters: [{
         name: 'id',
@@ -295,7 +295,7 @@ const surveysPaths = {
         schema: { type: 'integer', minimum: 1 }
       }],
       responses: {
-        200: { description: 'Kết quả tổng hợp theo từng câu hỏi, gồm averageScore và phân bố điểm 1–4.' },
+        200: { description: 'Kết quả theo từng câu hỏi, gồm averageScore, phân bố điểm 1–4 và answers chứa điểm, nhận xét từng câu trả lời.' },
         400: { description: 'ID không hợp lệ.' },
         401: { description: 'Thiếu hoặc sai access token.' },
         403: { description: 'Chỉ tài khoản HR được phép truy cập.' },
