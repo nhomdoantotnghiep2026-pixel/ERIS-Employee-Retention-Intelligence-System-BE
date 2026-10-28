@@ -106,7 +106,18 @@ app.get('/health', (_request, response) => {
 const { createAttendanceService } = require('./modules/attendance/attendance.service');
 const { AttendanceRepository } = require('./modules/attendance/attendance.repository');
 const { attendanceConfig } = require('./modules/attendance/attendance.config');
-const attendanceService = createAttendanceService(attendanceConfig(), new AttendanceRepository(databasePool));
+const { CompanyLocationStore } = require('./modules/attendance/company-location.store');
+const attendanceSettings = attendanceConfig();
+const companyLocationStore = new CompanyLocationStore({
+  redisClient, ensureRedisConnection,
+  fallback: { latitude: attendanceSettings.attendance.latitude, longitude: attendanceSettings.attendance.longitude,
+    address: process.env.COMPANY_LOCATION_LABEL || 'FPT University HCMC' }
+});
+const attendanceService = createAttendanceService(attendanceSettings, new AttendanceRepository(databasePool), undefined, companyLocationStore);
+
+const companyDemoPath = require('node:path').join(__dirname, '../demo/company-location');
+app.get('/company-location-demo', (_req, res) => { res.set('Cache-Control', 'no-store'); res.sendFile(require('node:path').join(companyDemoPath, 'index.html')); });
+app.use('/company-location-demo/assets', express.static(companyDemoPath, { index: false, etag: false, setHeaders: res => res.set('Cache-Control', 'no-store') }));
 app.use('/api/v1/attendance', require('./modules/attendance/attendance.routes').createAttendanceRouter({ service: attendanceService, authenticate, databasePool }));
 app.use(errorHandler);
 
