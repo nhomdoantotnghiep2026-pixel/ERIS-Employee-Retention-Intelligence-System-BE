@@ -1,3 +1,4 @@
+const { snapshot, writeAudit, recordChange, transaction } = require('../audit_logs/audit.repository');
 const { AppError } = require('../../common/errors/app-error');
 const { JobHistoriesRepository } = require('../job-histories/job-histories.repository');
 const { recordJobChange } = require('../job-histories/job-histories.transition');
@@ -78,7 +79,7 @@ class EmployeesRepository {
     const { rows } = await this.databasePool.query('SELECT id, email FROM users WHERE employee_id = $1 LIMIT 1', [employeeId]);
     return rows[0] || null;
   }
-  async createWithAccount(employee, passwordHash, actorId) {
+  async createWithAccount(employee, passwordHash, actorId, auditContext = null) {
     const client = await this.databasePool.connect();
     try {
       await client.query('BEGIN');
@@ -133,6 +134,12 @@ class EmployeesRepository {
         : null;
       const backgrounds = new EmployeeBackgroundRepository(client);
       const background = await backgrounds.create(record.id, employee, saved.status === 'ACTIVE' ? 'ACTIVE' : 'IN_PROCESS');
+      const createdSnapshot = await snapshot(client, 'employees', record.id);
+      const { rows: educationRows } = await client.query('SELECT to_jsonb(e) AS data FROM employee_educations e WHERE employee_id=$1 ORDER BY id', [record.id]);
+      const { rows: experienceRows } = await client.query('SELECT to_jsonb(e) AS data FROM employee_work_experiences e WHERE employee_id=$1 ORDER BY id', [record.id]);
+      await writeAudit(client, { actorId, entityType: 'employees', entityId: record.id, action: 'CREATE',
+        newValue: { ...createdSnapshot, educations: educationRows.map(row => row.data), workExperiences: experienceRows.map(row => row.data),
+          ...(initialJobHistory ? { initialJobHistory } : {}), _context: auditContext || { source: 'MANUAL' } } });
       await client.query('COMMIT');
       return { employee: { ...record, ...background }, account: saved, accountCreated: !account, initialJobHistory };
     } catch (error) {
@@ -140,6 +147,11 @@ class EmployeesRepository {
       if (error.code === '23505') throw new AppError(409, 'Employee or account already exists.');
       throw error;
     } finally { client.release(); }
+  }
+  async recordImportAudit(actorId, summary) {
+    return transaction(this.databasePool, client => writeAudit(client, {
+      actorId, entityType: 'employee_imports', action: 'IMPORT', newValue: summary
+    }));
   }
   async createBackground(employeeId, employee) {
     return new EmployeeBackgroundRepository(this.databasePool).create(employeeId, employee);
@@ -348,6 +360,7 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
         if (actor?.role !== 'HR' || actor?.status !== 'ACTIVE') throw new AppError(403, 'Only ACTIVE HR can deactivate profiles.');
         if (Number(actor.employeeId) === Number(id)) throw new AppError(403, 'You cannot deactivate your own profile.');
       }
+      const beforeAudit = await snapshot(client, 'employees', id, true);
       const { rows } = await client.query('SELECT id, employment_status FROM employees WHERE id = $1 FOR UPDATE', [id]);
       if (!rows[0]) throw new AppError(404, 'Employee not found.');
       if (rows[0].employment_status === 'INACTIVE') throw new AppError(409, 'Employee is already inactive.');
@@ -355,6 +368,7 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
         `UPDATE employees SET employment_status = 'INACTIVE', updated_at = CURRENT_TIMESTAMP
          WHERE id = $1 RETURNING id, employee_code AS "employeeCode", employment_status AS "employmentStatus", updated_at AS "updatedAt"`, [id]);
       await client.query("UPDATE users SET status = 'INACTIVE', updated_at = CURRENT_TIMESTAMP WHERE employee_id = $1", [id]);
+      await recordChange(client, actorId, 'employees', id, 'SOFT_DELETE', beforeAudit, await snapshot(client, 'employees', id));
       await client.query('COMMIT');
       return result.rows[0];
     } catch (error) {
@@ -379,7 +393,9 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
       const jobHistory = current.status === 'ACTIVE'
         ? await recordJobChange(histories, current, employee)
         : null;
+      const beforeAudit = await snapshot(repository.databasePool, 'employees', id, true);
       const updated = await repository.update(id, employee);
+      if (updated) await recordChange(repository.databasePool, actorId, 'employees', id, 'UPDATE', beforeAudit, await snapshot(repository.databasePool, 'employees', id));
       if (!updated && jobHistory) throw new AppError(409, 'Employee changed during job update.');
       return updated && jobHistory ? { ...updated, jobHistory } : updated;
     });

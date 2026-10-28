@@ -191,7 +191,7 @@ class SurveysService {
       throw new AppError(400, 'An expired survey cannot be published.');
     }
 
-    const publishedSurvey = await this.surveysRepository.publish(surveyId);
+    const publishedSurvey = await this.surveysRepository.publish(surveyId, actorId);
     if (!publishedSurvey) {
       throw new AppError(409, 'Survey status changed; reload and try again.');
     }

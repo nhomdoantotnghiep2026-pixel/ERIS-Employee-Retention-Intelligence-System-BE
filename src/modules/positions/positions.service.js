@@ -37,7 +37,7 @@ class PositionsService {
       throw new AppError(403, 'Only HR can create positions.');
     }
 
-    return this.positionsRepository.create(position);
+    return this.positionsRepository.create(position, actorId);
   }
 
   async updatePosition({ actorId, positionId, position }) {
@@ -52,7 +52,7 @@ class PositionsService {
       throw new AppError(404, 'Position not found.');
     }
 
-    return this.positionsRepository.update(positionId, position);
+    return this.positionsRepository.update(positionId, position, actorId);
   }
 
   async deactivatePosition({ actorId, positionId }) {
@@ -75,7 +75,7 @@ class PositionsService {
       throw new AppError(409, 'Cannot deactivate a position that still has active employees.');
     }
 
-    return this.positionsRepository.deactivate(positionId);
+    return this.positionsRepository.deactivate(positionId, actorId);
   }
 }
 
