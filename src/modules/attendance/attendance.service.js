@@ -21,12 +21,21 @@ function evaluate(body, config, now) {
   const distance=6371000*2*Math.atan2(Math.sqrt(a),Math.sqrt(Math.max(0,1-a)));
   return {status:body.accuracyMeters>config.maxAccuracyMeters?'LOW_ACCURACY':distance<=config.radiusMeters?'INSIDE':'OUTSIDE',distanceMeters:Math.round(distance),accuracyMeters:body.accuracyMeters,allowedRadiusMeters:config.radiusMeters};
 }
-function createAttendanceService(config, repository, clock=()=>new Date()) {
+function createAttendanceService(config, repository, clock=()=>new Date(), locationStore=null) {
   const settings=config.attendance;
+  async function currentSettings() {
+    const location = locationStore ? await locationStore.get() : { latitude: settings.latitude, longitude: settings.longitude, address: settings.address || '', source: 'env', updatedAt: null, updatedBy: null };
+    return { ...settings, ...location };
+  }
+  function assertLocationHr(user) {
+    if (user?.status !== 'ACTIVE' || user?.role_name !== 'HR' || user.employeeId == null || user.employmentStatus !== 'ACTIVE') {
+      error('FORBIDDEN', 'Chỉ HR ACTIVE có employeeId và hồ sơ ACTIVE được quản lý vị trí công ty.', 403);
+    }
+  }
   async function record(action,user,body) {
     const now=clock(),day=localDay(now);
     if(!day.workday) error('NON_WORKDAY','Attendance is available Monday to Friday.');
-    const gps=evaluate(body,settings,now);
+    const gps=evaluate(body,await currentSettings(),now);
     if(gps.status!=='INSIDE') return {...gps,persisted:false,storage:'postgresql',mockMode:false};
     const attendanceStatus=now>new Date(day.date+'T08:00:00+07:00')?'LATE':'PRESENT';
     const row=await repository.record({userId:user.id,employeeId:user.employeeId,date:day.date,instant:now.toISOString(),action,attendanceStatus});
@@ -38,7 +47,13 @@ function createAttendanceService(config, repository, clock=()=>new Date()) {
   return {
     async list(user) { assertHr(user); return repository.list(); },
     async detail(user,id) { assertHr(user); const row=await repository.findById(id); if(!row) error('NOT_FOUND','Attendance record not found.',404); return {data:row}; },
-    configuration:()=>({companyLocation:{latitude:settings.latitude,longitude:settings.longitude},allowedRadiusMeters:settings.radiusMeters,maximumAccuracyMeters:settings.maxAccuracyMeters,timeZone:zone,workStart:'08:00',workEnd:'17:00',lunchStart:'12:00',lunchEnd:'13:00',storage:'postgresql',mockMode:false}),
+    async companyLocation(user) { assertLocationHr(user); const current = await currentSettings(); return { data: { address: current.address, latitude: current.latitude, longitude: current.longitude, source: current.source, updatedAt: current.updatedAt, updatedBy: current.updatedBy }, allowedRadiusMeters: settings.radiusMeters }; },
+    async updateCompanyLocation(user,body) {
+      assertLocationHr(user);
+      if (!locationStore) error('UNAVAILABLE', 'Chưa cấu hình nơi lưu vị trí công ty.', 503);
+      return { message: 'Đã cập nhật vị trí công ty.', data: await locationStore.set(body,user.id), allowedRadiusMeters: settings.radiusMeters };
+    },
+    configuration:async()=>{ const current=await currentSettings(); return ({companyLocation:{latitude:current.latitude,longitude:current.longitude,address:current.address},companyLocationSource:current.source,allowedRadiusMeters:settings.radiusMeters,maximumAccuracyMeters:settings.maxAccuracyMeters,timeZone:zone,workStart:'08:00',workEnd:'17:00',lunchStart:'12:00',lunchEnd:'13:00',storage:'postgresql',mockMode:false}); },
     async today(user) {
       const now=clock(),day=localDay(now),row=await repository.find(user.employeeId,day.date);
       const blocked=['ON_LEAVE','HOLIDAY'].includes(row?.attendanceStatus);

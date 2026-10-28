@@ -32,6 +32,8 @@ function createAttendanceRouter({ service, authenticate, databasePool }) {
   };
   const requireHr = (req, _res, next) => req.attendanceUser.role_name==='HR' ? next() : next(new AppError(403,'Only HR can view attendance history.'));
   router.get('/', requireHr, handler(req => service.list(req.attendanceUser)));
+  router.get('/company-location', requireHr, handler(req => service.companyLocation(req.attendanceUser)));
+  router.put('/company-location', requireHr, handler(req => service.updateCompanyLocation(req.attendanceUser, req.body)));
   router.get('/config', requireProfile, handler(() => service.configuration()));
   router.get('/today', requireProfile, handler(req => service.today(req.attendanceUser)));
   router.post('/check-in', requireProfile, handler(req => service.checkIn(req.attendanceUser, req.body)));
