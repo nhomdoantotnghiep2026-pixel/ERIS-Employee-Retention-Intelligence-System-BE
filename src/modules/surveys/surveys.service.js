@@ -219,6 +219,10 @@ class SurveysService {
         questionText: question.questionText,
         dimensionCode: question.dimensionCode,
         displayOrder: question.displayOrder,
+        answers: (question.answers || []).map(answer => ({
+          score: answer.score === null ? null : Number(answer.score),
+          comment: answer.comment
+        })),
         answerCount: Number(question.answerCount),
         averageScore: question.averageScore === null ? null : Number(question.averageScore),
         scoreDistribution: {
