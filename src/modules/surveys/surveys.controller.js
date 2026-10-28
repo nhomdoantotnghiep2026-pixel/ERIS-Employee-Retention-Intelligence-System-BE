@@ -10,6 +10,7 @@ class SurveysController {
     this.getMySurveyResponse = this.getMySurveyResponse.bind(this);
     this.getSurveyForEmployee = this.getSurveyForEmployee.bind(this);
     this.publishSurvey = this.publishSurvey.bind(this);
+    this.getSurveyParticipants = this.getSurveyParticipants.bind(this);
     this.getSurveyResults = this.getSurveyResults.bind(this);
   }
 
@@ -110,6 +111,22 @@ class SurveysController {
     } catch (error) {
       return next(error);
     }
+  }
+
+  async getSurveyParticipants(request, response, next) {
+    try {
+      const rawId = request.params.id;
+      if (!/^[1-9]\d{0,9}$/.test(rawId) || Number(rawId) > 2147483647) {
+        const { AppError } = require('../../common/errors/app-error');
+        throw new AppError(400, 'ID khảo sát phải là số nguyên dương, tối đa 2147483647.');
+      }
+      const data = await this.surveysService.getSurveyParticipants({
+        actorId: request.auth.userId, surveyId: Number(rawId)
+      });
+      response.set('Cache-Control', 'no-store, private');
+      response.vary('Authorization');
+      return response.status(200).json({ data });
+    } catch (error) { return next(error); }
   }
 
   async getSurveyResults(request, response, next) {

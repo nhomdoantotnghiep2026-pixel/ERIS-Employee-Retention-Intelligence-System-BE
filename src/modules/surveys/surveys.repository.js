@@ -362,6 +362,29 @@ class SurveysRepository {
     return rows[0] || null;
   }
 
+  async findSubmittedParticipants(surveyId) {
+    const { rows } = await this.databasePool.query(
+      `SELECT r.id AS "responseId", r.submitted_at AS "submittedAt",
+         jsonb_build_object('id', e.id, 'employeeCode', e.employee_code, 'fullName', e.full_name) AS employee,
+         COALESCE((
+           SELECT jsonb_agg(jsonb_build_object(
+             'questionId', q.id, 'questionText', q.question_text, 'dimensionCode', q.dimension_code,
+             'required', q.required, 'displayOrder', q.display_order,
+             'score', a.score, 'comment', a.comment
+           ) ORDER BY q.display_order, q.id)
+           FROM survey_questions q
+           LEFT JOIN survey_answers a ON a.question_id=q.id AND a.response_id=r.id
+           WHERE q.survey_id=r.survey_id
+         ), '[]'::jsonb) AS answers
+       FROM survey_responses r
+       JOIN employees e ON e.id=r.employee_id
+       WHERE r.survey_id=$1 AND r.submitted_at IS NOT NULL
+       ORDER BY r.submitted_at DESC, r.id DESC`,
+      [surveyId]
+    );
+    return rows;
+  }
+
   async findResultsSummary(id) {
     const { rows } = await this.databasePool.query(
       `SELECT

@@ -199,6 +199,15 @@ class SurveysService {
     return publishedSurvey;
   }
 
+  async getSurveyParticipants({ actorId, surveyId }) {
+    const actor = await this.surveysRepository.findUserRoleById(actorId);
+    if (actor?.role !== 'HR') throw new AppError(403, 'Chỉ HR ACTIVE được xem nhân viên tham gia và câu trả lời khảo sát.');
+    const survey = await this.surveysRepository.findDetailById(surveyId);
+    if (!survey) throw new AppError(404, 'Không tìm thấy khảo sát.');
+    const participants = await this.surveysRepository.findSubmittedParticipants(surveyId);
+    return { survey, responseCount: participants.length, participants };
+  }
+
   async getSurveyResults({ actorId, surveyId }) {
     const actor = await this.surveysRepository.findUserRoleById(actorId);
     if (actor?.role !== 'HR') {

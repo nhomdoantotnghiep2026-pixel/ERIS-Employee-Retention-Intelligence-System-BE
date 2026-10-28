@@ -305,4 +305,24 @@ const surveysPaths = {
   }
 };
 
+surveysPaths['/api/surveys/{id}/responses'] = {
+  ...surveysPaths['/api/surveys/{id}/responses'],
+  get: {
+    tags: ['Surveys'], summary: 'Xem nhân viên đã làm khảo sát và toàn bộ câu trả lời (HR)',
+    description: 'Dùng khi HR mở chi tiết khảo sát. Một response chứa survey, responseCount và participants. Mỗi participant có responseId, submittedAt, employee (id, employeeCode, fullName) và answers. Chỉ lấy bài đã gửi hoàn tất, không lấy bản nháp. Giữ kết quả của nhân viên đã ngừng hoạt động. Không có người gửi trả participants: []. Câu hỏi không trả lời có score/comment null. Không cần gọi riêng API từng nhân viên.',
+    security: [{ bearerAuth: [] }],
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer', minimum: 1, maximum: 2147483647 } }],
+    responses: {
+      200: { description: 'Danh sách nhân viên và bài trả lời theo thời điểm gửi mới nhất.',
+        content: { 'application/json': { example: { data: {
+          survey: { id: 4, title: 'Khảo sát quý', status: 'ACTIVE', description: 'Khảo sát nhân sự', startDate: '2026-10-01T00:00:00Z', endDate: '2026-12-31T00:00:00Z' },
+          responseCount: 1, participants: [{ responseId: 5, submittedAt: '2026-10-29T08:00:00Z',
+            employee: { id: 12, employeeCode: 'EMP012', fullName: 'Nguyễn Văn A' },
+            answers: [{ questionId: 49, questionText: 'Bạn hài lòng với công việc không?', dimensionCode: 'JS01', required: true, displayOrder: 1, score: 4, comment: 'Ổn đấy' }] }]
+        } } } } },
+      400: { description: 'ID khảo sát không hợp lệ.' }, 401: { description: 'Thiếu hoặc sai access token.' },
+      403: { description: 'Chỉ HR có tài khoản ACTIVE được xem.' }, 404: { description: 'Không tìm thấy khảo sát.' }
+    }
+  }
+};
 module.exports = { surveysPaths };
