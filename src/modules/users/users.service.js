@@ -7,6 +7,28 @@ class UsersService {
     this.revokeUserSessions = revokeUserSessions;
   }
 
+  async readActor(actorId) {
+    const actor = await this.usersRepository.findReadActorById(actorId);
+    if (!actor || actor.status !== 'ACTIVE') throw new AppError(403, 'Tài khoản phải đang ACTIVE.');
+    return actor;
+  }
+
+  async listUsers(actorId) {
+    const actor = await this.readActor(actorId);
+    if (actor.role !== USER_ROLE.ADMIN) throw new AppError(403, 'Chỉ ADMIN được xem danh sách tài khoản.');
+    return this.usersRepository.listAccounts();
+  }
+
+  async getUser({ actorId, userId }) {
+    const actor = await this.readActor(actorId);
+    if (actor.role !== USER_ROLE.ADMIN && Number(actor.id) !== Number(userId)) {
+      throw new AppError(403, 'Bạn chỉ được xem tài khoản của chính mình.');
+    }
+    const user = await this.usersRepository.findAccountById(userId);
+    if (!user) throw new AppError(404, 'Không tìm thấy tài khoản.');
+    return user;
+  }
+
   async updateHrStatus({ actorId, userId, status }) {
     const actor = await this.usersRepository.findUserRoleById(actorId);
     if (actor?.role !== USER_ROLE.ADMIN) {
