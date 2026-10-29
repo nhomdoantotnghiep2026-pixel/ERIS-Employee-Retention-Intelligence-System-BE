@@ -97,6 +97,11 @@ app.use('/api/employees', createEmployeesRouter({ employeesController, authentic
 app.use('/api/positions', createPositionsRouter({ positionsController, authenticate }));
 app.use('/api/surveys', createSurveysRouter({ surveysController, authenticate }));
 app.use('/api/users', createUsersRouter({ usersController, authenticate }));
+const { AuditReadRepository } = require('./modules/audit_logs/audit-read.repository');
+const { AuditReadService } = require('./modules/audit_logs/audit-read.service');
+const { createAuditReadRouter } = require('./modules/audit_logs/audit-read.routes');
+const auditReadService = new AuditReadService(new AuditReadRepository(databasePool));
+app.use('/api/audit-logs', createAuditReadRouter({ service: auditReadService, authenticate }));
 
 app.get('/health', (_request, response) => {
   response.status(200).json({ status: 'ok' });
