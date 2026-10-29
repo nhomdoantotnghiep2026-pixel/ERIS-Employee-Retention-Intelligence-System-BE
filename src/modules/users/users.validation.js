@@ -21,4 +21,11 @@ function validateUpdateUserStatusInput(body) {
   return { status };
 }
 
-module.exports = { validateUserId, validateUpdateUserStatusInput };
+function validateAccountId(value) {
+  if (typeof value !== 'string' || !/^[1-9]\d{0,9}$/.test(value) || Number(value) > 2147483647) {
+    throw new AppError(400, 'ID tài khoản phải là số nguyên dương, tối đa 2147483647.');
+  }
+  return Number(value);
+}
+
+module.exports = { validateAccountId, validateUserId, validateUpdateUserStatusInput };
