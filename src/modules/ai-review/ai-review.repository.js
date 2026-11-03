@@ -1,0 +1,13 @@
+const SQL = "SELECT e.id,e.employee_code,e.full_name,e.department_id,e.position_id,e.employment_status,\n      to_char(e.date_of_birth,'YYYY-MM-DD') date_of_birth,to_char(e.hire_date,'YYYY-MM-DD') hire_date,\n      e.distance_from_home_km,e.current_salary,d.name department,d.status catalog_status,p.job_level,p.status position_status,\n      EXISTS(SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE') active_account,\n      COALESCE((SELECT jsonb_agg(jsonb_build_object('education_level',education_level)) FROM employee_educations WHERE employee_id=e.id AND status='ACTIVE'),'[]') educations,\n      COALESCE((SELECT jsonb_agg(jsonb_build_object('start_date',to_char(start_date,'YYYY-MM-DD'),'end_date',to_char(end_date,'YYYY-MM-DD'))) FROM employee_work_experiences WHERE employee_id=e.id AND status='ACTIVE'),'[]') experiences,\n      COALESCE((SELECT jsonb_agg(jsonb_build_object('start_date',to_char(start_date,'YYYY-MM-DD'),'position_id',position_id,'department_id',department_id,'change_type',change_type) ORDER BY start_date,id) FROM employee_job_histories WHERE employee_id=e.id AND start_date<=$1::date),'[]') history,\n      COALESCE((SELECT jsonb_agg(jsonb_build_object('check_in',check_in,'check_out',check_out,'overtime_minutes',overtime_minutes)) FROM attendance WHERE employee_id=e.id\n        AND work_date>=date_trunc('month',$1::date)-interval '1 month' AND work_date<date_trunc('month',$1::date)),'[]') attendance,\n      COALESCE((SELECT jsonb_agg(jsonb_build_object('dimension_code',q.dimension_code,'score',a.score))\n        FROM survey_answers a JOIN survey_questions q ON q.id=a.question_id AND q.survey_id=r.survey_id WHERE a.response_id=r.id),'[]') answers\n      FROM employees e LEFT JOIN departments d ON d.id=e.department_id LEFT JOIN positions p ON p.id=e.position_id\n      LEFT JOIN LATERAL (SELECT id,survey_id FROM survey_responses WHERE employee_id=e.id AND submitted_at<=$2::timestamptz ORDER BY submitted_at DESC,id DESC LIMIT 1) r ON true\n      ORDER BY e.id";
+class AiReviewRepository {
+ constructor(pool){this.pool=pool;}
+ async actor(userId){return (await this.pool.query(`SELECT u.id,u.status,u.employee_id AS "employeeId",r.name AS role
+   FROM users u JOIN role r ON r.id=u.role_id WHERE u.id=$1`,[userId])).rows[0]||null;}
+ async snapshots(today,instant){
+   const c=await this.pool.connect();
+   try {await c.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+     const {rows}=await c.query(SQL,[today,instant]);await c.query('COMMIT');return rows;
+   }catch(error){await c.query('ROLLBACK');throw error;}finally{c.release();}
+ }
+}
+module.exports={AiReviewRepository};

@@ -124,6 +124,16 @@ const companyDemoPath = require('node:path').join(__dirname, '../demo/company-lo
 app.get('/company-location-demo', (_req, res) => { res.set('Cache-Control', 'no-store'); res.sendFile(require('node:path').join(companyDemoPath, 'index.html')); });
 app.use('/company-location-demo/assets', express.static(companyDemoPath, { index: false, etag: false, setHeaders: res => res.set('Cache-Control', 'no-store') }));
 app.use('/api/v1/attendance', require('./modules/attendance/attendance.routes').createAttendanceRouter({ service: attendanceService, authenticate, databasePool }));
+const { AiReviewRepository } = require('./modules/ai-review/ai-review.repository');
+const { AiReviewClient, ExchangeRateClient } = require('./modules/ai-review/ai-review.client');
+const { AiReviewService } = require('./modules/ai-review/ai-review.service');
+const { createAiReviewRouter } = require('./modules/ai-review/ai-review.routes');
+const aiReviewService = new AiReviewService({ repository: new AiReviewRepository(databasePool),
+  modelClient: new AiReviewClient(), exchangeRates: new ExchangeRateClient() });
+app.use('/api/ai-review', createAiReviewRouter({ service: aiReviewService, authenticate }));
+const aiReviewDemoPath = require('node:path').join(__dirname, '../demo/ai-review');
+app.get('/ai-review-demo', (_req, res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(aiReviewDemoPath,'index.html'));});
+app.use('/ai-review-demo/assets', express.static(aiReviewDemoPath, {index:false,etag:false,setHeaders:res=>res.set('Cache-Control','no-store')}));
 app.use(errorHandler);
 
 module.exports = { app };

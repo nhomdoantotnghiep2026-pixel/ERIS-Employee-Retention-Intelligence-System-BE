@@ -1,0 +1,14 @@
+const {MODEL_IDS}=require('./ai-review.client');
+const errors={400:{description:'Dữ liệu yêu cầu không hợp lệ.'},401:{description:'Chưa xác thực.'},403:{description:'Chỉ HR ACTIVE được truy cập.'},422:{description:'Nhân viên thiếu dữ liệu hoặc ngoài phạm vi model.'},503:{description:'Model hoặc nguồn tỷ giá chưa sẵn sàng.'}};
+const operation=(summary,description,body)=>({tags:['AI Review'],summary,description,security:[{bearerAuth:[]}],
+  ...(body?{requestBody:{required:true,content:{'application/json':{schema:body}}}}:{}),responses:{200:{description:'Thành công. Kết quả demo không lưu vào database.'},...errors}});
+const properties={modelId:{type:'string',enum:MODEL_IDS,default:MODEL_IDS[0]},includeExplanation:{type:'boolean',default:true}};
+const aiReviewPaths={
+ '/api/ai-review/models':{get:operation('Xem model và trạng thái sẵn sàng (HR)','Kiểm tra riêng Random Forest và AdaBoost; service key chỉ được giữ ở backend.')},
+ '/api/ai-review/inputs':{get:operation('Kiểm tra dữ liệu đầu vào nhân viên (HR)','Chỉ đọc database. Trả feature đủ điều kiện hoặc mã lý do đầu tiên bị bỏ qua. Không cho HR xem dự đoán bản thân. Tỷ giá dùng ExchangeRate-API; survey mới nhất có đủ JS01–04/ES01–04; tăng ca tháng hoàn tất gần nhất.')},
+ '/api/ai-review/predict':{post:operation('Chạy dự đoán nhân viên từ dữ liệu ERIS (HR)','Backend đọc lại dữ liệu, không nhận feature tùy ý. Chỉ chấp nhận ba phòng ban của model. Trả xác suất và giải thích tùy chọn; không lưu kết quả, không phân loại High/Medium/Low.',{type:'object',additionalProperties:false,required:['employeeId'],properties:{employeeId:{type:'integer',minimum:1},...properties}})},
+ '/api/ai-review/sample':{post:operation('Chạy model thật bằng hồ sơ giả lập (HR)','Dùng mẫu cố định độc lập database; kết quả được đánh dấu synthetic=true. Không phải kết quả của nhân viên thật.',{type:'object',additionalProperties:false,properties:{...properties,sampleIndex:{type:'integer',minimum:0,maximum:9,default:0}}})},
+ '/api/ai-review/sample/batch':{post:operation('Chạy hàng loạt 10 hồ sơ giả lập (HR)','Một lần gọi batch model, trả xác suất cho 10 mẫu cố định. Không ghi database. Lấy SHAP từng mẫu qua POST /sample với sampleIndex.',{type:'object',additionalProperties:false,properties:{modelId:properties.modelId}})},
+ '/api/ai-review/predict/batch':{post:operation('Chạy hàng loạt nhân viên ERIS (HR)','Đọc dữ liệu một lần, dùng chung snapshot/tỷ giá, bỏ qua hồ sơ không đủ điều kiện. Tối đa 100 ID không trùng. Kết quả không kèm SHAP; POST /predict để đọc lại dữ liệu và lấy SHAP của từng nhân viên.',{type:'object',additionalProperties:false,required:['employeeIds'],properties:{employeeIds:{type:'array',minItems:1,maxItems:100,uniqueItems:true,items:{type:'integer',minimum:1,maximum:2147483647}},modelId:properties.modelId}})}
+};
+module.exports={aiReviewPaths};
