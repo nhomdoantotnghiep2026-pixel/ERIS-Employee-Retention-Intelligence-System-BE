@@ -2,7 +2,6 @@
 const $ = selector => document.querySelector(selector);
 const state = { token: null, user: null, departments: [], positions: [], busy: false, positionRequest: 0, educationId: 0 };
 const schools = new Map();
-const workCards = new Set();
 const jobLevels = { 1: 'Entry', 2: 'Junior', 3: 'Intermediate', 4: 'Senior', 5: 'Expert / Leadership' };
 
 function notice(message, type = 'error', auth = false) {
@@ -140,10 +139,7 @@ const addressSearch = autocomplete({
 
 function renumber() {
   [...schools.keys()].forEach((card, i) => { card.querySelector('[data-number]').textContent = i + 1; card.querySelector('.remove').disabled = schools.size === 1; });
-  [...workCards].forEach((card, i) => { card.querySelector('[data-number]').textContent = i + 1; });
-  $('#no-experience').hidden = !!workCards.size;
   $('#add-education').disabled = schools.size >= 20;
-  $('#add-experience').disabled = workCards.size >= 50;
 }
 function field(card, name) { return card.querySelector(`[data-field="${name}"]`); }
 function addEducation() {
@@ -170,18 +166,10 @@ function addEducation() {
   card.querySelector('.remove').addEventListener('click', () => { if (schools.size <= 1) return; item.lookup.cancel(); schools.delete(card); card.remove(); renumber(); });
   schools.set(card, item); renumber();
 }
-function addExperience() {
-  if (workCards.size >= 50) return;
-  const card = $('#experience-template').content.firstElementChild.cloneNode(true);
-  const month = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).slice(0, 7);
-  field(card, 'startDate').max = month; field(card, 'endDate').max = month;
-  card.querySelector('.remove').addEventListener('click', () => { workCards.delete(card); card.remove(); renumber(); });
-  $('#experience-list').append(card); workCards.add(card); renumber();
-}
 function resetEmployeeForm() {
   $('#employee-form').reset();
   for (const item of schools.values()) item.lookup.cancel();
-  schools.clear(); workCards.clear(); $('#education-list').replaceChildren(); $('#experience-list').replaceChildren();
+  schools.clear(); $('#education-list').replaceChildren();
   addressSearch.cancel(); addressRefId = null;
   addressSearch.hintText('Chọn gợi ý có số nhà, hoặc nhập địa chỉ đầy đủ để hệ thống xác định.');
   state.positionRequest++; setPositionPlaceholder('Chọn phòng ban trước');
@@ -233,7 +221,6 @@ $('#token-form').addEventListener('submit', async event => {
 $('#logout').addEventListener('click', () => { signOut(); notice('', 'error', true); });
 $('#department').addEventListener('change', loadPositions);
 $('#add-education').addEventListener('click', addEducation);
-$('#add-experience').addEventListener('click', addExperience);
 $('#new-employee').addEventListener('click', () => { resetEmployeeForm(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
 
 function collectEmployee() {
@@ -254,11 +241,6 @@ function collectEmployee() {
     return { educationLevel: Number(field(card, 'educationLevel').value), institution: item.institution, institutionRefId: item.refId,
       ...(major ? { fieldOfStudy: major } : {}), ...(year ? { graduationYear: Number(year) } : {}) };
   });
-  input.workExperiences = [...workCards].map((card, index) => {
-    const startDate = field(card, 'startDate').value, endDate = field(card, 'endDate').value;
-    if (endDate && endDate < startDate) throw new Error(`Kinh nghiệm ${index + 1}: tháng kết thúc phải từ tháng bắt đầu trở đi.`);
-    return { companyName: field(card, 'companyName').value.trim(), positionTitle: field(card, 'positionTitle').value.trim(), startDate, endDate: endDate || null };
-  });
   return input;
 }
 function showCreated(data) {
@@ -267,12 +249,12 @@ function showCreated(data) {
   const summary = $('#success-summary'); summary.replaceChildren();
   const background = data;
   const rows = [['Mã nhân viên', data.employeeCode], ['Trạng thái tài khoản', data.account?.status], ['Quãng đường đến công ty', `${data.distanceFromHomeKm} km`],
-    ['Bằng cấp / kinh nghiệm', `${background.educations?.length || 0} / ${background.workExperiences?.length || 0}${data.backgroundStatus === 'PENDING_ACTIVATION' ? ' · chờ kích hoạt' : ''}`]];
+    ['Bằng cấp', `${background.educations?.length || 0}${data.backgroundStatus === 'PENDING_ACTIVATION' ? ' · chờ kích hoạt' : ''}`]];
   for (const [title, value] of rows) {
     const wrapper = document.createElement('div'), dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = title; dd.textContent = value ?? '—'; wrapper.append(dt, dd); summary.append(wrapper);
   }
   const warnings = [];
-  if (data.backgroundStatus === 'PENDING_ACTIVATION') warnings.push('Học vấn và kinh nghiệm đã được lưu với trạng thái IN_PROCESS. Các bản ghi này sẽ chuyển sang ACTIVE khi tài khoản hoàn tất kích hoạt qua email.');
+  if (data.backgroundStatus === 'PENDING_ACTIVATION') warnings.push('Học vấn đã được lưu với trạng thái IN_PROCESS và sẽ chuyển sang ACTIVE khi tài khoản hoàn tất kích hoạt qua email.');
   if (data.emailDelivery === 'FAILED') warnings.push('Hồ sơ đã được lưu nhưng gửi email thất bại. Không tạo lại hồ sơ này.');
   if (data.accountCreated === false) warnings.push('Đã liên kết hồ sơ với tài khoản HR có sẵn, giữ nguyên quyền và mật khẩu.');
   for (const education of background.educations || []) if (education.warning) warnings.push(education.warning);

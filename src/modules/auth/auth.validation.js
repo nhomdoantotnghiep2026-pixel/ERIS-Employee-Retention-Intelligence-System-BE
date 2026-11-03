@@ -45,13 +45,16 @@ function validateResetPasswordInput(body) {
 
 function validateRegisterHrInput(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new AppError(400, 'Request body must be an object.');
-  if (Object.keys(body).some(key => !['email', 'roleId'].includes(key))) {
-    throw new AppError(400, 'Only email and optional roleId are allowed. This endpoint creates HR accounts only.');
+  if (Object.keys(body).some(key => !['email', 'full_name', 'roleId'].includes(key))) {
+    throw new AppError(400, 'Only email, full_name and optional roleId are allowed. This endpoint creates HR accounts only.');
   }
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
   if (email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError(400, 'A valid email is required.');
+  if (typeof body.full_name !== 'string' || !body.full_name.trim() || [...body.full_name.trim()].length > 150) {
+    throw new AppError(400, 'full_name is required and must be a non-empty string of at most 150 characters.');
+  }
   if (body.roleId !== undefined && (!Number.isSafeInteger(body.roleId) || body.roleId <= 0)) throw new AppError(400, 'roleId must be a positive integer identifying HR.');
-  return { email, ...(body.roleId !== undefined ? { roleId: body.roleId } : {}) };
+  return { email, fullName: body.full_name.trim(), ...(body.roleId !== undefined ? { roleId: body.roleId } : {}) };
 }
 
 module.exports = {

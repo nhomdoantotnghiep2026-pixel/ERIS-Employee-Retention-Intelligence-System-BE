@@ -15,9 +15,9 @@ function validateCreatePositionInput(input) {
     throw new AppError(400, 'Request body must be an object.');
   }
 
-  const allowedFields = new Set(['name', 'jobLevel', 'description']);
+  const allowedFields = new Set(['name', 'jobLevel', 'departmentId', 'description']);
   if (Object.keys(input).some((field) => !allowedFields.has(field))) {
-    throw new AppError(400, 'Only name, jobLevel, and description are allowed when creating a position.');
+    throw new AppError(400, 'Only name, jobLevel, departmentId, and description are allowed when creating a position.');
   }
 
   if (typeof input.name !== 'string' || !input.name.trim() || input.name.trim().length > 150) {
@@ -32,9 +32,14 @@ function validateCreatePositionInput(input) {
     throw new AppError(400, 'description must be a string or null.');
   }
 
+  if (!Number.isInteger(input.departmentId) || input.departmentId <= 0 || input.departmentId > 2147483647) {
+    throw new AppError(400, 'departmentId is required and must be a positive integer, at most 2147483647.');
+  }
+
   return {
     name: input.name.trim(),
     jobLevel: input.jobLevel,
+    departmentId: input.departmentId,
     description: input.description?.trim() || null
   };
 }

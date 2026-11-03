@@ -23,11 +23,11 @@ class AuthRepository {
                         UNION ALL SELECT 1 FROM employees WHERE lower(email) = lower($1)) AS exists`, [input.email]);
       if (checks[0].exists) throw new AppError(409, 'Email is already in use.');
       const { rows } = await client.query(
-        `INSERT INTO users (email, password_hash, full_name, role_id, status, employee_id)
+        `INSERT INTO users (email, password, full_name, role_id, status, employee_id)
          VALUES ($1, $2, $3, $4, 'IN_PROCESS', NULL)
          RETURNING id, email, full_name AS "fullName", role_id AS "roleId", status,
                    employee_id AS "employeeId", created_at AS "createdAt"`,
-        [input.email, passwordHash, null, roles[0].id]);
+        [input.email, passwordHash, input.fullName, roles[0].id]);
       await client.query('COMMIT');
       return { ...rows[0], role: 'HR' };
     } catch (error) {
@@ -42,7 +42,7 @@ class AuthRepository {
       `SELECT
         users.id,
         users.email,
-        users.password_hash AS password,
+        users.password AS password,
         users.status,
         users.role_id AS "roleId",
         role.name AS "roleName",
@@ -107,7 +107,7 @@ class AuthRepository {
 
   async findUserCredentialsById(userId) {
     const { rows } = await this.databasePool.query(
-      `SELECT id, password_hash AS password, status
+      `SELECT id, password AS password, status
        FROM users
        WHERE id = $1
        LIMIT 1`,
@@ -127,7 +127,7 @@ class AuthRepository {
       if (!account) throw new AppError(404, 'Account not found.');
       const activating = account.status === 'IN_PROCESS' && status === 'ACTIVE';
       const { rows } = await client.query(
-        `UPDATE users SET password_hash = $2, status = $3 WHERE id = $1 RETURNING id`,
+        `UPDATE users SET password = $2, status = $3 WHERE id = $1 RETURNING id`,
         [userId, passwordHash, status]);
       if (activating && account.employeeId != null) {
         const { rows: profiles } = await client.query(

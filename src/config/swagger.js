@@ -28,7 +28,8 @@ const swaggerSpec = swaggerJsdoc({
         EmailRequest: { type: 'object', required: ['email'], properties: { email: { type: 'string', format: 'email', example: 'user@eris.com' } } },
         ChangePasswordRequest: { type: 'object', required: ['otp', 'newPassword'], properties: { currentPassword: { type: 'string', format: 'password', description: 'Bắt buộc khi dùng access token của user ACTIVE.' }, otp: { type: 'string', pattern: '^\\d{6}$', example: '123456' }, newPassword: { type: 'string', format: 'password', example: 'NewPassword123!' } } },
         ResetPasswordRequest: { type: 'object', required: ['email', 'otp', 'newPassword'], properties: { email: { type: 'string', format: 'email' }, otp: { type: 'string', pattern: '^\\d{6}$', example: '123456' }, newPassword: { type: 'string', format: 'password', example: 'NewPassword123!' } } },
-        UserRegisterRequest: { type: 'object', additionalProperties: false, required: ['email'], properties: {
+        UserRegisterRequest: { type: 'object', additionalProperties: false, required: ['email', 'full_name'], properties: {
+          full_name: { type: 'string', minLength: 1, maxLength: 150, pattern: '\\S', nullable: false, example: 'Nguyễn Văn An', description: 'Bắt buộc; không null, không rỗng hoặc chỉ khoảng trắng. Hệ thống trim trước khi lưu users.full_name. Response dùng fullName.' },
           email: { type: 'string', format: 'email', maxLength: 255, example: 'hr.new@example.com' },
           roleId: { type: 'integer', minimum: 1, example: 2, description: 'Tùy chọn; nếu gửi phải là ID của role HR trong database. Bỏ qua để tự dùng HR.' }
         } },

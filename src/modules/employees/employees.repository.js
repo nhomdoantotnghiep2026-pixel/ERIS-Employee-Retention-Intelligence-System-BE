@@ -118,7 +118,7 @@ class EmployeesRepository {
         const {rows: roles} = await client.query("SELECT id FROM role WHERE name='EMPLOYEE'");
         if (roles.length !== 1) throw new AppError(503, 'EMPLOYEE role is not configured.');
         const result = await client.query(
-          `INSERT INTO users (email,password_hash,role_id,status,employee_id,full_name)
+          `INSERT INTO users (email,password,role_id,status,employee_id,full_name)
            VALUES ($1,$2,$3,'IN_PROCESS',$4,$5)
            RETURNING id,email,role_id AS "roleId",status,employee_id AS "employeeId"`,
           [employee.email,passwordHash,roles[0].id,record.id,employee.fullName]);
@@ -136,9 +136,10 @@ class EmployeesRepository {
       const background = await backgrounds.create(record.id, employee, saved.status === 'ACTIVE' ? 'ACTIVE' : 'IN_PROCESS');
       const createdSnapshot = await snapshot(client, 'employees', record.id);
       const { rows: educationRows } = await client.query('SELECT to_jsonb(e) AS data FROM employee_educations e WHERE employee_id=$1 ORDER BY id', [record.id]);
-      const { rows: experienceRows } = await client.query('SELECT to_jsonb(e) AS data FROM employee_work_experiences e WHERE employee_id=$1 ORDER BY id', [record.id]);
+      const experienceRows = employee.workExperiences === undefined ? null
+        : (await client.query('SELECT to_jsonb(e) AS data FROM employee_work_experiences e WHERE employee_id=$1 ORDER BY id', [record.id])).rows;
       await writeAudit(client, { actorId, entityType: 'employees', entityId: record.id, action: 'CREATE',
-        newValue: { ...createdSnapshot, educations: educationRows.map(row => row.data), workExperiences: experienceRows.map(row => row.data),
+        newValue: { ...createdSnapshot, educations: educationRows.map(row => row.data), ...(experienceRows ? { workExperiences: experienceRows.map(row => row.data) } : {}),
           ...(initialJobHistory ? { initialJobHistory } : {}), _context: auditContext || { source: 'MANUAL' } } });
       await client.query('COMMIT');
       return { employee: { ...record, ...background }, account: saved, accountCreated: !account, initialJobHistory };

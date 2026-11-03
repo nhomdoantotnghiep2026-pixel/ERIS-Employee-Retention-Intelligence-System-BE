@@ -74,7 +74,7 @@ function validateOptionalText(value, fieldName) {
   return value.trim() || null;
 }
 
-function validateCreateEmployeeInput(input) {
+function validateCreateEmployeeInput(input, { includeWorkExperiences = false } = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new AppError(400, 'Request body must be an object.');
   }
@@ -94,7 +94,7 @@ function validateCreateEmployeeInput(input) {
     'employmentType',
     'currentSalary',
     'educations',
-    'workExperiences'
+    ...(includeWorkExperiences ? ['workExperiences'] : [])
   ]);
 
   if (Object.keys(input).some((field) => !allowedFields.has(field))) {
@@ -130,7 +130,7 @@ function validateCreateEmployeeInput(input) {
   });
   return {
     educations,
-    workExperiences: validateWorkExperiences(input.workExperiences, dateOfBirth),
+    ...(includeWorkExperiences ? { workExperiences: validateWorkExperiences(input.workExperiences, dateOfBirth) } : {}),
     ...(input.addressRefId ? { addressRefId: input.addressRefId.trim() } : {}),
     fullName: input.fullName.trim(),
     email: email?.toLowerCase() || null,

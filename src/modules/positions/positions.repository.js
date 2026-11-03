@@ -1,4 +1,5 @@
 const { auditMutation, transaction } = require('../audit_logs/audit.repository');
+const { AppError } = require('../../common/errors/app-error');
 class PositionsRepository {
   constructor(databasePool) {
     this.databasePool = databasePool;
@@ -62,29 +63,34 @@ class PositionsRepository {
       { actorId, table: 'positions', id: null, action: 'CREATE' },
       () => new PositionsRepository(client)._create(data)));
   }
-  async _create({ name, jobLevel, description }) {
+  async _create({ name, jobLevel, departmentId, description }) {
+    // Lock the referenced department until creation and its audit log commit.
+    const department = await this.databasePool.query('SELECT id FROM departments WHERE id = $1 FOR KEY SHARE', [departmentId]);
+    if (!department.rows[0]) throw new AppError(404, 'Department not found.');
     const { rows } = await this.databasePool.query(
       `WITH new_position_id AS (
          SELECT nextval(pg_get_serial_sequence('positions', 'id')) AS id
        )
-       INSERT INTO positions (id, code, name, job_level, description)
+       INSERT INTO positions (id, code, name, job_level, description, department_id)
        SELECT
          id,
          'POS' || LPAD(id::text, 3, '0'),
          $1,
          $2,
-         $3
+         $3,
+         $4
        FROM new_position_id
        RETURNING
          id,
          code,
          name,
          job_level AS "jobLevel",
+         department_id AS "departmentId",
          description,
          status,
          created_at AS "createdAt",
          updated_at AS "updatedAt"`,
-      [name, jobLevel, description]
+      [name, jobLevel, description, departmentId]
     );
 
     return rows[0];
@@ -134,18 +140,18 @@ class PositionsRepository {
     return rows[0] || null;
   }
 
-  async hasActiveEmployees(positionId) {
+  async hasNonInactiveEmployees(positionId) {
     const { rows } = await this.databasePool.query(
       `SELECT EXISTS (
          SELECT 1
          FROM employees
          WHERE position_id = $1
-           AND employment_status = 'ACTIVE'
-       ) AS "hasActiveEmployees"`,
+           AND employment_status <> 'INACTIVE'
+       ) AS "hasNonInactiveEmployees"`,
       [positionId]
     );
 
-    return rows[0].hasActiveEmployees;
+    return rows[0].hasNonInactiveEmployees;
   }
 
   async deactivate(id, actorId) {
@@ -154,6 +160,9 @@ class PositionsRepository {
       () => new PositionsRepository(client)._deactivate(id)));
   }
   async _deactivate(id) {
+    if (await this.hasNonInactiveEmployees(id)) {
+      throw new AppError(409, 'Cannot deactivate a position while employees with employment_status other than INACTIVE are assigned to it.');
+    }
     const { rows } = await this.databasePool.query(
       `UPDATE positions
        SET status = 'INACTIVE',

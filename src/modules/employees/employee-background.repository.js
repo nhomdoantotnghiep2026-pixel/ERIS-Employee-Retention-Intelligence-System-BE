@@ -14,10 +14,10 @@ class EmployeeBackgroundRepository {
       const row = await new EducationRepository(this.client).create(employeeId, education, status);
       educations.push(this.withWarning(row));
     }
-    for (const experience of data.workExperiences) {
+    for (const experience of data.workExperiences || []) {
       workExperiences.push(await new WorkExperiencesRepository(this.client).create(employeeId, experience, status));
     }
-    return { educations, workExperiences, backgroundStatus: status === 'IN_PROCESS' ? 'PENDING_ACTIVATION' : 'SAVED' };
+    return { educations, ...(data.workExperiences !== undefined ? { workExperiences } : {}), backgroundStatus: status === 'IN_PROCESS' ? 'PENDING_ACTIVATION' : 'SAVED' };
   }
   async activate(employeeId) {
     await this.client.query(`UPDATE public.employee_educations SET status='ACTIVE', updated_at=CURRENT_TIMESTAMP

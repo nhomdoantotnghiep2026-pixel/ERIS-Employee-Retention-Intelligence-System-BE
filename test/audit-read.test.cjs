@@ -20,7 +20,7 @@ test('Admin audit read: list, details, live permissions, null actor, safe JSON a
       CREATE TEMP TABLE audit_logs (LIKE public.audit_logs INCLUDING ALL) ON COMMIT DROP;
       SET LOCAL search_path TO pg_temp;
       INSERT INTO role(id,name) VALUES(1,'ADMIN'),(2,'HR'),(3,'EMPLOYEE');
-      INSERT INTO users(id,email,password_hash,full_name,role_id,status) VALUES
+      INSERT INTO users(id,email,password,full_name,role_id,status) VALUES
         (1,'admin@audit.test','private-account-hash','Admin',1,'ACTIVE'),
         (2,'hr@audit.test','private-account-hash','HR actor',2,'ACTIVE'),
         (3,'employee@audit.test','private-account-hash','Employee',3,'ACTIVE'),

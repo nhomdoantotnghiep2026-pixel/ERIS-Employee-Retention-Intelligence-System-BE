@@ -10,8 +10,10 @@ const positionsPaths = {
           'application/json': {
             schema: {
               type: 'object',
-              required: ['name', 'jobLevel'],
+              additionalProperties: false,
+              required: ['name', 'jobLevel', 'departmentId'],
               properties: {
+                departmentId: { type: 'integer', minimum: 1, maximum: 2147483647, example: 1, description: 'Bắt buộc; ID phòng ban đã tồn tại trong database.' },
                 name: { type: 'string', example: 'Backend Developer' },
                 jobLevel: {
                   type: 'integer',
@@ -30,7 +32,8 @@ const positionsPaths = {
         201: { description: 'Tạo vị trí công việc thành công; code được tự sinh theo POS + ID.' },
         400: { description: 'Dữ liệu đầu vào không hợp lệ.' },
         401: { description: 'Thiếu hoặc sai access token.' },
-        403: { description: 'Chỉ tài khoản HR được phép truy cập.' }
+        403: { description: 'Chỉ tài khoản HR được phép truy cập.' },
+        404: { description: 'Không tìm thấy phòng ban theo departmentId.' }
       }
     },
     get: {
@@ -151,7 +154,7 @@ const positionsPaths = {
         401: { description: 'Thiếu hoặc sai access token.' },
         403: { description: 'Chỉ tài khoản HR được phép truy cập.' },
         404: { description: 'Không tìm thấy vị trí công việc.' },
-        409: { description: 'Position đã INACTIVE hoặc vẫn còn employee ACTIVE.' }
+        409: { description: 'Chức danh đã INACTIVE hoặc còn nhân viên có employment_status khác INACTIVE, gồm ACTIVE và IN_PROCESS. Bị chặn thì không cập nhật chức danh.' }
       }
     }
   }

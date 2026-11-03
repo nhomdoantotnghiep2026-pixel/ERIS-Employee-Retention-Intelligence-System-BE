@@ -51,7 +51,7 @@ async function parseWorkbook(buffer) {
         }
         input[field] = value;
       });
-      input = validateCreateEmployeeInput(input);
+      input = validateCreateEmployeeInput(input, { includeWorkExperiences: true });
       if (emails.has(input.email)) throw new AppError(409, 'Duplicate email within workbook.');
       if (phones.has(phoneKey(input.phone))) throw new AppError(409, 'Số điện thoại bị trùng trong cùng file Excel.');
       emails.add(input.email);
@@ -128,7 +128,7 @@ function parseRelatedSheets(sheets) {
       const email = emailKey(row.input.email);
       const background = backgrounds.get(email) || { educations: [], workExperiences: [], errors: [] };
       if (background.errors.length) throw new AppError(400, background.errors.join('; '));
-      const input = validateCreateEmployeeInput({ ...row.input, educations: background.educations, workExperiences: background.workExperiences });
+      const input = validateCreateEmployeeInput({ ...row.input, educations: background.educations, workExperiences: background.workExperiences }, { includeWorkExperiences: true });
       if (seen.has(input.email)) throw new AppError(409, 'Duplicate email within workbook.');
       if (seenPhones.has(phoneKey(input.phone))) throw new AppError(409, 'Số điện thoại bị trùng trong cùng file Excel.');
       seen.add(input.email);
