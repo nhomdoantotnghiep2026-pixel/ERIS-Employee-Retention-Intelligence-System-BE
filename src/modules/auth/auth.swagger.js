@@ -62,3 +62,5 @@ const authPaths = {
 };
 
 module.exports = { authPaths };
+authPaths['/api/auth/user_register'].post.description = 'ADMIN ACTIVE tạo đồng thời tài khoản HR và hồ sơ employees. Bắt buộc email, full_name, hireDate (YYYY-MM-DD). ID nhân viên và employee_code được hệ thống sinh; các trường hồ sơ còn lại để NULL. Tài khoản và hồ sơ cùng IN_PROCESS, liên kết qua users.employee_id. Sau khi xác minh email và đặt mật khẩu, cả hai chuyển ACTIVE. Chưa tạo job history cho đến khi HR khác cập nhật phòng ban và vị trí. Email mời được gửi sau khi lưu; nếu gửi thất bại, không tạo lại tài khoản.';
+authPaths['/api/auth/user_register'].post.responses[201].description = 'Trả tài khoản HR IN_PROCESS có employeeId, employeeCode và hireDate.';

@@ -22,14 +22,22 @@ class AuthRepository {
         `SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = lower($1)
                         UNION ALL SELECT 1 FROM employees WHERE lower(email) = lower($1)) AS exists`, [input.email]);
       if (checks[0].exists) throw new AppError(409, 'Email is already in use.');
+      const { rows: profiles } = await client.query(
+        `WITH next_employee_id AS (SELECT nextval(pg_get_serial_sequence('employees', 'id')) AS id)
+         INSERT INTO employees (id, employee_code, full_name, email, hire_date, employment_status)
+         SELECT id, 'EMP' || LPAD(id::text, 3, '0'), $1, $2, $3::date, 'IN_PROCESS'
+         FROM next_employee_id
+         RETURNING id, employee_code AS "employeeCode"`,
+        [input.fullName, input.email, input.hireDate]);
+      const profile = profiles[0];
       const { rows } = await client.query(
         `INSERT INTO users (email, password, full_name, role_id, status, employee_id)
-         VALUES ($1, $2, $3, $4, 'IN_PROCESS', NULL)
+         VALUES ($1, $2, $3, $4, 'IN_PROCESS', $5)
          RETURNING id, email, full_name AS "fullName", role_id AS "roleId", status,
                    employee_id AS "employeeId", created_at AS "createdAt"`,
-        [input.email, passwordHash, input.fullName, roles[0].id]);
+        [input.email, passwordHash, input.fullName, roles[0].id, profile.id]);
       await client.query('COMMIT');
-      return { ...rows[0], role: 'HR' };
+      return { ...rows[0], role: 'HR', employeeCode: profile.employeeCode, hireDate: input.hireDate };
     } catch (error) {
       await client.query('ROLLBACK');
       if (error.code === '23505') throw new AppError(409, 'Email is already in use.');
@@ -144,7 +152,7 @@ class AuthRepository {
             [profile.id]);
         }
         const histories = new JobHistoriesRepository(client);
-        if (!await histories.latest(profile.id)) {
+        if (profile.departmentId != null && profile.positionId != null && !await histories.latest(profile.id)) {
           await histories.insert(profile.id, {
             departmentId: profile.departmentId,
             positionId: profile.positionId,

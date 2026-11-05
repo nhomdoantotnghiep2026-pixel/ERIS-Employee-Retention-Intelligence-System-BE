@@ -36,6 +36,16 @@ function createAttendanceRouter({ service, authenticate, databasePool }) {
   router.put('/company-location', requireHr, handler(req => service.updateCompanyLocation(req.attendanceUser, req.body)));
   router.get('/config', requireProfile, handler(() => service.configuration()));
   router.get('/today', requireProfile, handler(req => service.today(req.attendanceUser)));
+  router.post('/leave-requests', requireProfile, handler(req => service.requestLeave(req.attendanceUser,req.body)));
+  router.get('/leave-requests/me', requireProfile, handler(req => service.myLeaveRequests(req.attendanceUser)));
+  router.get('/leave-requests', requireHr, handler(req => service.leaveRequests(req.attendanceUser)));
+  router.get('/leave-requests/:id/history', requireProfile, handler(req => service.leaveHistory(req.attendanceUser,req.params.id)));
+  router.patch('/leave-requests/:id', requireHr, handler(req => service.reviewLeave(req.attendanceUser,req.params.id,req.body)));
+  router.post('/leave-requests/:id/cancellation', requireProfile, handler(req => service.requestLeaveCancellation(req.attendanceUser,req.params.id,req.body)));
+  router.patch('/leave-requests/:id/cancellation', requireHr, handler(req => service.reviewLeaveCancellation(req.attendanceUser,req.params.id,req.body)));
+  router.get('/holidays', requireHr, handler(req => service.holidays(req.attendanceUser)));
+  router.post('/holidays', requireHr, handler(req => service.createHoliday(req.attendanceUser,req.body)));
+  router.post('/close-day', requireHr, handler(req => service.closeDay(req.attendanceUser,req.body)));
   router.post('/check-in', requireProfile, handler(req => service.checkIn(req.attendanceUser, req.body)));
   router.post('/check-out', requireProfile, handler(req => service.checkOut(req.attendanceUser, req.body)));
   router.get('/:id', requireHr, handler(req => service.detail(req.attendanceUser, validateAttendanceId(req.params.id))));

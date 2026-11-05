@@ -59,7 +59,7 @@ function redact(value, name = '') {
 async function check(label, method, endpoint, expected, options = {}) {
   // Existing registration cases require a valid name unless they test full_name itself.
   if (endpoint === '/user_register' && options.body && !Array.isArray(options.body) && !label.startsWith('full_name')) {
-    options.body = { full_name: 'Nguyễn Văn HR', ...options.body };
+    options.body = { full_name: 'Nguyễn Văn HR', hireDate: '2026-11-04', ...options.body };
   }
   const headers = { ...(options.body !== undefined || options.raw ? { 'Content-Type': 'application/json' } : {}), ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}), ...(options.cookie ? { Cookie: options.cookie } : {}), ...options.headers };
   const response = await fetch(base + endpoint, { method, headers, body: options.raw || (options.body !== undefined ? JSON.stringify(options.body) : undefined), signal: AbortSignal.timeout(20000) });

@@ -1,6 +1,5 @@
 const { auditReadPaths } = require('../modules/audit_logs/audit-read.swagger');
 const { educationPaths } = require('../modules/employee-education/education.swagger');
-const { workExperiencesPaths } = require('../modules/work-experiences/work-experiences.swagger');
 const { attendancePaths } = require('../modules/attendance/attendance.swagger');
 const { jobHistoriesPaths } = require('../modules/job-histories/job-histories.swagger');
 const swaggerJsdoc = require('swagger-jsdoc');
@@ -11,6 +10,7 @@ const { positionsPaths } = require('../modules/positions/positions.swagger');
 const { surveysPaths } = require('../modules/surveys/surveys.swagger');
 const { distancePaths } = require('../modules/distance/distance.swagger');
 const { usersPaths } = require('../modules/users/users.swagger');
+const { policyDemoPaths } = require('../modules/prediction_results/policy-demo.swagger');
 
 const swaggerSpec = swaggerJsdoc({
   definition: {
@@ -18,7 +18,7 @@ const swaggerSpec = swaggerJsdoc({
     info: { title: 'ERIS Backend API', version: '1.0.0', description: 'Employee Retention Intelligence System API documentation.' },
     servers: [{ url: 'http://localhost:3000', description: 'Local development server' }],
     tags: [{ name: 'Auth', description: 'Xác thực và quản lý phiên đăng nhập.' }],
-    paths: { ...auditReadPaths, ...workExperiencesPaths, ...educationPaths, ...jobHistoriesPaths, ...attendancePaths, ...authPaths, ...departmentsPaths, ...employeesPaths, ...positionsPaths, ...usersPaths, ...distancePaths },
+    paths: { ...auditReadPaths, ...educationPaths, ...jobHistoriesPaths, ...attendancePaths, ...authPaths, ...departmentsPaths, ...employeesPaths, ...positionsPaths, ...usersPaths, ...distancePaths, ...surveysPaths, ...policyDemoPaths },
     components: {
       securitySchemes: {
         bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }
@@ -28,12 +28,13 @@ const swaggerSpec = swaggerJsdoc({
         EmailRequest: { type: 'object', required: ['email'], properties: { email: { type: 'string', format: 'email', example: 'user@eris.com' } } },
         ChangePasswordRequest: { type: 'object', required: ['otp', 'newPassword'], properties: { currentPassword: { type: 'string', format: 'password', description: 'Bắt buộc khi dùng access token của user ACTIVE.' }, otp: { type: 'string', pattern: '^\\d{6}$', example: '123456' }, newPassword: { type: 'string', format: 'password', example: 'NewPassword123!' } } },
         ResetPasswordRequest: { type: 'object', required: ['email', 'otp', 'newPassword'], properties: { email: { type: 'string', format: 'email' }, otp: { type: 'string', pattern: '^\\d{6}$', example: '123456' }, newPassword: { type: 'string', format: 'password', example: 'NewPassword123!' } } },
-        UserRegisterRequest: { type: 'object', additionalProperties: false, required: ['email', 'full_name'], properties: {
-          full_name: { type: 'string', minLength: 1, maxLength: 150, pattern: '\\S', nullable: false, example: 'Nguyễn Văn An', description: 'Bắt buộc; không null, không rỗng hoặc chỉ khoảng trắng. Hệ thống trim trước khi lưu users.full_name. Response dùng fullName.' },
+        UserRegisterRequest: { type: 'object', additionalProperties: false, required: ['email', 'full_name', 'hireDate'], properties: {
+          full_name: { type: 'string', minLength: 1, maxLength: 150, pattern: '\\S', nullable: false, example: 'Nguyễn Văn An', description: 'Bắt buộc; hệ thống trim và lưu vào cả users.full_name và employees.full_name.' },
           email: { type: 'string', format: 'email', maxLength: 255, example: 'hr.new@example.com' },
+          hireDate: { type: 'string', format: 'date', example: '2026-11-04', description: 'Ngày bắt đầu làm việc của HR. Hồ sơ được tạo IN_PROCESS và liên kết tài khoản trong cùng transaction.' },
           roleId: { type: 'integer', minimum: 1, example: 2, description: 'Tùy chọn; nếu gửi phải là ID của role HR trong database. Bỏ qua để tự dùng HR.' }
         } },
-        User: { type: 'object', properties: { id: { type: 'integer', example: 3 }, email: { type: 'string', format: 'email', example: 'employee@eris.com' }, fullName: { type: 'string', example: 'Trần Văn A', nullable: true }, role: { type: 'string', example: 'EMPLOYEE' }, status: { type: 'string', enum: ['ACTIVE', 'IN_PROCESS'], example: 'ACTIVE' } } },
+        User: { type: 'object', properties: { id: { type: 'integer', example: 3 }, email: { type: 'string', format: 'email', example: 'employee@eris.com' }, fullName: { type: 'string', example: 'Trần Văn A' }, role: { type: 'string', example: 'EMPLOYEE' }, status: { type: 'string', enum: ['ACTIVE', 'IN_PROCESS'], example: 'ACTIVE' } } },
         AccessTokenResponse: { type: 'object', properties: { accessToken: { type: 'string', description: 'JWT access token.' } } },
 LoginResponse: { oneOf: [{ $ref: '#/components/schemas/AccessTokenResponse' }, { type: 'object', properties: { message: { type: 'string' }, passwordChangeToken: { type: 'string' } } }] },
         Error: { type: 'object', properties: { message: { type: 'string' } } }

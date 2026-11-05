@@ -37,6 +37,11 @@ async function recordJobChange(repo, current, changes, today = todayInVietnam())
   if (Number(position.departmentId) !== departmentId) throw new AppError(400, 'Vị trí công việc không thuộc phòng ban đã chọn.');
 
   const latest = await repo.latest(current.id);
+  if (current.departmentId == null && current.positionId == null && !latest) {
+    return repo.insert(current.id, {
+      departmentId, positionId, startDate: current.hireDate, endDate: null
+    }, 'HIRE');
+  }
   const oldEndDate = previousDay(today);
   if (!latest) {
     // Legacy employees may predate job histories. This uses their hire date as the best

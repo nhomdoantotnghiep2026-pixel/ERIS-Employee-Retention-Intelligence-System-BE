@@ -21,12 +21,19 @@ async function resolveEmployeeDistance(address, service, selectedRefId) {
   if (!address) return { distanceFromHomeKm: null, status: 'NOT_PROVIDED', reason: null };
   if (!service?.geocodeFull || !service?.placeByRefId || !service?.calculate) return unavailable('GEOCODING_NOT_CONFIGURED');
   const inputStreet = streetKey(address);
-  if (!inputStreet) return unavailable('ADDRESS_NOT_MATCHED');
   try {
     if (selectedRefId) {
       const place = await service.placeByRefId(selectedRefId, 'home');
-      if (!place.hs_num || !place.street || !place.city || normalize(place.hs_num + ' ' + place.street) !== inputStreet
-        || !containsCity(address, place.city) || !Number.isFinite(place.lat) || Math.abs(place.lat) > 90
+      // Explicitly selected POIs can lack house/street fields. Re-fetch the reference
+      // and bind the submitted label to provider details instead of trusting client coordinates.
+      const providerLabels = [place.display, place.address,
+        [place.name, place.address].filter(Boolean).join(', '),
+        place.hs_num && place.street && place.city
+          ? [[place.hs_num, place.street].join(' '), place.ward, place.district, place.city].filter(Boolean).join(', ') : null];
+      const matchesLabel = providerLabels.some(label => label && normalize(label) === normalize(address));
+      const matchesStreet = inputStreet && place.hs_num && place.street && place.city
+        && normalize(place.hs_num + ' ' + place.street) === inputStreet && containsCity(address, place.city);
+      if ((!matchesLabel && !matchesStreet) || !Number.isFinite(place.lat) || Math.abs(place.lat) > 90
         || !Number.isFinite(place.lng) || Math.abs(place.lng) > 180) return unavailable('PLACE_DETAILS_MISMATCH');
       const route = await service.calculate({ home: { latitude: place.lat, longitude: place.lng, label: place.display || address } });
       if (!Number.isFinite(route.distanceFromHomeKm) || route.distanceFromHomeKm < 0 || route.distanceFromHomeKm > 999999.99) return unavailable('INVALID_ROUTE_DISTANCE');
@@ -35,6 +42,7 @@ async function resolveEmployeeDistance(address, service, selectedRefId) {
         refId: selectedRefId, provider: route.provider || 'vietmap',
         addressResolution: { strategy: 'USER_SELECTED_RESULT' } };
     }
+    if (!inputStreet) return unavailable('ADDRESS_NOT_MATCHED');
     const results = await service.geocodeFull(address);
     let hadCandidate = false;
     const visited = new Set();

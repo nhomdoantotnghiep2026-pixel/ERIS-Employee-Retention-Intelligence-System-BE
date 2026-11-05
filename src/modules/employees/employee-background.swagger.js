@@ -6,11 +6,11 @@ const backgroundProperties = {
       type: 'object', additionalProperties: false,
       required: ['educationLevel', 'institution', 'institutionRefId'],
       properties: {
-        educationLevel: { type: 'integer', enum: [1, 2, 3, 4], example: 2 },
+        educationLevel: { type: 'string', enum: ['High School', 'Bachelor', 'Master', 'PhD'], example: 'Bachelor' },
         fieldOfStudy: { type: 'string', maxLength: 150, nullable: true, example: 'Công nghệ thông tin' },
         institution: { type: 'string', maxLength: 150, description: 'Tên trường đúng như gợi ý đã chọn.' },
         institutionRefId: { type: 'string', maxLength: 528, description: 'ID lấy từ GET /api/employee-educations/institutions. Backend xác minh trước khi lưu.' },
-        graduationYear: { type: 'integer', nullable: true, example: 2022, description: 'Từ năm sinh + 21 đến năm hiện tại.' }
+        graduationYear: { type: 'integer', nullable: true, example: 2022, description: 'High School: từ năm sinh + 18; bậc khác: từ năm sinh + 21; không quá năm hiện tại.' }
       }
     }
   },

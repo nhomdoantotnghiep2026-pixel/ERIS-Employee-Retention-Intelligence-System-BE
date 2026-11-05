@@ -1,10 +1,11 @@
 const { AppError } = require('../../common/errors/app-error');
+const { normalizeEmail } = require('../../common/validation/email');
 
 function validateLoginInput(body) {
-  const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const email = normalizeEmail(body?.email);
   const password = typeof body?.password === 'string' ? body.password : '';
 
-  if (!/^\S+@\S+\.\S+$/.test(email) || password.length === 0) {
+  if (!email || password.length === 0) {
     throw new AppError(400, 'Email and password are required.');
   }
 
@@ -28,9 +29,9 @@ function validateChangePasswordInput(body) {
 }
 
 function validateEmailInput(body) {
-  const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const email = normalizeEmail(body?.email);
 
-  if (!/^\S+@\S+\.\S+$/.test(email)) {
+  if (!email) {
     throw new AppError(400, 'A valid email is required.');
   }
 
@@ -45,16 +46,21 @@ function validateResetPasswordInput(body) {
 
 function validateRegisterHrInput(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new AppError(400, 'Request body must be an object.');
-  if (Object.keys(body).some(key => !['email', 'full_name', 'roleId'].includes(key))) {
-    throw new AppError(400, 'Only email, full_name and optional roleId are allowed. This endpoint creates HR accounts only.');
+  if (Object.keys(body).some(key => !['email', 'full_name', 'hireDate', 'roleId'].includes(key))) {
+    throw new AppError(400, 'Only email, full_name, hireDate and optional roleId are allowed. This endpoint creates HR accounts only.');
   }
-  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-  if (email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError(400, 'A valid email is required.');
+  const email = normalizeEmail(body.email);
+  if (!email) throw new AppError(400, 'A valid email is required.');
   if (typeof body.full_name !== 'string' || !body.full_name.trim() || [...body.full_name.trim()].length > 150) {
     throw new AppError(400, 'full_name is required and must be a non-empty string of at most 150 characters.');
   }
+  if (typeof body.hireDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.hireDate)
+    || !Number.isFinite(Date.parse(`${body.hireDate}T00:00:00Z`))
+    || new Date(`${body.hireDate}T00:00:00Z`).toISOString().slice(0, 10) !== body.hireDate) {
+    throw new AppError(400, 'hireDate is required and must be a valid YYYY-MM-DD date.');
+  }
   if (body.roleId !== undefined && (!Number.isSafeInteger(body.roleId) || body.roleId <= 0)) throw new AppError(400, 'roleId must be a positive integer identifying HR.');
-  return { email, fullName: body.full_name.trim(), ...(body.roleId !== undefined ? { roleId: body.roleId } : {}) };
+  return { email, fullName: body.full_name.trim(), hireDate: body.hireDate, ...(body.roleId !== undefined ? { roleId: body.roleId } : {}) };
 }
 
 module.exports = {

@@ -1,4 +1,6 @@
 const { AppError } = require('../../common/errors/app-error');
+const { todayInVietnam, validDate, isWeekday, validateLeave, validateHoliday } = require('./attendance-calendar');
+const { validateLeaveId, validateLeaveDecision, validateCancellation } = require('./attendance.validation');
 const zone = 'Asia/Ho_Chi_Minh';
 function error(code, message, status = 409) { const e = new AppError(status,message); e.code=code; throw e; }
 function localDay(now) {
@@ -21,11 +23,17 @@ function evaluate(body, config, now) {
   const distance=6371000*2*Math.atan2(Math.sqrt(a),Math.sqrt(Math.max(0,1-a)));
   return {status:body.accuracyMeters>config.maxAccuracyMeters?'LOW_ACCURACY':distance<=config.radiusMeters?'INSIDE':'OUTSIDE',distanceMeters:Math.round(distance),accuracyMeters:body.accuracyMeters,allowedRadiusMeters:config.radiusMeters};
 }
-function createAttendanceService(config, repository, clock=()=>new Date(), locationStore=null) {
+function createAttendanceService(config, repository, clock=()=>new Date(), locationStore=null, calendarStore=null, leaveRepository=null) {
   const settings=config.attendance;
   async function currentSettings() {
     const location = locationStore ? await locationStore.get() : { latitude: settings.latitude, longitude: settings.longitude, address: settings.address || '', source: 'env', updatedAt: null, updatedBy: null };
     return { ...settings, ...location };
+  }
+  async function syncLeavesForDay(date,employeeId=null) {
+    if(!leaveRepository || !isWeekday(date) || (calendarStore && await calendarStore.holiday(date))) {
+      return {date,created:0,data:[]};
+    }
+    return leaveRepository.materializeDay(date,employeeId);
   }
   function assertLocationHr(user) {
     if (user?.status !== 'ACTIVE' || user?.role_name !== 'HR' || user.employeeId == null || user.employmentStatus !== 'ACTIVE') {
@@ -35,8 +43,10 @@ function createAttendanceService(config, repository, clock=()=>new Date(), locat
   async function record(action,user,body) {
     const now=clock(),day=localDay(now);
     if(!day.workday) error('NON_WORKDAY','Attendance is available Monday to Friday.');
+    if (calendarStore && await calendarStore.holiday(day.date)) error('NON_WORKDAY','Hôm nay là ngày nghỉ lễ.');
     const gps=evaluate(body,await currentSettings(),now);
     if(gps.status!=='INSIDE') return {...gps,persisted:false,storage:'postgresql',mockMode:false};
+    await syncLeavesForDay(day.date,user.employeeId);
     const attendanceStatus=now>new Date(day.date+'T08:00:00+07:00')?'LATE':'PRESENT';
     const row=await repository.record({userId:user.id,employeeId:user.employeeId,date:day.date,instant:now.toISOString(),action,attendanceStatus});
     return {...gps,persisted:true,storage:'postgresql',mockMode:false,attendance:row};
@@ -55,12 +65,87 @@ function createAttendanceService(config, repository, clock=()=>new Date(), locat
     },
     configuration:async()=>{ const current=await currentSettings(); return ({companyLocation:{latitude:current.latitude,longitude:current.longitude,address:current.address},companyLocationSource:current.source,allowedRadiusMeters:settings.radiusMeters,maximumAccuracyMeters:settings.maxAccuracyMeters,timeZone:zone,workStart:'08:00',workEnd:'17:00',lunchStart:'12:00',lunchEnd:'13:00',storage:'postgresql',mockMode:false}); },
     async today(user) {
-      const now=clock(),day=localDay(now),row=await repository.find(user.employeeId,day.date);
-      const blocked=['ON_LEAVE','HOLIDAY'].includes(row?.attendanceStatus);
+      const now=clock(),day=localDay(now);
+      await syncLeavesForDay(day.date,user.employeeId);
+      const row=await repository.find(user.employeeId,day.date);
+      const holiday=calendarStore && await calendarStore.holiday(day.date);
+      const blocked=!!holiday||['ON_LEAVE','HOLIDAY'].includes(row?.attendanceStatus);
+      const attendance=row || (holiday ? {employeeId:user.employeeId,workDate:day.date,attendanceStatus:'HOLIDAY',checkIn:null,checkOut:null,workingMinutes:0,overtimeMinutes:0} : null);
       return {user:{id:user.id,employeeId:user.employeeId},date:day.date,serverTime:now.toISOString(),timeZone:zone,workday:day.workday&&!blocked,
         checkedIn:!!row?.checkIn,checkedOut:!!row?.checkOut,showCheckInPrompt:day.workday&&!blocked&&!row?.checkIn,
         checkedInAt:row?.checkIn||null,checkedInAtLocal:local(row?.checkIn),checkedOutAt:row?.checkOut||null,checkedOutAtLocal:local(row?.checkOut),
-        attendance:row,storage:'postgresql',mockMode:false};
+        attendance,storage:'postgresql',mockMode:false};
+    },
+    async requestLeave(user,body) {
+      if(!leaveRepository) error('UNAVAILABLE','Chưa cấu hình nơi lưu đơn nghỉ phép.',503);
+      const input=validateLeave(body,clock());
+      return {data:await leaveRepository.create(user,input)};
+    },
+    async myLeaveRequests(user) {
+      if(!leaveRepository) error('UNAVAILABLE','Chưa cấu hình nơi lưu đơn nghỉ phép.',503);
+      return {data:await leaveRepository.list(user,true)};
+    },
+    async leaveRequests(user) {
+      assertHr(user);
+      if(!leaveRepository) error('UNAVAILABLE','Chưa cấu hình nơi lưu đơn nghỉ phép.',503);
+      return {data:await leaveRepository.list(user)};
+    },
+    async reviewLeave(user,id,body) {
+      assertHr(user);
+      if(!leaveRepository) error('UNAVAILABLE','Chưa cấu hình nơi lưu đơn nghỉ phép.',503);
+      const input=validateLeaveDecision(body);
+      return leaveRepository.review(user,validateLeaveId(id),input.decision,input.reviewNote,todayInVietnam(clock()));
+    },
+    async requestLeaveCancellation(user,id,body) {
+      if(!leaveRepository) error('UNAVAILABLE','Chưa cấu hình nơi lưu đơn nghỉ phép.',503);
+      const now=clock();
+      return {data:await leaveRepository.requestCancellation(user,validateLeaveId(id),validateCancellation(body),
+        todayInVietnam(now),now.toISOString())};
+    },
+    async reviewLeaveCancellation(user,id,body) {
+      assertHr(user);
+      if(!leaveRepository) error('UNAVAILABLE','Chưa cấu hình nơi lưu đơn nghỉ phép.',503);
+      const input=validateLeaveDecision(body);
+      return leaveRepository.reviewCancellation(user,validateLeaveId(id),input.decision,input.reviewNote,todayInVietnam(clock()));
+    },
+    async leaveHistory(user,id) {
+      if(!leaveRepository) error('UNAVAILABLE','Chưa cấu hình nơi lưu đơn nghỉ phép.',503);
+      return leaveRepository.history(user,validateLeaveId(id));
+    },
+    async syncTodayLeaves() { return syncLeavesForDay(todayInVietnam(clock())); },
+    async holidays(user) {
+      assertHr(user); if(!calendarStore) error('UNAVAILABLE','Cần Redis để xem ngày lễ.',503);
+      return {data:await calendarStore.holidays()};
+    },
+    async createHoliday(user,body) {
+      assertHr(user); if(!calendarStore) error('UNAVAILABLE','Cần Redis để tạo ngày lễ.',503);
+      const input=validateHoliday(body,clock());
+      const holiday={...input,createdBy:user.id,createdAt:clock().toISOString()};
+      if((await calendarStore.addHoliday(holiday))!==1) error('HOLIDAY_EXISTS','Ngày này đã được đánh dấu nghỉ lễ.');
+      try { return {data:holiday,affectedEmployees:input.date===todayInVietnam(clock()) ? await repository.markHoliday(input.date) : 0}; }
+      catch (cause) { await calendarStore.removeHoliday(input.date); throw cause; }
+    },
+    async syncTodayHoliday() {
+      if (!calendarStore) return {date:todayInVietnam(clock()),affectedEmployees:0};
+      const date=todayInVietnam(clock());
+      if (!await calendarStore.holiday(date)) return {date,affectedEmployees:0};
+      return {date,affectedEmployees:await repository.markHoliday(date)};
+    },
+    async closeDay(user,body) {
+      assertHr(user);
+      if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1) error('VALIDATION_ERROR','Chỉ nhận date.',400);
+      const date=validDate(body.date,'date');
+      if(date>=todayInVietnam(clock())||!isWeekday(date)) error('VALIDATION_ERROR','Chỉ chốt ngày làm việc đã qua.',400);
+      if(calendarStore && await calendarStore.holiday(date)) error('NON_WORKDAY','Ngày lễ không thể chốt vắng mặt.');
+      await syncLeavesForDay(date);
+      return {date,created:await repository.closeAbsent(date)};
+    },
+    async closePreviousDay() {
+      const current=todayInVietnam(clock());
+      const previous=new Date(Date.parse(`${current}T00:00:00Z`)-86400000).toISOString().slice(0,10);
+      if(!isWeekday(previous) || (calendarStore && await calendarStore.holiday(previous))) return {date:previous,created:0};
+      await syncLeavesForDay(previous);
+      return {date:previous,created:await repository.closeAbsent(previous)};
     },
     checkIn:(user,body)=>record('check-in',user,body),
     checkOut:(user,body)=>record('check-out',user,body)

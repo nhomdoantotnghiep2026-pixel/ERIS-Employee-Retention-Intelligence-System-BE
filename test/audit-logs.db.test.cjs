@@ -57,7 +57,7 @@ test('Audit nghiệp vụ trên PostgreSQL TEMP: đủ nhóm, diff/no-op, quyề
       fullName: 'Audit employee', email: 'employee@audit.test', phone: '0901234501', dateOfBirth: '1990-01-01', gender: 'MALE',
       address: 'Test address', distanceFromHomeKm: 5, departmentId: dept.id, positionId: position.id,
       hireDate: '2020-01-01', employmentType: 'FULL_TIME', currentSalary: 15000000,
-      educations: [{ educationLevel: 2, institution: 'Test University', fieldOfStudy: 'IT', graduationYear: 2012 }],
+      educations: [{ educationLevel: 'Bachelor', institution: 'Test University', fieldOfStudy: 'IT', graduationYear: 2012 }],
       workExperiences: [{ companyName: 'Prior company', positionTitle: 'Developer', startDate: '2013-01-01', endDate: '2019-01-01' }]
     };
     const startCreate = await count();
@@ -79,7 +79,7 @@ test('Audit nghiệp vụ trên PostgreSQL TEMP: đủ nhóm, diff/no-op, quyề
     assert(changed.jobHistory);
     assert.equal((await last()).new_value.position_id, promotion.id);
     const education = new EducationRepository(pool);
-    const degree = await education.withHrEmployee(hr.id, created.employee.id, true, repo => repo.create(created.employee.id, { educationLevel: 3, institution: 'Test University', fieldOfStudy: 'IT', graduationYear: 2015 }));
+    const degree = await education.withHrEmployee(hr.id, created.employee.id, true, repo => repo.create(created.employee.id, { educationLevel: 'Master', institution: 'Test University', fieldOfStudy: 'IT', graduationYear: 2015 }));
     assert.equal((await last()).entity_type, 'employee_educations');
     await education.withHrEmployee(hr.id, created.employee.id, true, repo => repo.update(created.employee.id, degree.id, { fieldOfStudy: 'Computer Science' }));
     assert.equal((await last()).new_value.field_of_study, 'Computer Science');

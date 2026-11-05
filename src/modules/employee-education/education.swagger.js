@@ -1,13 +1,13 @@
 const employeeParam = { name: 'employeeId', in: 'path', required: true, schema: { type: 'integer', minimum: 1 }, description: 'ID nhân viên.' };
 const educationParam = { name: 'educationId', in: 'path', required: true, schema: { type: 'integer', minimum: 1 }, description: 'ID bằng cấp của nhân viên.' };
 const properties = {
-  educationLevel: { type: 'integer', enum: [1, 2, 3, 4], example: 2, description: '1 Cao đẳng, 2 Cử nhân, 3 Thạc sĩ, 4 Tiến sĩ.' },
+  educationLevel: { type: 'string', enum: ['High School', 'Bachelor', 'Master', 'PhD'], example: 'Bachelor' },
   fieldOfStudy: { type: 'string', nullable: true, maxLength: 150, example: 'Công nghệ thông tin' },
   institution: { type: 'string', maxLength: 150, example: 'FPT University', description: 'Chỉ tên trường đúng như gợi ý đã chọn; địa chỉ Vietmap chỉ hiển thị để phân biệt cơ sở, không lưu vào institution.' },
   institutionRefId: { type: 'string', maxLength: 528, pattern: '^(https://ror[.]org/[a-z0-9]{9}|vietmap:(auto|geocode):[A-Za-z0-9_-]{1,512})$', description: 'ID từ gợi ý ROR hoặc Vietmap. Backend xác minh trước khi lưu.' },
-  graduationYear: { type: 'integer', nullable: true, minimum: 1900, example: 2024, description: 'Từ năm sinh + 21 đến năm hiện tại.' }
+  graduationYear: { type: 'integer', nullable: true, minimum: 1900, example: 2024, description: 'High School: năm sinh + 18; bậc khác: năm sinh + 21; không quá năm hiện tại.' }
 };
-const description = 'Chỉ HR ACTIVE. Khi tạo, cần educationLevel, institution và institutionRefId từ gợi ý ROR hoặc Vietmap. Không nhận tên trường nhập tay. Khi đổi trường, gửi cả institution và institutionRefId; khi chỉ sửa thông tin khác, bỏ cả hai. Backend xác minh bản ghi trong nguồn đã chọn; ROR yêu cầu active và loại education. Hồ sơ nhân viên phải ACTIVE; khi xem còn yêu cầu tài khoản liên kết ACTIVE. Năm tốt nghiệp phải từ năm sinh + 21 và không quá năm hiện tại. Nếu tên trường cho thấy bậc đào tạo có thể không khớp educationLevel, API trả warning để HR đối chiếu văn bằng; vẫn cho phép lưu.';
+const description = 'Chỉ HR ACTIVE. educationLevel nhận High School, Bachelor, Master hoặc PhD. Cần chọn institution và institutionRefId từ gợi ý ROR/Vietmap, backend xác minh lại. Hồ sơ nhân viên phải ACTIVE; khi xem còn yêu cầu tài khoản liên kết ACTIVE. Năm tốt nghiệp tối thiểu năm sinh + 18 cho High School, + 21 cho các bậc khác và không quá năm hiện tại. Tên trường không khớp bậc đào tạo sẽ có warning để HR đối chiếu văn bằng.';
 function operation(summary, { id = false, body = false, create = false } = {}) {
   return {
     tags: ['Employee Education'], summary, description, security: [{ bearerAuth: [] }],
@@ -66,3 +66,13 @@ for (const [path, method] of [
   api.responses[403] = { description: 'Chỉ HR ACTIVE; không được tự thay đổi bằng cấp của mình.' };
 }
 module.exports = { educationPaths };
+const institutionLevel = educationPaths['/api/employee-educations/institutions'].get;
+for (const path of ['/api/employees/educations','/api/employees/{employeeId}/educations','/api/employees/me/educations']) {
+  if (educationPaths[path]?.get) educationPaths[path].get.description = (educationPaths[path].get.description || '')
+    + ' Bản ghi Cao đẳng cũ hiển thị Legacy College để HR rà soát; API tạo/cập nhật chỉ nhận bốn giá trị mới.';
+}
+institutionLevel.parameters.find(parameter => parameter.name === 'educationLevel').schema = {
+  type: 'string', enum: ['High School', 'Bachelor', 'Master', 'PhD']
+};
+institutionLevel.description = institutionLevel.description.replace('educationLevel=1', 'educationLevel=High School')
+  .replace('“cao đẳng”', '“trường trung học”');

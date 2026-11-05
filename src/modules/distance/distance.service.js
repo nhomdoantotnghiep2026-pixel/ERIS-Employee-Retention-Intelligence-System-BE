@@ -68,7 +68,8 @@ function createDistanceService(config = {}, fetchImpl = globalThis.fetch) {
     placeUrl.searchParams.set('apikey', vietmapKey);
     placeUrl.searchParams.set('refid', text(refId, `${field}.refId`, 2000));
     const result = await requestJson(fetchImpl, placeUrl, { headers: { Accept: 'application/json' } }, timeoutMs, 'Vietmap');
-    if (!Number.isFinite(result?.lat) || !Number.isFinite(result?.lng)) {
+    if (!Number.isFinite(result?.lat) || Math.abs(result.lat) > 90
+      || !Number.isFinite(result?.lng) || Math.abs(result.lng) > 180) {
       throw new HttpError(422, 'ADDRESS_NOT_FOUND', `${field} could not be located`);
     }
     return result;
@@ -94,6 +95,7 @@ function createDistanceService(config = {}, fetchImpl = globalThis.fetch) {
         address: item.address || '',
         display: item.display || [item.name, item.address].filter(Boolean).join(', '),
         isCompleteAddress: !!(coordinates.hs_num && coordinates.street && coordinates.city),
+        canSelect: !!(coordinates.display || coordinates.address || coordinates.name),
         resolvedAddress: coordinates.hs_num && coordinates.street && coordinates.city
           ? [[coordinates.hs_num, coordinates.street].join(' '), coordinates.ward, coordinates.district, coordinates.city].filter(Boolean).join(', ')
           : coordinates.display || item.display || [item.name, item.address].filter(Boolean).join(', '),

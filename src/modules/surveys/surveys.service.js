@@ -112,7 +112,6 @@ class SurveysService {
       answers: answers.map((answer) => ({
         questionId: answer.questionId,
         questionText: answer.questionText,
-        dimensionCode: answer.dimensionCode,
         required: answer.required,
         displayOrder: answer.displayOrder,
         score: answer.score,
@@ -165,7 +164,6 @@ class SurveysService {
       questions: questions.map((question) => ({
         id: question.id,
         questionText: question.questionText,
-        dimensionCode: question.dimensionCode,
         required: question.required,
         displayOrder: question.displayOrder
       }))
@@ -226,7 +224,6 @@ class SurveysService {
       questions: questionRows.map((question) => ({
         id: question.id,
         questionText: question.questionText,
-        dimensionCode: question.dimensionCode,
         displayOrder: question.displayOrder,
         answers: (question.answers || []).map(answer => ({
           score: answer.score === null ? null : Number(answer.score),

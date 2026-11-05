@@ -127,10 +127,13 @@ let addressRefId = null;
 const addressSearch = autocomplete({
   input: $('#address'), list: $('#address-results'), hint: $('#address-hint'), minLength: 3,
   search: async (query, signal) => (await api(`/api/distance/places?query=${encodeURIComponent(query)}`, { signal })).places || [],
-  label: place => [place.display || place.address, place.isCompleteAddress ? 'Có số nhà và tên đường' : 'Chưa có đủ số nhà / tên đường'],
+  label: place => [place.display || place.address, place.isCompleteAddress ? 'Có số nhà và tên đường' : 'Chọn vị trí tòa nhà / địa điểm từ Vietmap'],
   onChange: () => { addressRefId = null; },
   select: place => {
-    if (!place.isCompleteAddress) throw new Error('Địa chỉ này chưa đủ số nhà/tên đường. Hãy chọn gợi ý cụ thể hơn.');
+    if (!place.refId || !Number.isFinite(place.latitude) || Math.abs(place.latitude) > 90
+      || !Number.isFinite(place.longitude) || Math.abs(place.longitude) > 180 || place.canSelect === false) {
+      throw new Error('Địa điểm này chưa có tọa độ hợp lệ. Hãy chọn gợi ý khác.');
+    }
     $('#address').value = place.resolvedAddress || place.address || place.display;
     addressRefId = place.refId;
     addressSearch.hintText('Đã chọn địa chỉ. Quãng đường sẽ được tính khi tạo hồ sơ.', 'selected');
@@ -238,7 +241,7 @@ function collectEmployee() {
     const year = field(card, 'graduationYear').value;
     const major = field(card, 'fieldOfStudy').value.trim();
     if (year && Number(year) < Number(input.dateOfBirth.slice(0, 4)) + 21) throw new Error(`Bằng cấp ${index + 1}: năm tốt nghiệp phải từ năm sinh + 21.`);
-    return { educationLevel: Number(field(card, 'educationLevel').value), institution: item.institution, institutionRefId: item.refId,
+    return { educationLevel: field(card, 'educationLevel').value, institution: item.institution, institutionRefId: item.refId,
       ...(major ? { fieldOfStudy: major } : {}), ...(year ? { graduationYear: Number(year) } : {}) };
   });
   return input;

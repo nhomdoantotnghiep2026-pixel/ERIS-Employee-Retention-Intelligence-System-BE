@@ -1,4 +1,5 @@
 const { AppError } = require('../../common/errors/app-error');
+const { normalizeEmail } = require('../../common/validation/email');
 const { normalizePhone } = require('./employee-phone');
 const { validateEducation, validateGraduationYear } = require('../employee-education/education.validation');
 const { validateWorkExperiences } = require('../work-experiences/work-experiences.validation');
@@ -54,11 +55,11 @@ function validateOptionalString(value, fieldName, maxLength) {
   return value.trim() || null;
 }
 
-function validateOptionalPositiveNumber(value, fieldName) {
+function validateOptionalNonNegativeNumber(value, fieldName) {
   if (value === undefined || value === null) return null;
 
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-    throw new AppError(400, `${fieldName} must be a number greater than 0.`);
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new AppError(400, `${fieldName} must be a non-negative number.`);
   }
 
   return value;
@@ -105,8 +106,8 @@ function validateCreateEmployeeInput(input, { includeWorkExperiences = false } =
     throw new AppError(400, 'fullName is required and must be at most 150 characters.');
   }
 
-  const email = validateOptionalString(input.email, 'email', 255);
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  const email = normalizeEmail(input.email);
+  if (!email) {
     throw new AppError(400, 'email must be valid.');
   }
 
@@ -114,6 +115,12 @@ function validateCreateEmployeeInput(input, { includeWorkExperiences = false } =
     throw new AppError(400, 'addressRefId requires an address and a valid reference of at most 2000 characters.');
   }
   const dateOfBirth = validateDate(input.dateOfBirth, 'dateOfBirth', { mustBePast: true });
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date()).map(part => [part.type, part.value]));
+  const today = `${parts.year}-${parts.month}-${parts.day}`;
+  const adulthood = `${Number(dateOfBirth.slice(0, 4)) + 18}${dateOfBirth.slice(4)}`;
+  if (adulthood > today) throw new AppError(400, 'Employee must be at least 18 years old today (Vietnam time).');
   if (!Array.isArray(input.educations) || !input.educations.length || input.educations.length > 20) {
     throw new AppError(400, 'educations bắt buộc là mảng từ 1 đến 20 bằng cấp.');
   }
@@ -146,7 +153,7 @@ function validateCreateEmployeeInput(input, { includeWorkExperiences = false } =
     positionId: validatePositiveInteger(input.positionId, 'positionId'),
     hireDate: validateDate(input.hireDate, 'hireDate', { required: true }),
     employmentType: validateOptionalString(input.employmentType, 'employmentType', 40),
-    currentSalary: validateOptionalPositiveNumber(input.currentSalary, 'currentSalary')
+    currentSalary: validateOptionalNonNegativeNumber(input.currentSalary, 'currentSalary')
   };
 }
 
@@ -201,7 +208,7 @@ function validateUpdateEmployeeInput(input) {
   if (Object.hasOwn(input, 'departmentId')) employee.departmentId = validatePositiveInteger(input.departmentId, 'departmentId');
   if (Object.hasOwn(input, 'positionId')) employee.positionId = validatePositiveInteger(input.positionId, 'positionId');
   if (Object.hasOwn(input, 'employmentType')) employee.employmentType = validateOptionalString(input.employmentType, 'employmentType', 40);
-  if (Object.hasOwn(input, 'currentSalary')) employee.currentSalary = validateOptionalPositiveNumber(input.currentSalary, 'currentSalary');
+  if (Object.hasOwn(input, 'currentSalary')) employee.currentSalary = validateOptionalNonNegativeNumber(input.currentSalary, 'currentSalary');
 
   return employee;
 }

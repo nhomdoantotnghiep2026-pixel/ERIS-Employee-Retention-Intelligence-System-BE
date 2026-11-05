@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/employee-create-demo/assets/style.css">
   <script src="/employee-create-demo/assets/app.js" defer></script>
 </head>
-<body>
+<body><nav style="padding:12px 24px;background:#fff;border-bottom:1px solid #dbe3ed"><a href="/demo" style="color:#1557b0">← Trang demo API</a></nav>
   <header class="topbar"><a class="brand" href="/employee-create-demo">ERIS <span>NHÂN SỰ</span></a><div id="session" hidden><span id="actor-name"></span><button id="logout" class="quiet" type="button">Đổi tài khoản</button></div><span class="badge">BẢN THỬ NGHIỆM</span></header>
   <main>
     <section id="auth-panel" class="login-layout">
@@ -38,7 +38,7 @@
               <p id="position-hint" class="field-note full" role="status">Chọn một phòng ban để xem các vị trí đang hoạt động.</p>
               <label>Ngày vào làm *<input name="hireDate" type="date" required></label>
               <label>Loại hợp đồng *<select name="employmentType" required><option value="FULL_TIME">Toàn thời gian</option><option value="PART_TIME">Bán thời gian</option><option value="CONTRACT">Hợp đồng</option><option value="INTERNSHIP">Thực tập</option></select></label>
-              <label class="full">Lương hiện tại (VNĐ) *<input name="currentSalary" type="number" min="0.01" step="0.01" required placeholder="18000000"></label>
+              <label class="full">Lương hiện tại (VNĐ) *<input name="currentSalary" type="number" min="0" step="0.01" required placeholder="18000000"></label>
             </div></section>
             <section class="card"><div class="section-title"><span class="step">03</span><div><h2>Địa chỉ nhà</h2><p class="muted">Quãng đường sẽ được tính tự động khi lưu hồ sơ.</p></div></div><label>Số nhà, đường, phường/xã, tỉnh/thành phố *<div class="autocomplete"><input id="address" name="address" required maxlength="1000" placeholder="Nhập ít nhất 3 ký tự để tìm địa chỉ" autocomplete="off"><div id="address-results" class="suggestions" role="listbox" hidden></div></div></label><p id="address-hint" class="field-note" role="status">Chọn gợi ý có số nhà, hoặc nhập địa chỉ đầy đủ để hệ thống xác định.</p></section>
             <section class="card"><div class="section-title"><span class="step">04</span><div><h2>Học vấn</h2><p class="muted">Ít nhất một bằng cấp. Chọn trường từ danh sách gợi ý.</p></div></div><div id="education-list"></div><button id="add-education" type="button" class="secondary">＋ Thêm bằng cấp</button></section>
@@ -49,6 +49,6 @@
       </div>
     </section>
   </main>
-  <template id="education-template"><article class="subcard education-card"><div class="subcard-title"><h3>Bằng cấp <span data-number></span></h3><button type="button" class="remove quiet">Bỏ bằng cấp</button></div><div class="fields"><label>Trình độ *<select data-field="educationLevel" required><option value="1">Cao đẳng</option><option value="2" selected>Cử nhân</option><option value="3">Thạc sĩ</option><option value="4">Tiến sĩ</option></select></label><label>Năm tốt nghiệp<input data-field="graduationYear" type="number" min="1900" step="1" placeholder="2022"><small>Tối thiểu năm sinh + 21.</small></label><label class="full">Chuyên ngành<input data-field="fieldOfStudy" maxlength="150" placeholder="Công nghệ thông tin"></label><label class="full">Trường / cơ sở đào tạo *<div class="autocomplete"><input data-field="institution" required maxlength="150" placeholder="Gõ tên trường rồi chọn một gợi ý" autocomplete="off"><div class="suggestions" role="listbox" hidden></div></div></label><p class="field-note full school-hint" role="status">Tên trường được xác minh khi lưu hồ sơ.</p></div></article></template>
+  <template id="education-template"><article class="subcard education-card"><div class="subcard-title"><h3>Bằng cấp <span data-number></span></h3><button type="button" class="remove quiet">Bỏ bằng cấp</button></div><div class="fields"><label>Trình độ *<select data-field="educationLevel" required><option value="High School">High School</option><option value="Bachelor" selected>Bachelor</option><option value="Master">Master</option><option value="PhD">PhD</option></select></label><label>Năm tốt nghiệp<input data-field="graduationYear" type="number" min="1900" step="1" placeholder="2022"><small>High School: từ năm sinh + 18; bậc khác: + 21.</small></label><label class="full">Chuyên ngành<input data-field="fieldOfStudy" maxlength="150" placeholder="Công nghệ thông tin"></label><label class="full">Trường / cơ sở đào tạo *<div class="autocomplete"><input data-field="institution" required maxlength="150" placeholder="Gõ tên trường rồi chọn một gợi ý" autocomplete="off"><div class="suggestions" role="listbox" hidden></div></div></label><p class="field-note full school-hint" role="status">Tên trường được xác minh khi lưu hồ sơ.</p></div></article></template>
 </body>
 </html>

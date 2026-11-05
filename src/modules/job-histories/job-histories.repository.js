@@ -2,7 +2,7 @@ const { AppError } = require('../../common/errors/app-error');
 const allowedChangeTypes = new Set(['HIRE', 'PROMOTION', 'ROLE_CHANGE']);
 
 const historyColumns = `h.id, h.employee_id AS "employeeId", h.department_id AS "departmentId",
-  h.position_id AS "positionId", h.manager_id AS "managerId", h.change_type AS "changeType",
+  h.position_id AS "positionId", h.change_type AS "changeType",
   to_char(h.start_date, 'YYYY-MM-DD') AS "startDate",
   to_char(h.end_date, 'YYYY-MM-DD') AS "endDate", h.created_at AS "createdAt"`;
 
@@ -74,13 +74,11 @@ class JobHistoriesRepository {
     if (!allowedChangeTypes.has(changeType)) {
       throw new AppError(400, 'changeType phải là HIRE, PROMOTION hoặc ROLE_CHANGE.');
     }
-    const { rows } = await this.pool.query(`WITH new_id AS (
-      SELECT nextval(pg_get_serial_sequence('public.employee_job_histories','id')) AS id
-    ) INSERT INTO public.employee_job_histories
-      (id,employee_id,department_id,position_id,manager_id,change_type,start_date,end_date)
-      SELECT id,$1,$2,$3,NULL,$4,$5::date,$6::date FROM new_id
+    const { rows } = await this.pool.query(`INSERT INTO public.employee_job_histories
+      (employee_id,department_id,position_id,change_type,start_date,end_date)
+      VALUES ($1,$2,$3,$4,$5::date,$6::date)
       RETURNING id,employee_id AS "employeeId",department_id AS "departmentId",
-        position_id AS "positionId",manager_id AS "managerId",change_type AS "changeType",
+        position_id AS "positionId",change_type AS "changeType",
         to_char(start_date,'YYYY-MM-DD') AS "startDate",
         to_char(end_date,'YYYY-MM-DD') AS "endDate",created_at AS "createdAt"`,
       [employeeId, data.departmentId, data.positionId, changeType, data.startDate, data.endDate]);

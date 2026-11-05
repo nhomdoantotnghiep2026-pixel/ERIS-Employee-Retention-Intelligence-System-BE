@@ -1,5 +1,5 @@
 const { AppError } = require('../../common/errors/app-error');
-const levels = Object.freeze({1:'Cao đẳng',2:'Cử nhân',3:'Thạc sĩ',4:'Tiến sĩ'});
+const levels = Object.freeze(['High School', 'Bachelor', 'Master', 'PhD']);
 function validateId(value,name='id') {
   if(typeof value!=='string'||!/^[1-9]\d{0,9}$/.test(value)||Number(value)>2147483647)throw new AppError(400,name+' must be a positive integer.');
   return Number(value);
@@ -18,7 +18,7 @@ function validateEducation(body,{partial=false}={}) {
     if(!Object.hasOwn(body,field)){if(!partial)result[field]=null;continue;}
     const value=body[field];
     if(field==='educationLevel'){
-      if(!Number.isInteger(value)||!Object.hasOwn(levels,value))throw new AppError(400,'educationLevel must be 1 (Cao đẳng), 2 (Cử nhân), 3 (Thạc sĩ) or 4 (Tiến sĩ).');
+      if(typeof value!=='string'||!levels.includes(value))throw new AppError(400,'educationLevel must be High School, Bachelor, Master or PhD.');
       result[field]=value;
     }else if(value===null){result[field]=null;}
     else if(field==='graduationYear'){
@@ -37,14 +37,14 @@ function validateGraduationYear(data,dateOfBirth){
   if(typeof dateOfBirth!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth))throw new AppError(409,'Employee must have a valid date of birth before recording graduationYear.');
   const parsed=new Date(dateOfBirth+'T00:00:00Z');
   if(!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==dateOfBirth)throw new AppError(409,'Employee date of birth is invalid.');
-  const earliestYear=Number(dateOfBirth.slice(0,4))+21;
-  if(data.graduationYear<earliestYear)throw new AppError(400,'graduationYear must be at least '+earliestYear+' (minimum graduation age: 21 by year).');
+  const earliestYear=Number(dateOfBirth.slice(0,4))+(data.educationLevel==='High School'?18:21);
+  if(data.graduationYear<earliestYear)throw new AppError(400,'graduationYear must be at least '+earliestYear+' for the selected education level.');
 }
 function validateInstitutionQuery(query){
   if(Object.keys(query).some(k=>!['name','educationLevel'].includes(k)))throw new AppError(400,'Only name and educationLevel are allowed; institution search is global.');
   if(typeof query.name!=='string'||query.name.trim().length<2||query.name.trim().length>100||/[\u0000-\u001f\u007f]/.test(query.name))throw new AppError(400,'name must contain 2 to 100 characters.');
   if(!/[\p{L}\p{N}]/u.test(query.name))throw new AppError(400,'name must contain letters or digits.');
-  if(query.educationLevel!==undefined&&(typeof query.educationLevel!=='string'||!(/^[1-4]$/.test(query.educationLevel))))throw new AppError(400,'educationLevel must be 1, 2, 3 or 4.');
-  return{name:query.name.trim(),...(query.educationLevel===undefined?{}:{educationLevel:Number(query.educationLevel)})};
+  if(query.educationLevel!==undefined&&!levels.includes(query.educationLevel))throw new AppError(400,'educationLevel must be High School, Bachelor, Master or PhD.');
+  return{name:query.name.trim(),...(query.educationLevel===undefined?{}:{educationLevel:query.educationLevel})};
 }
 module.exports={validateId,validateEducation,validateGraduationYear,validateInstitutionQuery,levels};

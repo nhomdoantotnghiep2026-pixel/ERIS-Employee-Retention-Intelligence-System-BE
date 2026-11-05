@@ -68,8 +68,8 @@ function createInstitutionSearch(fetchImpl=fetch,vietmapKey=process.env.VIETMAP_
     }catch(error){firstFailure=error;}
     if(vietmapKey){
       try{
-        const url=new URL(vietmapBase+'/search/v4');url.searchParams.set('apikey',vietmapKey);const explicitLevel=/(?:cao dang|college|polytechnic|dai hoc|university|hoc vien|academy)/.test(words(name).join(' '));
-        url.searchParams.set('text',educationLevel===1&&!explicitLevel?'cao đẳng '+name:name);url.searchParams.set('display_type','5');
+        const url=new URL(vietmapBase+'/search/v4');url.searchParams.set('apikey',vietmapKey);const explicitLevel=/(?:trung hoc|thpt|high school|secondary school|cao dang|college|polytechnic|dai hoc|university|hoc vien|academy)/.test(words(name).join(' '));
+        url.searchParams.set('text',educationLevel==='High School'&&!explicitLevel?'trường trung học '+name:name);url.searchParams.set('display_type','5');
         const payload=await request(url,fetchImpl,{vietmap:true});
         if(!Array.isArray(payload))throw new AppError(503,'Invalid Vietmap search response.');
         const data=[],seen=new Set();for(const item of payload){const school=normalizeVietmap(item);if(!school||seen.has(school.id)||!relevantSchool(school,name))continue;data.push(school);seen.add(school.id);if(data.length===10)break;}

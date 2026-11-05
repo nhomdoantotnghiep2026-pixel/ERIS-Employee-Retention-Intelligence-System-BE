@@ -5,8 +5,8 @@ const { AppError } = require('../../common/errors/app-error');
 const { validateCreateEmployeeInput, requiredEmployeeFields } = require('./employees.validation');
 const { phoneKey } = require('./employee-phone');
 
-const fields = [...requiredEmployeeFields, 'educations', 'workExperiences'];
-const required = [...requiredEmployeeFields, 'educations', 'workExperiences'];
+const fields = [...requiredEmployeeFields, 'educations'];
+const required = [...requiredEmployeeFields, 'educations'];
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 0, parts: 1 },
@@ -44,14 +44,14 @@ async function parseWorkbook(buffer) {
           throw new AppError(400, `Use plain values, not formulas or objects, in ${field}.`);
         }
         if (['departmentId','positionId','currentSalary'].includes(field) && typeof value === 'string' && value.trim()) value = Number(value);
-        if (['educations','workExperiences'].includes(field)) {
+        if (field === 'educations') {
           if (typeof value !== 'string') throw new AppError(400, `${field} phải là mảng JSON trong ô Text.`);
           try { value = JSON.parse(value); }
           catch { throw new AppError(400, `${field} không phải JSON hợp lệ.`); }
         }
         input[field] = value;
       });
-      input = validateCreateEmployeeInput(input, { includeWorkExperiences: true });
+      input = validateCreateEmployeeInput(input);
       if (emails.has(input.email)) throw new AppError(409, 'Duplicate email within workbook.');
       if (phones.has(phoneKey(input.phone))) throw new AppError(409, 'Số điện thoại bị trùng trong cùng file Excel.');
       emails.add(input.email);
@@ -84,7 +84,7 @@ function readRelatedSheet(sheet, allowed, requiredHeaders, maxRows) {
           if (!['dateOfBirth', 'hireDate', 'startDate', 'endDate'].includes(field) || !Number.isFinite(value.getTime())) throw new AppError(400, 'Ô ngày không hợp lệ.');
           value = value.toISOString().slice(0, 10);
         } else if (typeof value === 'object') throw new AppError(400, `Không dùng công thức, hyperlink hoặc object ở ${field}.`);
-        if (['departmentId', 'positionId', 'currentSalary', 'educationLevel', 'graduationYear'].includes(field) && typeof value === 'string' && value.trim()) value = Number(value);
+        if (['departmentId', 'positionId', 'currentSalary', 'graduationYear'].includes(field) && typeof value === 'string' && value.trim()) value = Number(value);
         input[field] = value;
       }
     } catch (caught) { error = caught; }
@@ -94,21 +94,19 @@ function readRelatedSheet(sheet, allowed, requiredHeaders, maxRows) {
 }
 
 function parseRelatedSheets(sheets) {
-  const names = ['Employees', 'Educations', 'WorkExperiences'];
-  if (sheets.length !== 3 || sheets.some(sheet => !names.includes(sheet.name))) {
-    throw new AppError(400, 'Dùng một sheet có cột educations/workExperiences dạng JSON, hoặc đúng 3 sheet Employees, Educations, WorkExperiences.');
+  const names = ['Employees', 'Educations'];
+  if (sheets.length !== 2 || sheets.some(sheet => !names.includes(sheet.name))) {
+    throw new AppError(400, 'Dùng một sheet có cột educations dạng JSON, hoặc đúng 2 sheet Employees, Educations.');
   }
   const sheet = name => sheets.find(s => s.name === name);
   const employees = readRelatedSheet(sheet('Employees'), requiredEmployeeFields, requiredEmployeeFields, 200);
   if (!employees.length) throw new AppError(400, 'Employees phải có từ 1 đến 200 nhân viên.');
   const educationFields = ['email', 'educationLevel', 'fieldOfStudy', 'institution', 'institutionRefId', 'graduationYear'];
-  const workFields = ['email', 'companyName', 'positionTitle', 'startDate', 'endDate'];
   const educations = readRelatedSheet(sheet('Educations'), educationFields, ['email', 'educationLevel', 'institution', 'institutionRefId'], 4000);
-  const experiences = readRelatedSheet(sheet('WorkExperiences'), workFields, ['email', 'companyName', 'positionTitle', 'startDate'], 10000);
   const emailKey = value => typeof value === 'string' ? value.trim().toLowerCase() : '';
   const knownEmails = new Set(employees.map(row => emailKey(row.input.email)).filter(Boolean));
-  const backgrounds = new Map([...knownEmails].map(email => [email, { educations: [], workExperiences: [], errors: [] }]));
-  for (const [sheetName, key, rows] of [['Educations', 'educations', educations], ['WorkExperiences', 'workExperiences', experiences]]) {
+  const backgrounds = new Map([...knownEmails].map(email => [email, { educations: [], errors: [] }]));
+  for (const [sheetName, key, rows] of [['Educations', 'educations', educations]]) {
     for (const row of rows) {
       const email = emailKey(row.input.email);
       if (!email || !knownEmails.has(email)) throw new AppError(400, `${sheetName} dòng ${row.row}: email không có trong sheet Employees.`);
@@ -126,9 +124,9 @@ function parseRelatedSheets(sheets) {
     try {
       if (row.error) throw row.error;
       const email = emailKey(row.input.email);
-      const background = backgrounds.get(email) || { educations: [], workExperiences: [], errors: [] };
+      const background = backgrounds.get(email) || { educations: [], errors: [] };
       if (background.errors.length) throw new AppError(400, background.errors.join('; '));
-      const input = validateCreateEmployeeInput({ ...row.input, educations: background.educations, workExperiences: background.workExperiences }, { includeWorkExperiences: true });
+      const input = validateCreateEmployeeInput({ ...row.input, educations: background.educations });
       if (seen.has(input.email)) throw new AppError(409, 'Duplicate email within workbook.');
       if (seenPhones.has(phoneKey(input.phone))) throw new AppError(409, 'Số điện thoại bị trùng trong cùng file Excel.');
       seen.add(input.email);

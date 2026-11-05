@@ -52,6 +52,11 @@ class AttendanceRepository {
         result = await client.query(`WITH times AS (
           SELECT $3::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh' AS finish
         ) UPDATE public.attendance a SET check_out=t.finish,
+          attendance_status=CASE
+            WHEN a.check_in > a.work_date+TIME '08:00' AND t.finish < a.work_date+TIME '17:00' THEN 'LATE_EARLY_LEAVE'
+            WHEN a.check_in > a.work_date+TIME '08:00' THEN 'LATE'
+            WHEN t.finish < a.work_date+TIME '17:00' THEN 'EARLY_LEAVE'
+            ELSE 'PRESENT' END,
           working_minutes=GREATEST(0,FLOOR(EXTRACT(EPOCH FROM (t.finish-a.check_in)) / 60
             - GREATEST(0,EXTRACT(EPOCH FROM (LEAST(t.finish,a.work_date+TIME '13:00')
                 - GREATEST(a.check_in,a.work_date+TIME '12:00'))) / 60)))::integer,
@@ -65,6 +70,38 @@ class AttendanceRepository {
       await client.query('COMMIT'); return result.rows[0];
     } catch (error) { await client.query('ROLLBACK'); throw error; }
     finally { client.release(); }
+  }
+  async markHoliday(date) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: employees } = await client.query(`SELECT e.id FROM employees e WHERE e.employment_status='ACTIVE'
+        AND e.hire_date<=$1::date AND EXISTS (SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')
+        ORDER BY e.id`, [date]);
+      for (const employee of employees) {
+        await client.query(`SELECT pg_advisory_xact_lock(hashtext('attendance:' || $1::text || ':' || $2::text))`, [employee.id,date]);
+        const current = await new AttendanceRepository(client).find(employee.id,date);
+        if (current?.attendanceStatus !== 'ON_LEAVE' && (current?.checkIn || current?.checkOut)) throw new AppError(409, `Đã có người chấm công ngày ${date}; không thể đặt ngày lễ.`);
+        await client.query(`INSERT INTO public.attendance (employee_id,work_date,attendance_status,working_minutes,overtime_minutes)
+          VALUES ($1,$2::date,'HOLIDAY',0,0)
+          ON CONFLICT (employee_id,work_date) DO UPDATE SET attendance_status='HOLIDAY',check_in=NULL,check_out=NULL,
+            working_minutes=0,overtime_minutes=0,updated_at=CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh'
+          WHERE (attendance.attendance_status='ON_LEAVE' OR (attendance.check_in IS NULL AND attendance.check_out IS NULL))
+            AND attendance.attendance_status IS DISTINCT FROM 'HOLIDAY'`, [employee.id,date]);
+      }
+      await client.query('COMMIT'); return employees.length;
+    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
+  }
+  async closeAbsent(date) {
+    const { rowCount } = await this.pool.query(`INSERT INTO public.attendance
+      (employee_id,work_date,attendance_status,working_minutes,overtime_minutes)
+      SELECT e.id,$1::date,'ABSENT',0,0 FROM employees e WHERE e.employment_status='ACTIVE'
+        AND e.hire_date<=$1::date AND EXISTS (SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')
+        AND EXISTS (SELECT 1 FROM employee_job_histories h WHERE h.employee_id=e.id AND h.change_type='HIRE'
+          AND (h.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date<=$1::date)
+      ON CONFLICT (employee_id,work_date) DO NOTHING`, [date]);
+    return rowCount;
   }
 }
 module.exports = { AttendanceRepository };

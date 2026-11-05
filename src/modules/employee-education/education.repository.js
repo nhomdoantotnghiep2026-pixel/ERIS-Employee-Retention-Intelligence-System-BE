@@ -1,6 +1,6 @@
 const { auditChildMethods } = require('../audit_logs/audit.repository');
 const { AppError } = require('../../common/errors/app-error');
-const columns = `id, employee_id AS "employeeId", CASE WHEN education_level IN ('1','2','3','4') THEN education_level::integer ELSE NULL END AS "educationLevel",
+const columns = `id, employee_id AS "employeeId", CASE education_level WHEN '1' THEN 'Legacy College' WHEN '2' THEN 'Bachelor' WHEN '3' THEN 'Master' WHEN '4' THEN 'PhD' ELSE education_level END AS "educationLevel",
   field_of_study AS "fieldOfStudy", institution, graduation_year AS "graduationYear", status,
   created_at AS "createdAt", updated_at AS "updatedAt"`;
 class EducationRepository {

@@ -49,18 +49,16 @@ class SurveysRepository {
           `INSERT INTO survey_questions (
              survey_id,
              question_text,
-             dimension_code,
              required,
              display_order
            )
-           VALUES ($1, $2, $3, $4, $5)
+           VALUES ($1, $2, $3, $4)
            RETURNING
              id,
              question_text AS "questionText",
-             dimension_code AS "dimensionCode",
              required,
              display_order AS "displayOrder"`,
-          [savedSurvey.id, question.questionText, question.dimensionCode, question.required, question.displayOrder]
+          [savedSurvey.id, question.questionText, question.required, question.displayOrder]
         );
         questions.push(rows[0]);
       }
@@ -124,7 +122,6 @@ class SurveysRepository {
       `SELECT
          id,
          question_text AS "questionText",
-         dimension_code AS "dimensionCode",
          required,
          display_order AS "displayOrder"
        FROM survey_questions
@@ -205,7 +202,6 @@ class SurveysRepository {
       `SELECT
          survey_questions.id AS "questionId",
          survey_questions.question_text AS "questionText",
-         survey_questions.dimension_code AS "dimensionCode",
          survey_questions.required,
          survey_questions.display_order AS "displayOrder",
          survey_answers.score,
@@ -264,9 +260,9 @@ class SurveysRepository {
 
       for (const answer of answers) {
         await client.query(
-          `INSERT INTO survey_answers (response_id, question_id, score, comment)
-           VALUES ($1, $2, $3, $4)`,
-          [response.id, answer.questionId, answer.score, answer.comment]
+          `INSERT INTO survey_answers (response_id, survey_id, question_id, score, comment)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [response.id, surveyId, answer.questionId, answer.score, answer.comment]
         );
       }
 
@@ -295,7 +291,7 @@ class SurveysRepository {
        WHERE users.id = $1
          AND users.status = 'ACTIVE'
          AND employees.employment_status = 'ACTIVE'
-         AND employees.hire_date <= CURRENT_DATE - INTERVAL '3 months'
+         AND employees.hire_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh')::date - INTERVAL '3 months'
        LIMIT 1`,
       [userId]
     );
@@ -368,7 +364,7 @@ class SurveysRepository {
          jsonb_build_object('id', e.id, 'employeeCode', e.employee_code, 'fullName', e.full_name) AS employee,
          COALESCE((
            SELECT jsonb_agg(jsonb_build_object(
-             'questionId', q.id, 'questionText', q.question_text, 'dimensionCode', q.dimension_code,
+             'questionId', q.id, 'questionText', q.question_text,
              'required', q.required, 'displayOrder', q.display_order,
              'score', a.score, 'comment', a.comment
            ) ORDER BY q.display_order, q.id)
@@ -409,7 +405,6 @@ class SurveysRepository {
       `SELECT
          survey_questions.id,
          survey_questions.question_text AS "questionText",
-         survey_questions.dimension_code AS "dimensionCode",
          survey_questions.display_order AS "displayOrder",
          COUNT(survey_answers.id) FILTER (
            WHERE survey_responses.submitted_at IS NOT NULL

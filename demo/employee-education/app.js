@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const $=id=>document.getElementById(id),levels={1:'Cao đẳng',2:'Cử nhân',3:'Thạc sĩ',4:'Tiến sĩ'};
+  const $=id=>document.getElementById(id),levels={'High School':'High School',Bachelor:'Bachelor',Master:'Master',PhD:'PhD','Legacy College':'Cao đẳng cũ · cần rà soát'};
   let token='',employees=[],records=[],editing=null,selectedSchool=null,busy=false,session=0,listVersion=0,searchVersion=0,timer,controller,options=[],active=-1;
   const notify=(text,kind='error')=>{$('notice').textContent=text;$('notice').dataset.kind=kind;};
   const currentEmployee=()=>employees.find(e=>String(e.id)===$('employee').value);
@@ -90,7 +90,7 @@
     const changed=!editing||$('institution').value.trim()!==editing.institution;
     if(changed&&(!selectedSchool||selectedSchool.institution!==$('institution').value.trim())){notify('Hãy chọn trường từ danh sách gợi ý, không nhập tay.');return;}
     cancelSearch();setBusy(true);notify('');const current=session,employeeId=$('employee').value,edit=editing;
-    const body={educationLevel:Number($('level').value),fieldOfStudy:$('major').value.trim()||null,institution:$('institution').value.trim()||null,graduationYear:$('year').value===''?null:Number($('year').value)};
+    const body={educationLevel:$('level').value,fieldOfStudy:$('major').value.trim()||null,institution:$('institution').value.trim()||null,graduationYear:$('year').value===''?null:Number($('year').value)};
     if(selectedSchool)body.institutionRefId=selectedSchool.id;
     else if(edit)delete body.institution;
     try{

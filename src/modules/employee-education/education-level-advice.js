@@ -3,12 +3,14 @@ function normalize(value) {
 }
 
 function assessEducationLevel(educationLevel, institution) {
-  if (![1, 2, 3, 4].includes(educationLevel) || !institution) return { levelFit: 'UNKNOWN', levelWarning: null };
+  if (educationLevel === 'Legacy College') return { levelFit: 'MISMATCH', levelWarning: 'Bản ghi Cao đẳng cũ cần HR xác nhận lại theo bốn trình độ mới.' };
+  if (!['High School', 'Bachelor', 'Master', 'PhD'].includes(educationLevel) || !institution) return { levelFit: 'UNKNOWN', levelWarning: null };
   const name = normalize(institution);
+  const school = /\b(trung hoc|thpt|high school|secondary school)\b/.test(name);
   const college = /\b(cao dang|college|polytechnic)\b/.test(name);
   const university = /\b(dai hoc|university|hoc vien|academy)\b/.test(name);
-  if (college === university) return { levelFit: 'UNKNOWN', levelWarning: null };
-  const matches = educationLevel === 1 ? college : university;
+  if (Number(school)+Number(college)+Number(university)!==1) return { levelFit: 'UNKNOWN', levelWarning: null };
+  const matches = educationLevel === 'High School' ? school : university;
   return matches
     ? { levelFit: 'MATCH', levelWarning: null }
     : {

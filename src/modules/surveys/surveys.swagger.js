@@ -239,7 +239,6 @@ const surveysPaths = {
                           properties: {
                             id: { type: 'integer' },
                             questionText: { type: 'string' },
-                            dimensionCode: { type: 'string' },
                             required: { type: 'boolean' },
                             displayOrder: { type: 'integer' }
                           }
@@ -318,7 +317,7 @@ surveysPaths['/api/surveys/{id}/responses'] = {
           survey: { id: 4, title: 'Khảo sát quý', status: 'ACTIVE', description: 'Khảo sát nhân sự', startDate: '2026-10-01T00:00:00Z', endDate: '2026-12-31T00:00:00Z' },
           responseCount: 1, participants: [{ responseId: 5, submittedAt: '2026-10-29T08:00:00Z',
             employee: { id: 12, employeeCode: 'EMP012', fullName: 'Nguyễn Văn A' },
-            answers: [{ questionId: 49, questionText: 'Bạn hài lòng với công việc không?', dimensionCode: 'JS01', required: true, displayOrder: 1, score: 4, comment: 'Ổn đấy' }] }]
+            answers: [{ questionId: 49, questionText: 'Bạn hài lòng với công việc không?', required: true, displayOrder: 1, score: 4, comment: 'Ổn đấy' }] }]
         } } } } },
       400: { description: 'ID khảo sát không hợp lệ.' }, 401: { description: 'Thiếu hoặc sai access token.' },
       403: { description: 'Chỉ HR có tài khoản ACTIVE được xem.' }, 404: { description: 'Không tìm thấy khảo sát.' }
