@@ -7,9 +7,12 @@ function createSurveysRouter({ surveysController, authenticate }) {
   router.post('/', authenticate, surveysController.createSurvey);
   router.get('/available', authenticate, surveysController.listAvailableSurveys);
   router.get('/:id/responses', authenticate, surveysController.getSurveyParticipants);
+  router.get('/:id/responses/:responseId', authenticate, surveysController.getSurveyResponse);
   router.post('/:id/responses', authenticate, surveysController.submitSurveyResponse);
   router.get('/:id/my-response', authenticate, surveysController.getMySurveyResponse);
   router.post('/:id/publish', authenticate, surveysController.publishSurvey);
+  router.post('/:id/close', authenticate, surveysController.closeSurvey);
+  router.patch('/:id', authenticate, surveysController.updateSurvey);
   router.get('/:id/results', authenticate, surveysController.getSurveyResults);
   router.get('/:id', authenticate, surveysController.getSurveyForEmployee);
 

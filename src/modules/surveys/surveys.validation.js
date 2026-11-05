@@ -1,4 +1,5 @@
 const { AppError } = require('../../common/errors/app-error');
+const { SURVEY_SCORE_MIN, SURVEY_SCORE_MAX } = require('./surveys.constants');
 
 function validateDateTime(value, fieldName) {
   if (value === undefined || value === null || value === '') return null;
@@ -50,7 +51,7 @@ function validateCreateSurveyInput(input) {
 function validateSurveyId(value) {
   const id = Number(value);
 
-  if (!Number.isInteger(id) || id <= 0) {
+  if (!/^[1-9]\d*$/.test(String(value)) || !Number.isInteger(id) || id > 2147483647) {
     throw new AppError(400, 'Survey id must be a positive integer.');
   }
 
@@ -89,8 +90,8 @@ function validateSubmitSurveyResponseInput(input) {
     }
     questionIds.add(answer.questionId);
 
-    if (!Number.isInteger(answer.score) || answer.score < 1 || answer.score > 4) {
-      throw new AppError(400, `answers[${index}].score must be an integer between 1 and 4.`);
+    if (!Number.isInteger(answer.score) || answer.score < SURVEY_SCORE_MIN || answer.score > SURVEY_SCORE_MAX) {
+      throw new AppError(400, `answers[${index}].score must be an integer between 1 and 5.`);
     }
 
     if (answer.comment !== undefined && answer.comment !== null && typeof answer.comment !== 'string') {
@@ -111,4 +112,12 @@ function validateSubmitSurveyResponseInput(input) {
   return { answers };
 }
 
-module.exports = { validateCreateSurveyInput, validateSurveyId, validateSubmitSurveyResponseInput };
+function validateUpdateSurveyInput(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) || !Object.keys(input).length) {
+    throw new AppError(400, 'A nonempty update object is required.');
+  }
+  const normalized = validateCreateSurveyInput({ ...input, title: input.title === undefined ? 'Unchanged' : input.title });
+  return Object.fromEntries(Object.keys(input).map(key => [key, normalized[key]]));
+}
+
+module.exports = { validateCreateSurveyInput, validateUpdateSurveyInput, validateSurveyId, validateSubmitSurveyResponseInput };

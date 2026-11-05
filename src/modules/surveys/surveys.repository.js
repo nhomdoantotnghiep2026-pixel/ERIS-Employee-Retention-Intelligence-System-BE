@@ -1,5 +1,4 @@
 const { snapshot, writeAudit, auditMutation, transaction } = require('../audit_logs/audit.repository');
-const { DEFAULT_SURVEY_QUESTIONS } = require('./surveys.constants');
 const { AppError } = require('../../common/errors/app-error');
 
 class SurveysRepository {
@@ -42,26 +41,7 @@ class SurveysRepository {
         [survey.title, survey.description, survey.startDate, survey.endDate, createdBy]
       );
       const savedSurvey = surveyRows[0];
-      const questions = [];
-
-      for (const question of DEFAULT_SURVEY_QUESTIONS) {
-        const { rows } = await client.query(
-          `INSERT INTO survey_questions (
-             survey_id,
-             question_text,
-             required,
-             display_order
-           )
-           VALUES ($1, $2, $3, $4)
-           RETURNING
-             id,
-             question_text AS "questionText",
-             required,
-             display_order AS "displayOrder"`,
-          [savedSurvey.id, question.questionText, question.required, question.displayOrder]
-        );
-        questions.push(rows[0]);
-      }
+      const questions = await new SurveysRepository(client).findQuestions();
 
       await writeAudit(client, { actorId: createdBy, entityType: 'surveys', entityId: savedSurvey.id, action: 'CREATE',
         newValue: { ...await snapshot(client, 'surveys', savedSurvey.id), questions } });
@@ -88,11 +68,10 @@ class SurveysRepository {
          surveys.updated_at AS "updatedAt",
          users.id AS "createdBy",
          users.full_name AS "createdByName",
-         COUNT(DISTINCT survey_questions.id)::integer AS "questionCount",
-         COUNT(DISTINCT survey_responses.id)::integer AS "responseCount"
+         (SELECT COUNT(*)::integer FROM survey_questions) AS "questionCount",
+         COUNT(DISTINCT survey_responses.id) FILTER (WHERE survey_responses.submitted_at IS NOT NULL)::integer AS "responseCount"
        FROM surveys
        LEFT JOIN users ON users.id = surveys.created_by
-       LEFT JOIN survey_questions ON survey_questions.survey_id = surveys.id
        LEFT JOIN survey_responses ON survey_responses.survey_id = surveys.id
        GROUP BY surveys.id, users.id
        ORDER BY surveys.created_at DESC`
@@ -117,17 +96,14 @@ class SurveysRepository {
     return rows[0] || null;
   }
 
-  async findQuestionsBySurveyId(surveyId) {
+  async findQuestions() {
     const { rows } = await this.databasePool.query(
       `SELECT
          id,
          question_text AS "questionText",
-         required,
          display_order AS "displayOrder"
        FROM survey_questions
-       WHERE survey_id = $1
-       ORDER BY display_order ASC`,
-      [surveyId]
+       ORDER BY display_order ASC, id ASC`
     );
 
     return rows;
@@ -202,17 +178,15 @@ class SurveysRepository {
       `SELECT
          survey_questions.id AS "questionId",
          survey_questions.question_text AS "questionText",
-         survey_questions.required,
          survey_questions.display_order AS "displayOrder",
          survey_answers.score,
          survey_answers.comment
        FROM survey_questions
        LEFT JOIN survey_answers
          ON survey_answers.question_id = survey_questions.id
-        AND survey_answers.response_id = $2
-       WHERE survey_questions.survey_id = $1
+        AND survey_answers.response_id = $1
        ORDER BY survey_questions.display_order ASC`,
-      [surveyId, responseId]
+      [responseId]
     );
 
     return rows;
@@ -223,6 +197,21 @@ class SurveysRepository {
 
     try {
       await client.query('BEGIN');
+      const { rows: surveys } = await client.query('SELECT * FROM surveys WHERE id=$1 FOR UPDATE', [surveyId]);
+      const survey = surveys[0];
+      const now = Date.now();
+      if (!survey || survey.status !== 'ACTIVE' || !survey.start_date || !survey.end_date
+          || new Date(survey.start_date).getTime() > now || new Date(survey.end_date).getTime() <= now) {
+        throw new AppError(409, 'Survey is not currently available.');
+      }
+      await client.query('LOCK TABLE survey_questions IN SHARE MODE');
+      const questions = await new SurveysRepository(client).findQuestions();
+      const ids = new Set(answers.map(answer => answer.questionId));
+      if (!questions.length || answers.length !== questions.length || ids.size !== questions.length
+          || questions.some(question => !ids.has(question.id))
+          || answers.some(answer => !Number.isInteger(answer.score) || answer.score < 1 || answer.score > 5)) {
+        throw new AppError(400, 'Answer every shared question once with an integer score from 1 to 5.');
+      }
       const { rows: existingRows } = await client.query(
         `SELECT id, submitted_at AS "submittedAt"
          FROM survey_responses
@@ -242,7 +231,7 @@ class SurveysRepository {
         await client.query('DELETE FROM survey_answers WHERE response_id = $1', [existingResponse.id]);
         const { rows } = await client.query(
           `UPDATE survey_responses
-           SET submitted_at = CURRENT_TIMESTAMP
+           SET submitted_at = NULL
            WHERE id = $1
            RETURNING id, survey_id AS "surveyId", submitted_at AS "submittedAt"`,
           [existingResponse.id]
@@ -251,7 +240,7 @@ class SurveysRepository {
       } else {
         const { rows } = await client.query(
           `INSERT INTO survey_responses (survey_id, employee_id, submitted_at)
-           VALUES ($1, $2, CURRENT_TIMESTAMP)
+           VALUES ($1, $2, NULL)
            RETURNING id, survey_id AS "surveyId", submitted_at AS "submittedAt"`,
           [surveyId, employeeId]
         );
@@ -266,8 +255,12 @@ class SurveysRepository {
         );
       }
 
+      const { rows: submitted } = await client.query(
+        'UPDATE survey_responses SET submitted_at=clock_timestamp() WHERE id=$1 RETURNING submitted_at AS "submittedAt"', [response.id]);
+      response.submittedAt = submitted[0].submittedAt;
       await client.query('COMMIT');
       return {
+        satisfactionScore: Number((answers.reduce((sum, answer) => sum + answer.score, 0) / answers.length).toFixed(4)),
         responseId: response.id,
         surveyId: response.surveyId,
         submittedAt: response.submittedAt
@@ -288,8 +281,10 @@ class SurveysRepository {
       `SELECT employees.id
        FROM users
        INNER JOIN employees ON employees.id = users.employee_id
+       INNER JOIN role ON role.id = users.role_id
        WHERE users.id = $1
          AND users.status = 'ACTIVE'
+         AND role.name IN ('HR', 'EMPLOYEE')
          AND employees.employment_status = 'ACTIVE'
          AND employees.hire_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh')::date - INTERVAL '3 months'
        LIMIT 1`,
@@ -316,14 +311,13 @@ class SurveysRepository {
        CROSS JOIN LATERAL (
          SELECT COUNT(*)::integer AS "questionCount"
          FROM survey_questions
-         WHERE survey_questions.survey_id = surveys.id
        ) AS question_totals
        LEFT JOIN survey_responses
          ON survey_responses.survey_id = surveys.id
         AND survey_responses.employee_id = $1
        WHERE surveys.status = 'ACTIVE'
          AND surveys.start_date <= CURRENT_TIMESTAMP
-         AND surveys.end_date >= CURRENT_TIMESTAMP
+         AND surveys.end_date > CURRENT_TIMESTAMP
          AND question_totals."questionCount" > 0
          AND (survey_responses.id IS NULL OR survey_responses.submitted_at IS NULL)
        ORDER BY surveys.end_date ASC, surveys.id DESC`,
@@ -345,6 +339,9 @@ class SurveysRepository {
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
          AND status = 'DRAFT'
+         AND start_date IS NOT NULL AND end_date > clock_timestamp()
+         AND end_date > start_date
+         AND EXISTS (SELECT 1 FROM survey_questions)
        RETURNING
          id,
          title,
@@ -365,12 +362,11 @@ class SurveysRepository {
          COALESCE((
            SELECT jsonb_agg(jsonb_build_object(
              'questionId', q.id, 'questionText', q.question_text,
-             'required', q.required, 'displayOrder', q.display_order,
+             'displayOrder', q.display_order,
              'score', a.score, 'comment', a.comment
            ) ORDER BY q.display_order, q.id)
            FROM survey_questions q
            LEFT JOIN survey_answers a ON a.question_id=q.id AND a.response_id=r.id
-           WHERE q.survey_id=r.survey_id
          ), '[]'::jsonb) AS answers
        FROM survey_responses r
        JOIN employees e ON e.id=r.employee_id
@@ -400,6 +396,49 @@ class SurveysRepository {
     return rows[0] || null;
   }
 
+  async findSubmittedResponse(surveyId, responseId) {
+    const { rows } = await this.databasePool.query(
+      `SELECT r.id AS "responseId", r.submitted_at AS "submittedAt",
+        jsonb_build_object('id', e.id, 'employeeCode', e.employee_code, 'fullName', e.full_name) AS employee
+       FROM survey_responses r JOIN employees e ON e.id=r.employee_id
+       WHERE r.survey_id=$1 AND r.id=$2 AND r.submitted_at IS NOT NULL`, [surveyId, responseId]);
+    if (!rows[0]) return null;
+    const answers = await this.findMyResponseAnswers({ responseId });
+    return { ...rows[0], answers,
+      satisfactionScore: answers.length ? Number((answers.reduce((sum, answer) => sum + Number(answer.score), 0) / answers.length).toFixed(4)) : null };
+  }
+
+  async updateDraft(id, changes, actorId) {
+    return transaction(this.databasePool, async client => {
+      const before = await snapshot(client, 'surveys', id, true);
+      if (!before) throw new AppError(404, 'Survey not found.');
+      if (before.status !== 'DRAFT') throw new AppError(409, 'Only draft surveys can be edited.');
+      const merged = { title: before.title, description: before.description,
+        startDate: before.start_date, endDate: before.end_date, ...changes };
+      if (merged.startDate && merged.endDate && new Date(merged.endDate) <= new Date(merged.startDate)) {
+        throw new AppError(400, 'endDate must be after startDate.');
+      }
+      return auditMutation(client, { actorId, table: 'surveys', id, action: 'UPDATE' }, async () => {
+        await client.query('UPDATE surveys SET title=$2, description=$3, start_date=$4, end_date=$5 WHERE id=$1',
+          [id, merged.title, merged.description, merged.startDate, merged.endDate]);
+        return new SurveysRepository(client).findDetailById(id);
+      });
+    });
+  }
+
+  async close(id, actorId) {
+    return transaction(this.databasePool, async client => {
+      const before = await snapshot(client, 'surveys', id, true);
+      if (!before) throw new AppError(404, 'Survey not found.');
+      if (before.status === 'CLOSED') return new SurveysRepository(client).findDetailById(id);
+      if (before.status !== 'ACTIVE') throw new AppError(409, 'Only active surveys can be closed.');
+      return auditMutation(client, { actorId, table: 'surveys', id, action: 'CLOSE' }, async () => {
+        await client.query("UPDATE surveys SET status='CLOSED' WHERE id=$1", [id]);
+        return new SurveysRepository(client).findDetailById(id);
+      });
+    });
+  }
+
   async findQuestionResults(surveyId) {
     const { rows } = await this.databasePool.query(
       `SELECT
@@ -407,46 +446,48 @@ class SurveysRepository {
          survey_questions.question_text AS "questionText",
          survey_questions.display_order AS "displayOrder",
          COUNT(survey_answers.id) FILTER (
-           WHERE survey_responses.submitted_at IS NOT NULL
+           WHERE survey_responses.submitted_at IS NOT NULL AND survey_responses.survey_id = $1
              AND survey_answers.score IS NOT NULL
          )::integer AS "answerCount",
          ROUND(
            AVG(survey_answers.score) FILTER (
-             WHERE survey_responses.submitted_at IS NOT NULL
+             WHERE survey_responses.submitted_at IS NOT NULL AND survey_responses.survey_id = $1
                AND survey_answers.score IS NOT NULL
            )::numeric,
            2
          ) AS "averageScore",
          COUNT(survey_answers.id) FILTER (
-           WHERE survey_responses.submitted_at IS NOT NULL
+           WHERE survey_responses.submitted_at IS NOT NULL AND survey_responses.survey_id = $1
              AND survey_answers.score = 1
          )::integer AS "score1",
          COUNT(survey_answers.id) FILTER (
-           WHERE survey_responses.submitted_at IS NOT NULL
+           WHERE survey_responses.submitted_at IS NOT NULL AND survey_responses.survey_id = $1
              AND survey_answers.score = 2
          )::integer AS "score2",
          COUNT(survey_answers.id) FILTER (
-           WHERE survey_responses.submitted_at IS NOT NULL
+           WHERE survey_responses.submitted_at IS NOT NULL AND survey_responses.survey_id = $1
              AND survey_answers.score = 3
          )::integer AS "score3",
          COUNT(survey_answers.id) FILTER (
-           WHERE survey_responses.submitted_at IS NOT NULL
+           WHERE survey_responses.submitted_at IS NOT NULL AND survey_responses.survey_id = $1
              AND survey_answers.score = 4
           )::integer AS "score4",
+         COUNT(survey_answers.id) FILTER (
+           WHERE survey_responses.submitted_at IS NOT NULL AND survey_responses.survey_id = $1
+             AND survey_answers.score = 5
+         )::integer AS "score5",
          COALESCE(
            jsonb_agg(
              jsonb_build_object('score', survey_answers.score, 'comment', survey_answers.comment)
              ORDER BY survey_answers.id
            ) FILTER (
-             WHERE survey_responses.submitted_at IS NOT NULL
-               AND survey_responses.survey_id = survey_questions.survey_id
+             WHERE survey_responses.submitted_at IS NOT NULL AND survey_responses.survey_id = $1
                AND survey_answers.id IS NOT NULL
            ), '[]'::jsonb
          ) AS answers
        FROM survey_questions
        LEFT JOIN survey_answers ON survey_answers.question_id = survey_questions.id
        LEFT JOIN survey_responses ON survey_responses.id = survey_answers.response_id
-       WHERE survey_questions.survey_id = $1
        GROUP BY survey_questions.id
        ORDER BY survey_questions.display_order ASC`,
       [surveyId]

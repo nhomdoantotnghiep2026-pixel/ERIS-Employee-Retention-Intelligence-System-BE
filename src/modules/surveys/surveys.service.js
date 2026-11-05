@@ -49,12 +49,12 @@ class SurveysService {
       || !survey.startDate
       || !survey.endDate
       || new Date(survey.startDate) > now
-      || new Date(survey.endDate) < now
+      || new Date(survey.endDate) <= now
     ) {
       throw new AppError(409, 'Survey is not currently available for responses.');
     }
 
-    const questions = await this.surveysRepository.findQuestionsBySurveyId(surveyId);
+    const questions = await this.surveysRepository.findQuestions();
     const questionIds = new Set(questions.map((question) => question.id));
     if (questions.length === 0) {
       throw new AppError(409, 'Survey has no questions.');
@@ -65,11 +65,10 @@ class SurveysService {
     }
 
     const answeredQuestionIds = new Set(answers.map((answer) => answer.questionId));
-    const requiredQuestionIds = questions
-      .filter((question) => question.required)
+    const allQuestionIds = questions
       .map((question) => question.id);
-    if (requiredQuestionIds.some((questionId) => !answeredQuestionIds.has(questionId))) {
-      throw new AppError(400, 'All required survey questions must be answered.');
+    if (allQuestionIds.some((questionId) => !answeredQuestionIds.has(questionId))) {
+      throw new AppError(400, 'All shared survey questions must be answered.');
     }
 
     return this.surveysRepository.submitResponse({ surveyId, employeeId: employee.id, answers });
@@ -90,8 +89,8 @@ class SurveysService {
       surveyId,
       employeeId: employee.employeeId
     });
-    if (!response) {
-      throw new AppError(404, 'You have not started this survey.');
+    if (!response || !response.submittedAt) {
+      throw new AppError(404, 'You have not submitted this survey.');
     }
 
     const answers = await this.surveysRepository.findMyResponseAnswers({
@@ -107,12 +106,12 @@ class SurveysService {
       response: {
         id: response.id,
         status: response.submittedAt ? 'SUBMITTED' : 'DRAFT',
-        submittedAt: response.submittedAt
+        submittedAt: response.submittedAt,
+        satisfactionScore: Number((answers.reduce((sum, answer) => sum + Number(answer.score), 0) / answers.length).toFixed(4))
       },
       answers: answers.map((answer) => ({
         questionId: answer.questionId,
         questionText: answer.questionText,
-        required: answer.required,
         displayOrder: answer.displayOrder,
         score: answer.score,
         comment: answer.comment
@@ -121,6 +120,12 @@ class SurveysService {
   }
 
   async getSurveyForEmployee({ actorId, surveyId }) {
+    const actor = await this.surveysRepository.findUserRoleById(actorId);
+    if (actor?.role === 'HR') {
+      const survey = await this.surveysRepository.findDetailById(surveyId);
+      if (!survey) throw new AppError(404, 'Survey not found.');
+      return { ...survey, questions: await this.surveysRepository.findQuestions() };
+    }
     const employee = await this.surveysRepository.findActiveEmployeeByUserId(actorId);
     if (!employee) {
       throw new AppError(403, 'Only active employees who have completed at least 3 months of employment can view surveys.');
@@ -137,7 +142,7 @@ class SurveysService {
       || !survey.startDate
       || !survey.endDate
       || new Date(survey.startDate) > now
-      || new Date(survey.endDate) < now
+      || new Date(survey.endDate) <= now
     ) {
       throw new AppError(409, 'Survey is not currently available.');
     }
@@ -150,7 +155,7 @@ class SurveysService {
       throw new AppError(409, 'You have already submitted this survey. Use the my-response endpoint to view it.');
     }
 
-    const questions = await this.surveysRepository.findQuestionsBySurveyId(surveyId);
+    const questions = await this.surveysRepository.findQuestions();
     if (questions.length === 0) {
       throw new AppError(409, 'Survey has no questions.');
     }
@@ -164,7 +169,6 @@ class SurveysService {
       questions: questions.map((question) => ({
         id: question.id,
         questionText: question.questionText,
-        required: question.required,
         displayOrder: question.displayOrder
       }))
     };
@@ -185,10 +189,11 @@ class SurveysService {
       throw new AppError(409, 'Only draft surveys can be published.');
     }
 
-    if (survey.endDate && new Date(survey.endDate) < new Date()) {
+    if (!survey.startDate || !survey.endDate || new Date(survey.endDate) <= new Date() || new Date(survey.endDate) <= new Date(survey.startDate)) {
       throw new AppError(400, 'An expired survey cannot be published.');
     }
 
+    if (!(await this.surveysRepository.findQuestions()).length) throw new AppError(409, 'Survey has no shared questions.');
     const publishedSurvey = await this.surveysRepository.publish(surveyId, actorId);
     if (!publishedSurvey) {
       throw new AppError(409, 'Survey status changed; reload and try again.');
@@ -204,6 +209,28 @@ class SurveysService {
     if (!survey) throw new AppError(404, 'Không tìm thấy khảo sát.');
     const participants = await this.surveysRepository.findSubmittedParticipants(surveyId);
     return { survey, responseCount: participants.length, participants };
+  }
+
+  async updateSurvey({ actorId, surveyId, changes }) {
+    const actor = await this.surveysRepository.findUserRoleById(actorId);
+    if (actor?.role !== 'HR') throw new AppError(403, 'Only HR can update surveys.');
+    return this.surveysRepository.updateDraft(surveyId, changes, actorId);
+  }
+
+  async closeSurvey({ actorId, surveyId }) {
+    const actor = await this.surveysRepository.findUserRoleById(actorId);
+    if (actor?.role !== 'HR') throw new AppError(403, 'Only HR can close surveys.');
+    return this.surveysRepository.close(surveyId, actorId);
+  }
+
+  async getSurveyResponse({ actorId, surveyId, responseId }) {
+    const actor = await this.surveysRepository.findUserRoleById(actorId);
+    if (actor?.role !== 'HR') throw new AppError(403, 'Only HR can view responses.');
+    const survey = await this.surveysRepository.findDetailById(surveyId);
+    if (!survey) throw new AppError(404, 'Survey not found.');
+    const response = await this.surveysRepository.findSubmittedResponse(surveyId, responseId);
+    if (!response) throw new AppError(404, 'Response not found.');
+    return { survey, response };
   }
 
   async getSurveyResults({ actorId, surveyId }) {
@@ -235,7 +262,8 @@ class SurveysService {
           1: Number(question.score1),
           2: Number(question.score2),
           3: Number(question.score3),
-          4: Number(question.score4)
+          4: Number(question.score4),
+          5: Number(question.score5)
         }
       }))
     };
