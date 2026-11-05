@@ -14,7 +14,8 @@
     "test:department-position": "node test/department-position.test.cjs",
     "test:employee-phone": "node test/employee-phone.test.cjs",
     "test:audit-logs": "node test/audit-logs.db.test.cjs",
-    "test:audit-read": "node test/audit-read.test.cjs"
+    "test:audit-read": "node test/audit-read.test.cjs",
+    "test:surveys": "node --test test/survey-participants.test.cjs test/surveys-shared.db.test.cjs"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

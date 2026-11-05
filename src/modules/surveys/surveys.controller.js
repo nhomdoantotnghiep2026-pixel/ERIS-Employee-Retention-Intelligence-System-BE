@@ -12,6 +12,9 @@ class SurveysController {
     this.publishSurvey = this.publishSurvey.bind(this);
     this.getSurveyParticipants = this.getSurveyParticipants.bind(this);
     this.getSurveyResults = this.getSurveyResults.bind(this);
+    this.updateSurvey = this.updateSurvey.bind(this);
+    this.closeSurvey = this.closeSurvey.bind(this);
+    this.getSurveyResponse = this.getSurveyResponse.bind(this);
   }
 
   async createSurvey(request, response, next) {
@@ -141,6 +144,33 @@ class SurveysController {
     } catch (error) {
       return next(error);
     }
+  }
+
+  async updateSurvey(request, response, next) {
+    try {
+      const { validateUpdateSurveyInput } = require('./surveys.validation');
+      const data = await this.surveysService.updateSurvey({ actorId: request.auth.userId,
+        surveyId: validateSurveyId(request.params.id), changes: validateUpdateSurveyInput(request.body) });
+      return response.status(200).json({ data });
+    } catch (error) { return next(error); }
+  }
+
+  async closeSurvey(request, response, next) {
+    try {
+      const data = await this.surveysService.closeSurvey({ actorId: request.auth.userId,
+        surveyId: validateSurveyId(request.params.id) });
+      return response.status(200).json({ data });
+    } catch (error) { return next(error); }
+  }
+
+  async getSurveyResponse(request, response, next) {
+    try {
+      const data = await this.surveysService.getSurveyResponse({ actorId: request.auth.userId,
+        surveyId: validateSurveyId(request.params.id), responseId: validateSurveyId(request.params.responseId) });
+      response.set('Cache-Control', 'no-store, private');
+      response.vary('Authorization');
+      return response.status(200).json({ data });
+    } catch (error) { return next(error); }
   }
 }
 
