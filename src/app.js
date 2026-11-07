@@ -89,6 +89,13 @@ app.use('/api/job-histories', createJobHistoriesRouter({
 }));
 app.use('/api/employees', createEmployeesRouter({ employeesController, authenticate }));
 app.use('/api/positions', createPositionsRouter({ positionsController, authenticate }));
+const { WorkSchedulesRepository } = require('./modules/work-schedules/work-schedules.repository');
+const { WorkSchedulesService } = require('./modules/work-schedules/work-schedules.service');
+const { createWorkSchedulesRouter, createScheduleAssignmentsRouter } = require('./modules/work-schedules/work-schedules.routes');
+app.use('/api/employees', createScheduleAssignmentsRouter({ service: new WorkSchedulesService(new WorkSchedulesRepository(databasePool)), authenticate }));
+app.use('/api/work-schedules', createWorkSchedulesRouter({
+  service: new WorkSchedulesService(new WorkSchedulesRepository(databasePool)), authenticate
+}));
 app.use('/api/surveys', createSurveysRouter({ surveysController, authenticate }));
 app.use('/api/users', createUsersRouter({ usersController, authenticate }));
 const { PolicyDemoRepository } = require('./modules/prediction_results/policy-demo.repository');
