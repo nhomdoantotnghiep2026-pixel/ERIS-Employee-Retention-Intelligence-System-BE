@@ -39,22 +39,63 @@ function validateHoliday(body, now = new Date()) {
 }
 const { transaction } = require('../audit_logs/audit.repository');
 const { AttendanceRepository } = require('./attendance.repository');
-const columns = 'id, name, start_date::text, end_date::text, created_by, created_at, updated_at';
+const columns = 'id, name, start_date::text, end_date::text, status, created_by, created_at, updated_at';
 class AttendanceCalendarStore {
   constructor({ databasePool }) { this.pool = databasePool; }
   async holiday(date) {
-    const { rows } = await this.pool.query(`SELECT ${columns} FROM holidays WHERE start_date <= $1::date AND end_date >= $1::date LIMIT 1`, [date]);
+    const { rows } = await this.pool.query(`SELECT ${columns} FROM holidays WHERE status = 'ACTIVE' AND start_date <= $1::date AND end_date >= $1::date LIMIT 1`, [date]);
     return rows[0] || null;
   }
   async holidays() {
-    const { rows } = await this.pool.query(`SELECT ${columns} FROM holidays ORDER BY start_date ASC, id ASC`);
+    const { rows } = await this.pool.query(`SELECT ${columns} FROM holidays WHERE status = 'ACTIVE' ORDER BY start_date ASC, id ASC`);
     return rows;
+  }
+  async updateHoliday(id, input, today) {
+    try {
+      return await transaction(this.pool, async client => {
+        const { rows } = await client.query('SELECT status, start_date::text FROM holidays WHERE id = $1 FOR UPDATE', [id]);
+        const holiday = rows[0];
+        if (!holiday) throw new AppError(404, 'Holiday not found.');
+        if (holiday.status !== 'ACTIVE' || holiday.start_date <= today) {
+          const error = new AppError(409, 'Only ACTIVE holidays that have not started can be updated.');
+          error.code = 'HOLIDAY_NOT_EDITABLE';
+          throw error;
+        }
+        const updated = await client.query(
+          `UPDATE holidays SET name = $2, start_date = $3, end_date = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING ${columns}`,
+          [id, input.name, input.start_date, input.end_date]);
+        const affectedEmployees = input.start_date <= today && today <= input.end_date
+          ? await new AttendanceRepository(client).markHoliday(today, client) : 0;
+        return { data: updated.rows[0], affectedEmployees };
+      });
+    } catch (cause) {
+      if (cause.code === '23P01') {
+        const error = new AppError(409, 'Holiday dates overlap an existing ACTIVE holiday.');
+        error.code = 'HOLIDAY_EXISTS';
+        throw error;
+      }
+      throw cause;
+    }
+  }
+  async deleteHoliday(id, today) {
+    return transaction(this.pool, async client => {
+      const { rows } = await client.query('SELECT status, start_date::text FROM holidays WHERE id = $1 FOR UPDATE', [id]);
+      const holiday = rows[0];
+      if (!holiday) throw new AppError(404, 'Holiday not found.');
+      if (holiday.status === 'INACTIVE') return;
+      if (holiday.start_date <= today) {
+        const error = new AppError(409, 'Cannot delete a holiday that has already started.');
+        error.code = 'HOLIDAY_ALREADY_STARTED';
+        throw error;
+      }
+      await client.query("UPDATE holidays SET status = 'INACTIVE', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'ACTIVE'", [id]);
+    });
   }
   async createHoliday(input, actorId, today) {
     try {
       return await transaction(this.pool, async client => {
         const { rows } = await client.query(
-          `INSERT INTO holidays (name, start_date, end_date, created_by) VALUES ($1, $2, $3, $4) RETURNING ${columns}`,
+          `INSERT INTO holidays (name, start_date, end_date, created_by, status) VALUES ($1, $2, $3, $4, 'ACTIVE') RETURNING ${columns}`,
           [input.name, input.start_date, input.end_date, actorId]);
         const affectedEmployees = input.start_date <= today && today <= input.end_date
           ? await new AttendanceRepository(client).markHoliday(today, client) : 0;

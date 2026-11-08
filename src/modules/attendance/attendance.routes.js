@@ -46,6 +46,13 @@ function createAttendanceRouter({ service, authenticate, databasePool, syncSched
   router.patch('/leave-requests/:id/cancellation', requireHr, handler(req => service.reviewLeaveCancellation(req.attendanceUser,req.params.id,req.body)));
   router.get('/holidays', requireHr, handler(req => service.holidays(req.attendanceUser)));
   router.post('/holidays', requireHr, handler(req => service.createHoliday(req.attendanceUser,req.body)));
+  router.put('/holidays/:id', requireHr, handler(req => service.updateHoliday(req.attendanceUser,req.params.id,req.body)));
+  router.delete('/holidays/:id', requireHr, async (req, res, next) => {
+    try {
+      await service.deleteHoliday(req.attendanceUser,req.params.id);
+      res.status(204).end();
+    } catch (error) { next(error); }
+  });
   router.post('/close-day', requireHr, handler(req => service.closeDay(req.attendanceUser,req.body)));
   router.post('/check-in', requireProfile, handler(req => service.checkIn(req.attendanceUser, req.body)));
   router.post('/check-out', requireProfile, handler(req => service.checkOut(req.attendanceUser, req.body)));

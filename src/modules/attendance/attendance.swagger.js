@@ -72,6 +72,19 @@ attendancePaths[base+'/holidays']={
   post:{tags:['Attendance'],summary:'HR chọn ngày nghỉ lễ',description:'Lưu khoảng nghỉ lễ trong PostgreSQL, tạo bản ghi HOLIDAY cho nhân viên ACTIVE và chặn check-in/check-out ngày đó. Không chấp nhận ngày đã có check-in/check-out.',security:secured,requestBody:jsonBody(['start_date','end_date','name'],{start_date:dateSchema,end_date:dateSchema,name:{type:'string',maxLength:150}}),responses:response},
   get:{tags:['Attendance'],summary:'HR xem lịch nghỉ lễ',security:secured,responses:response}
 };
+attendancePaths[base+'/holidays/{id}']={delete:{
+  tags:['Attendance'],summary:'HR soft delete a holiday',security:secured,
+  description:'Sets status to INACTIVE. Only future holidays can be deleted; holidays that have started return 409. Repeated deletion returns 204. Holiday lists and attendance calculations only use ACTIVE holidays.',
+  parameters:[{name:'id',in:'path',required:true,schema:{type:'integer',minimum:1,maximum:2147483647}}],
+  responses:{204:{description:'Holiday is INACTIVE; no response body.'},400:{description:'Invalid holiday ID.'},401:{description:'Authentication required.'},403:{description:'Only ACTIVE HR with an ACTIVE employee profile.'},404:{description:'Holiday not found.'},409:{description:'Holiday has already started.'},503:{description:'Holiday storage unavailable.'}}
+}};
+attendancePaths[base+'/holidays/{id}'].put={
+  tags:['Attendance'],summary:'HR update a holiday',security:secured,
+  description:'Replaces name, start_date and end_date; status is unchanged. Only ACTIVE holidays that have not started can be updated. New start_date cannot be in the past (Vietnam time). Overlap with another ACTIVE holiday returns 409. Moving the holiday to today materializes HOLIDAY attendance in the same transaction. Response contains data and affectedEmployees.',
+  parameters:[{name:'id',in:'path',required:true,schema:{type:'integer',minimum:1,maximum:2147483647}}],
+  requestBody:jsonBody(['name','start_date','end_date'],{name:{type:'string',minLength:1,maxLength:150},start_date:dateSchema,end_date:dateSchema}),
+  responses:{200:{description:'Updated holiday in data, with affectedEmployees.'},400:{description:'Invalid ID, name or date range; unknown fields are rejected.'},401:{description:'Authentication required.'},403:{description:'Only ACTIVE HR with an ACTIVE employee profile.'},404:{description:'Holiday not found.'},409:{description:'Holiday inactive, already started, conflicting attendance or overlapping dates.'},503:{description:'Holiday storage unavailable.'}}
+};
 attendancePaths[base+'/close-day']={post:{tags:['Attendance'],summary:'HR chốt vắng mặt ngày đã qua',description:'Tạo ABSENT cho nhân viên ACTIVE chưa có check-in/check-out hoặc ON_LEAVE/HOLIDAY vào một ngày làm việc trong quá khứ. Gọi lại không tạo trùng.',security:secured,requestBody:jsonBody(['date'],{date:dateSchema}),responses:response}};
 attendancePaths[base+'/check-out'].post.description += ' Khi checkout, trạng thái cuối cùng là PRESENT nếu đi/về đúng giờ, LATE nếu đến sau 08:00, EARLY_LEAVE nếu về trước 17:00, hoặc LATE_EARLY_LEAVE nếu cả hai.';
 attendancePaths[base+'/today'].get.description += ' Ngày lễ đọc từ PostgreSQL kể cả hồ sơ chưa có dòng attendance; đơn nghỉ được duyệt có ON_LEAVE trong bảng.';

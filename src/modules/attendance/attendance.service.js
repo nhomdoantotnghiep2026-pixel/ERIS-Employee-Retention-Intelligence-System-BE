@@ -139,6 +139,20 @@ function createAttendanceService(config, repository, clock=()=>new Date(), locat
       const input=validateHoliday(body,clock());
       return calendarStore.createHoliday(input,user.id,todayInVietnam(clock()));
     },
+    async updateHoliday(user,id,body) {
+      assertHr(user);
+      if(!calendarStore) error('UNAVAILABLE','Holiday storage is unavailable.',503);
+      if (typeof id !== 'string' || !/^[1-9]\d{0,9}$/.test(id) || Number(id) > 2147483647) error('VALIDATION_ERROR','Holiday id must be a positive integer.',400);
+      const now=clock();
+      const input=validateHoliday(body,now);
+      return calendarStore.updateHoliday(Number(id),input,todayInVietnam(now));
+    },
+    async deleteHoliday(user,id) {
+      assertHr(user);
+      if(!calendarStore) error('UNAVAILABLE','Holiday storage is unavailable.',503);
+      if (typeof id !== 'string' || !/^[1-9]\d{0,9}$/.test(id) || Number(id) > 2147483647) error('VALIDATION_ERROR','Holiday id must be a positive integer.',400);
+      await calendarStore.deleteHoliday(Number(id),todayInVietnam(clock()));
+    },
     async syncTodayHoliday() {
       if (!calendarStore) return {date:todayInVietnam(clock()),affectedEmployees:0};
       const date=todayInVietnam(clock());
