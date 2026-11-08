@@ -1,0 +1,30 @@
+const assert=require('node:assert/strict');
+const path=require('node:path');
+const root=path.resolve(__dirname,'../..');
+const {databasePool}=require(root+'/src/config/database');
+const {env}=require(root+'/src/config/env');
+const jwt=require(root+'/node_modules/jsonwebtoken');
+const {TOKEN_PURPOSE}=require(root+'/src/modules/auth/auth.constants');
+const {app}=require(root+'/src/app');
+const {redisClient}=require(root+'/src/config/redis');
+(async()=>{let server;try{
+ const actor=(await databasePool.query("SELECT u.id FROM users u JOIN role r ON r.id=u.role_id WHERE u.status='ACTIVE' AND r.name='HR' ORDER BY u.id LIMIT 1")).rows[0];
+ if(!actor)throw new Error('No active HR available for read-only integration smoke test.');
+ const token=jwt.sign({type:TOKEN_PURPOSE.ACCESS},env.auth.jwtSecret,{subject:String(actor.id),expiresIn:60});
+ server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
+ const base='http://127.0.0.1:'+server.address().port;
+ const call=async(endpoint,body)=>{const r=await fetch(base+endpoint,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()};};
+ const info=await call('/api/ai/model');assert.equal(info.status,200,JSON.stringify(info.body));
+ const employees=await call('/api/ai/employees');assert.equal(employees.status,200);assert.ok(employees.body.data.length);
+ let id,snapshot;
+ for(const employee of employees.body.data){const rows=await call('/api/ai/employees/'+employee.id+'/snapshots');const available=rows.body.data?.find(row=>row.ready);if(available){id=employee.id;snapshot=available;break;}}
+ if(!snapshot)throw new Error('No complete saved snapshot available; smoke test does not create domain data.');
+ const before=(await databasePool.query('SELECT count(*)::int AS n FROM prediction_results')).rows[0].n;
+ const prediction=await call('/api/ai/employees/'+id+'/predict',{snapshotId:snapshot.snapshotId,save:false});
+ assert.equal(prediction.status,200,JSON.stringify(prediction.body));assert.equal(prediction.body.data.saved,false);
+ assert.equal(Object.keys(prediction.body.data.model.contributions).length,12);
+ const after=(await databasePool.query('SELECT count(*)::int AS n FROM prediction_results')).rows[0].n;assert.equal(after,before);
+ const html=await fetch(base+'/ai-demo');assert.equal(html.status,200);assert.match(await html.text(),/ai-demo.js/);
+ const js=await fetch(base+'/demo/assets/ai-demo.js');assert.equal(js.status,200);
+ console.log(JSON.stringify({status:'PASS',model:info.body.data.model_id,dataSource:prediction.body.data.preview.dataSource,snapshotId:snapshot.snapshotId,score:prediction.body.data.model.score,shapCount:12,databaseWrites:0,demoPageStatus:html.status}));
+}finally{if(server)await new Promise(r=>server.close(r));redisClient.disconnect();await databasePool.end();}})().catch(error=>{console.error(error.message);process.exitCode=1;});
