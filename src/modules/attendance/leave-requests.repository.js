@@ -1,3 +1,4 @@
+const { resolveSchedule, isScheduledDay } = require('./attendance-schedule');
 const { AppError } = require('../../common/errors/app-error');
 
 const columns = `id, employee_id AS "employeeId", to_char(start_date,'YYYY-MM-DD') AS "fromDate",
@@ -176,19 +177,21 @@ class LeaveRequestsRepository {
       const attendance=[];
       for(const employee of employees) {
         await this.lockEmployee(client,employee.id);
+        const schedule=await resolveSchedule(client,employee.id,date);
+        if(!isScheduledDay(date,schedule))continue;
         const {rows}=await client.query(`SELECT ${columns} FROM leave_requests WHERE employee_id=$1
           AND start_date<=$2::date AND end_date>=$2::date
           AND status IN ('APPROVED','CANCEL_REQUESTED','CANCEL_REJECTED') ORDER BY id FOR SHARE`,[employee.id,date]);
         if(!(await this.decorate(client,rows)).some(row=>row.effectiveStatus==='APPROVED'))continue;
         await client.query("SELECT pg_advisory_xact_lock(hashtext('attendance:' || $1::text || ':' || $2::text))",[employee.id,date]);
         const result=await client.query(`INSERT INTO attendance(employee_id,work_date,attendance_status,check_in,check_out,working_minutes,overtime_minutes,created_at,updated_at)
-          VALUES($1,$2::date,'ON_LEAVE',$2::date+TIME '08:00',$2::date+TIME '17:00',0,0,
+          VALUES($1,$2::date,'ON_LEAVE',$2::date+$3::time,$2::date+$4::time,0,0,
             CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh',CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh')
           ON CONFLICT(employee_id,work_date) DO UPDATE SET attendance_status='ON_LEAVE',working_minutes=0,overtime_minutes=0,
             check_in=EXCLUDED.check_in,check_out=EXCLUDED.check_out,
             updated_at=CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh'
           WHERE attendance.attendance_status IN ('ABSENT','ON_LEAVE') AND attendance.check_in IS NULL AND attendance.check_out IS NULL
-          RETURNING id,employee_id AS "employeeId",to_char(work_date,'YYYY-MM-DD') AS "workDate",attendance_status AS "attendanceStatus"`,[employee.id,date]);
+          RETURNING id,employee_id AS "employeeId",to_char(work_date,'YYYY-MM-DD') AS "workDate",attendance_status AS "attendanceStatus"`,[employee.id,date,schedule.startTime,schedule.endTime]);
         attendance.push(...result.rows);
       }
       await client.query('COMMIT');return {date,created:attendance.length,data:attendance};

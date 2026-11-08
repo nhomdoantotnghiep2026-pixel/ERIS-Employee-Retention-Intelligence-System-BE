@@ -28,6 +28,7 @@ test('PATCH permissions, partial updates, history restrictions, validation and r
       if (auditFailure) throw new AppError(503, 'Audit unavailable');
       audits.push(params); return { rows: [] };
     }
+    if(sql.includes('pg_advisory_xact_lock'))return {rows:[]};
     throw new Error('Unexpected query: ' + sql);
   } };
   const repository = new WorkSchedulesRepository({ connect: async () => client, query: async (sql, [id]) => {

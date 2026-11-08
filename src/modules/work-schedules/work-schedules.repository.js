@@ -1,7 +1,8 @@
+const { ScheduleDefaults } = require('./work-schedules-defaults');
 const { AppError } = require('../../common/errors/app-error');
 const { transaction, writeAudit, recordChange } = require('../audit_logs/audit.repository');
 class WorkSchedulesRepository {
-  constructor(pool) { this.pool = pool; }
+  constructor(pool,options={}) { this.pool = pool; this.defaults=new ScheduleDefaults(pool,options); this.defaultStore=options.defaultStore; }
   async findActor(id) {
     const { rows } = await this.pool.query(`SELECT role.name AS role, users.status FROM users JOIN role ON role.id = users.role_id WHERE users.id = $1`, [id]);
     return rows[0] || null;
@@ -27,6 +28,7 @@ class WorkSchedulesRepository {
   }
   async update(id, actorId, prepareUpdate) {
     return transaction(this.pool, async client => {
+      await this.defaults.lock(client);
       // Lock the schedule before inspecting history, including concurrent FK assignments.
       const found = await client.query(
         `SELECT id, name, start_time, end_time, break_start, break_end, working_days, is_default, status
@@ -35,7 +37,8 @@ class WorkSchedulesRepository {
       if (!existing) throw new AppError(404, 'Work schedule not found.');
       const history = await client.query(
         'SELECT EXISTS (SELECT 1 FROM employee_schedule_assignments WHERE schedule_id = $1) AS assigned', [id]);
-      const patch = prepareUpdate(existing, history.rows[0].assigned);
+      const pending=await this.defaults.pending(client);
+      const patch = prepareUpdate(existing, history.rows[0].assigned || pending?.scheduleId===id);
       const keys = Object.keys(patch);
       // Column identifiers come exclusively from the validated whitelist.
       const values = keys.map(key => patch[key]);
@@ -48,29 +51,15 @@ class WorkSchedulesRepository {
       return rows[0];
     });
   }
-  async setDefault(id, actorId) {
-    return transaction(this.pool, async client => {
-      // Serialize default changes, including when no default exists yet.
-      await client.query('SELECT pg_advisory_xact_lock(74123, 1)');
-      const { rows } = await client.query(
-        'SELECT * FROM work_schedules WHERE id = $1 OR is_default = TRUE ORDER BY id FOR UPDATE', [id]);
-      const selected = rows.find(row => row.id === id);
-      if (!selected) throw new AppError(404, 'Work schedule not found.');
-      if (selected.status !== 'ACTIVE') throw new AppError(409, 'An inactive schedule cannot be the default.');
-      if (selected.is_default) return selected;
-      const previous = rows.find(row => row.is_default);
-      if (previous) {
-        const cleared = await client.query('UPDATE work_schedules SET is_default = FALSE WHERE id = $1 RETURNING *', [previous.id]);
-        await recordChange(client, actorId, 'work_schedules', previous.id, 'UPDATE', previous, cleared.rows[0]);
-      }
-      const changed = await client.query('UPDATE work_schedules SET is_default = TRUE WHERE id = $1 RETURNING *', [id]);
-      await recordChange(client, actorId, 'work_schedules', id, 'UPDATE', selected, changed.rows[0]);
-      return changed.rows[0];
-    });
-  }
+  async setDefault(id,actorId) { return this.defaults.plan(id,actorId); }
+  async createDefault(schedule,actorId) { return this.defaults.plan(null,actorId,schedule); }
+  async createIndividual(schedule,employeeId,dates,actorId) { return this.defaults.createIndividual(schedule,employeeId,dates,actorId); }
+  async syncDefaults(employeeId=null) { return this.defaults.sync(employeeId); }
+  async pendingDefault() { return this.defaults.pending(); }
 
   async assign(employeeId, assignment, actorId) {
     return transaction(this.pool, async client => {
+      await this.defaults.lock(client);
       // SHARE prevents editing/deactivating the schedule until this assignment commits.
       const schedule = await client.query('SELECT id, status FROM work_schedules WHERE id = $1 FOR SHARE', [assignment.schedule_id]);
       if (!schedule.rows[0]) throw new AppError(404, 'Work schedule not found.');
@@ -78,6 +67,7 @@ class WorkSchedulesRepository {
       // Serialize assignment requests for this employee, even across different schedules.
       const employee = await client.query('SELECT id FROM employees WHERE id = $1 FOR UPDATE', [employeeId]);
       if (!employee.rows[0]) throw new AppError(404, 'Employee not found.');
+      if(this.defaultStore)await this.defaults.prepareIndividual(client,employeeId,{...assignment,actorId});
       const overlap = await client.query(
         `SELECT id FROM employee_schedule_assignments
          WHERE employee_id = $1
@@ -92,6 +82,33 @@ class WorkSchedulesRepository {
         [employeeId, assignment.schedule_id, assignment.effective_from, assignment.effective_to]);
       await writeAudit(client, { actorId, entityType: 'employee_schedule_assignments', entityId: rows[0].id, action: 'CREATE', newValue: rows[0] });
       return rows[0];
+    });
+  }
+  async removeAssignment(employeeId,assignmentId,actorId) {
+    return transaction(this.pool,async client=>{
+      await this.defaults.lock(client);
+      // Serialize with assigning a schedule and attendance's employee row lock.
+      const employee=await client.query('SELECT id FROM employees WHERE id=$1 FOR UPDATE',[employeeId]);
+      if(!employee.rows[0])throw new AppError(404,'Employee not found.');
+      const found=await client.query(`SELECT id,employee_id,schedule_id,
+        effective_from::text,effective_to::text FROM employee_schedule_assignments
+        WHERE id=$1 AND employee_id=$2 FOR UPDATE`,[assignmentId,employeeId]);
+      const assignment=found.rows[0];
+      if(!assignment)throw new AppError(404,'Schedule assignment not found for this employee.');
+      if(this.defaultStore){
+        const current=await this.defaults.current(client),pending=await this.defaults.pending(client);
+        if([current?.id,pending?.scheduleId].includes(assignment.schedule_id))throw new AppError(409,'Đây là dòng gán mặc định, không phải lịch riêng để xóa. Hãy gán lịch riêng thay thế.');
+      }
+      const {rows:dates}=await client.query("SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh')::date::text AS today");
+      if(assignment.effective_from<dates[0].today)throw new AppError(409,'Không thể xóa lần gán đã bắt đầu trước hôm nay. Cần giữ lịch sử áp dụng.');
+      const used=await client.query(`SELECT id FROM attendance WHERE employee_id=$1
+        AND work_date>=$2::date AND ($3::date IS NULL OR work_date<=$3::date) LIMIT 1`,
+        [employeeId,assignment.effective_from,assignment.effective_to]);
+      if(used.rows.length)throw new AppError(409,'Không thể xóa: khoảng gán đã có bản ghi chấm công.');
+      await client.query('DELETE FROM employee_schedule_assignments WHERE id=$1 AND employee_id=$2',[assignmentId,employeeId]);
+      await writeAudit(client,{actorId,entityType:'employee_schedule_assignments',entityId:assignmentId,
+        action:'DELETE',oldValue:assignment});
+      return assignment;
     });
   }
   async create(schedule, actorId) {

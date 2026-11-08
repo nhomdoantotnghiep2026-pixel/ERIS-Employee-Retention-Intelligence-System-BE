@@ -67,3 +67,12 @@ function validateAssignmentInput(input) {
   return { schedule_id: input.schedule_id, effective_from: input.effective_from, effective_to: end };
 }
 module.exports.validateAssignmentInput = validateAssignmentInput;
+
+function validateCreateIndividual(input){
+ if(!input||typeof input!=='object'||Array.isArray(input))throw new AppError(400,'Request body must be an object.');
+ const {employee_id,effective_from,effective_to,...fields}=input;
+ if(!Number.isInteger(employee_id)||employee_id<1||employee_id>2147483647)throw new AppError(400,'employee_id must be a positive integer.');
+ if(effective_to===undefined||effective_to===null)throw new AppError(400,'Lịch riêng cần cả effective_from và effective_to.');
+ return {schedule:validateCreateScheduleInput(fields),employeeId:employee_id,assignment:validateAssignmentInput({schedule_id:1,effective_from,effective_to})};
+}
+module.exports.validateCreateIndividual=validateCreateIndividual;

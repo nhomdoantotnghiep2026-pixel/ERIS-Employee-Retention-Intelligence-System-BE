@@ -1,5 +1,6 @@
+const { requireSchedule, isScheduledDay } = require('./attendance-schedule');
 const { AppError } = require('../../common/errors/app-error');
-const { todayInVietnam, validDate, isWeekday, validateLeave, validateHoliday } = require('./attendance-calendar');
+const { todayInVietnam, validDate, validateLeave, validateHoliday } = require('./attendance-calendar');
 const { validateLeaveId, validateLeaveDecision, validateCancellation } = require('./attendance.validation');
 const zone = 'Asia/Ho_Chi_Minh';
 function error(code, message, status = 409) { const e = new AppError(status,message); e.code=code; throw e; }
@@ -30,7 +31,7 @@ function createAttendanceService(config, repository, clock=()=>new Date(), locat
     return { ...settings, ...location };
   }
   async function syncLeavesForDay(date,employeeId=null) {
-    if(!leaveRepository || !isWeekday(date) || (calendarStore && await calendarStore.holiday(date))) {
+    if(!leaveRepository || (calendarStore && await calendarStore.holiday(date))) {
       return {date,created:0,data:[]};
     }
     return leaveRepository.materializeDay(date,employeeId);
@@ -42,13 +43,13 @@ function createAttendanceService(config, repository, clock=()=>new Date(), locat
   }
   async function record(action,user,body) {
     const now=clock(),day=localDay(now);
-    if(!day.workday) error('NON_WORKDAY','Attendance is available Monday to Friday.');
+    const schedule=requireSchedule(await repository.getSchedule(user.employeeId,day.date));
+    if(!isScheduledDay(day.date,schedule)) error('NON_WORKDAY','This date is not a working day in your schedule.');
     if (calendarStore && await calendarStore.holiday(day.date)) error('NON_WORKDAY','Hôm nay là ngày nghỉ lễ.');
     const gps=evaluate(body,await currentSettings(),now);
     if(gps.status!=='INSIDE') return {...gps,persisted:false,storage:'postgresql',mockMode:false};
     await syncLeavesForDay(day.date,user.employeeId);
-    const attendanceStatus=now>new Date(day.date+'T08:00:00+07:00')?'LATE':'PRESENT';
-    const row=await repository.record({userId:user.id,employeeId:user.employeeId,date:day.date,instant:now.toISOString(),action,attendanceStatus});
+    const row=await repository.record({userId:user.id,employeeId:user.employeeId,date:day.date,instant:now.toISOString(),action});
     return {...gps,persisted:true,storage:'postgresql',mockMode:false,attendance:row};
   }
   function assertHr(user) {
@@ -63,22 +64,38 @@ function createAttendanceService(config, repository, clock=()=>new Date(), locat
       if (!locationStore) error('UNAVAILABLE', 'Chưa cấu hình nơi lưu vị trí công ty.', 503);
       return { message: 'Đã cập nhật vị trí công ty.', data: await locationStore.set(body,user.id), allowedRadiusMeters: settings.radiusMeters };
     },
-    configuration:async()=>{ const current=await currentSettings(); return ({companyLocation:{latitude:current.latitude,longitude:current.longitude,address:current.address},companyLocationSource:current.source,allowedRadiusMeters:settings.radiusMeters,maximumAccuracyMeters:settings.maxAccuracyMeters,timeZone:zone,workStart:'08:00',workEnd:'17:00',lunchStart:'12:00',lunchEnd:'13:00',storage:'postgresql',mockMode:false}); },
+    configuration:async(user)=>{
+      const current=await currentSettings();
+      const date=todayInVietnam(clock());
+      const schedule=requireSchedule(await repository.getSchedule(user.employeeId,date));
+      return {companyLocation:{latitude:current.latitude,longitude:current.longitude,address:current.address},
+        companyLocationSource:current.source,allowedRadiusMeters:settings.radiusMeters,maximumAccuracyMeters:settings.maxAccuracyMeters,
+        date,timeZone:zone,workStart:schedule.startTime,workEnd:schedule.endTime,
+        lunchStart:schedule.breakStart,lunchEnd:schedule.breakEnd,schedule,storage:'postgresql',mockMode:false};
+    },
     async today(user) {
       const now=clock(),day=localDay(now);
+      const schedule=requireSchedule(await repository.getSchedule(user.employeeId,day.date));
+      const scheduledWorkday=isScheduledDay(day.date,schedule);
       await syncLeavesForDay(day.date,user.employeeId);
       const row=await repository.find(user.employeeId,day.date);
       const holiday=calendarStore && await calendarStore.holiday(day.date);
       const blocked=!!holiday||['ON_LEAVE','HOLIDAY'].includes(row?.attendanceStatus);
       const attendance=row || (holiday ? {employeeId:user.employeeId,workDate:day.date,attendanceStatus:'HOLIDAY',checkIn:null,checkOut:null,workingMinutes:0,overtimeMinutes:0} : null);
-      return {user:{id:user.id,employeeId:user.employeeId},date:day.date,serverTime:now.toISOString(),timeZone:zone,workday:day.workday&&!blocked,
-        checkedIn:!!row?.checkIn,checkedOut:!!row?.checkOut,showCheckInPrompt:day.workday&&!blocked&&!row?.checkIn,
+      return {user:{id:user.id,employeeId:user.employeeId},date:day.date,serverTime:now.toISOString(),timeZone:zone,schedule,workday:scheduledWorkday&&!blocked,
+        checkedIn:!!row?.checkIn,checkedOut:!!row?.checkOut,showCheckInPrompt:scheduledWorkday&&!blocked&&!row?.checkIn,
         checkedInAt:row?.checkIn||null,checkedInAtLocal:local(row?.checkIn),checkedOutAt:row?.checkOut||null,checkedOutAtLocal:local(row?.checkOut),
         attendance,storage:'postgresql',mockMode:false};
     },
     async requestLeave(user,body) {
       if(!leaveRepository) error('UNAVAILABLE','Chưa cấu hình nơi lưu đơn nghỉ phép.',503);
       const input=validateLeave(body,clock());
+      let hasWorkingDay=false;
+      for(const date of input.dates) {
+        const schedule=await repository.getSchedule(user.employeeId,date);
+        if(isScheduledDay(date,schedule)){hasWorkingDay=true;break;}
+      }
+      if(!hasWorkingDay) error('VALIDATION_ERROR','The leave range has no working day in your schedule.',400);
       return {data:await leaveRepository.create(user,input)};
     },
     async myLeaveRequests(user) {
@@ -135,7 +152,7 @@ function createAttendanceService(config, repository, clock=()=>new Date(), locat
       assertHr(user);
       if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1) error('VALIDATION_ERROR','Chỉ nhận date.',400);
       const date=validDate(body.date,'date');
-      if(date>=todayInVietnam(clock())||!isWeekday(date)) error('VALIDATION_ERROR','Chỉ chốt ngày làm việc đã qua.',400);
+      if(date>=todayInVietnam(clock())) error('VALIDATION_ERROR','Chỉ chốt ngày làm việc đã qua.',400);
       if(calendarStore && await calendarStore.holiday(date)) error('NON_WORKDAY','Ngày lễ không thể chốt vắng mặt.');
       await syncLeavesForDay(date);
       return {date,created:await repository.closeAbsent(date)};
@@ -143,7 +160,7 @@ function createAttendanceService(config, repository, clock=()=>new Date(), locat
     async closePreviousDay() {
       const current=todayInVietnam(clock());
       const previous=new Date(Date.parse(`${current}T00:00:00Z`)-86400000).toISOString().slice(0,10);
-      if(!isWeekday(previous) || (calendarStore && await calendarStore.holiday(previous))) return {date:previous,created:0};
+      if(calendarStore && await calendarStore.holiday(previous)) return {date:previous,created:0};
       await syncLeavesForDay(previous);
       return {date:previous,created:await repository.closeAbsent(previous)};
     },

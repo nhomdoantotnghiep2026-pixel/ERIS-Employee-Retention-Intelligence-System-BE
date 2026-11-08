@@ -21,13 +21,15 @@ test('PostgreSQL TEMP: lịch sử ghi chú, nghỉ tương lai, ghi ON_LEAVE t�
   const pool={query,connect:async()=>({query,release(){}})};
   try{
     await client.query("SET statement_timeout TO '10s'");
-    for(const table of ['role','employees','users','attendance','employee_job_histories','leave_requests','leave_request_histories']){
+    for(const table of ['role','employees','users','attendance','employee_job_histories','leave_requests','leave_request_histories','work_schedules','employee_schedule_assignments']){
       await client.query(`CREATE TEMP TABLE ${table} (LIKE public.${table} INCLUDING ALL)`);
     }
     await client.query(`SET search_path TO pg_temp,public;
       ALTER TABLE leave_request_histories ADD FOREIGN KEY(leave_request_id) REFERENCES leave_requests(id),
         ADD FOREIGN KEY(reviewed_by) REFERENCES users(id);
-      INSERT INTO role(name) VALUES('HR'),('EMPLOYEE');`);
+      INSERT INTO role(name) VALUES('HR'),('EMPLOYEE');
+      INSERT INTO work_schedules(name,start_time,end_time,break_start,break_end,working_days,status,is_default)
+        VALUES('Test default','08:00','17:00','12:00','13:00',ARRAY[1,2,3,4,5],'ACTIVE',TRUE);`);
     const people=[];
     for(let i=0;i<4;i++){
       const employee=(await client.query(`INSERT INTO employees(employee_code,full_name,hire_date,employment_status)

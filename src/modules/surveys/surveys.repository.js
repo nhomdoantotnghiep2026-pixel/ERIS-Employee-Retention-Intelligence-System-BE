@@ -249,9 +249,9 @@ class SurveysRepository {
 
       for (const answer of answers) {
         await client.query(
-          `INSERT INTO survey_answers (response_id, survey_id, question_id, score, comment)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [response.id, surveyId, answer.questionId, answer.score, answer.comment]
+          `INSERT INTO survey_answers (response_id, question_id, score, comment)
+           VALUES ($1, $2, $3, $4)`,
+          [response.id, answer.questionId, answer.score, answer.comment]
         );
       }
 

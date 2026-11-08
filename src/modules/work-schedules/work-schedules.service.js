@@ -1,11 +1,13 @@
 const { AppError } = require('../../common/errors/app-error');
-const { validateCreateScheduleInput, validateScheduleId, validateSchedulePatch, prepareScheduleUpdate, validateAssignmentInput } = require('./work-schedules.validation');
+const { validateCreateScheduleInput, validateScheduleId, validateSchedulePatch, prepareScheduleUpdate, validateAssignmentInput, validateCreateIndividual } = require('./work-schedules.validation');
 class WorkSchedulesService {
   constructor(repository) { this.repository = repository; }
   async list(actorId) {
     const actor = await this.repository.findActor(actorId);
     if (actor?.role !== 'HR' || actor.status !== 'ACTIVE') throw new AppError(403, 'Only active HR users can view work schedules.');
-    return this.repository.findAll();
+    const schedules=await this.repository.findAll();
+    const pending=this.repository.pendingDefault?await this.repository.pendingDefault():null;
+    return schedules.map(row=>({...row,pending_default:pending?.scheduleId===row.id?{effective_from:pending.effectiveFrom}:null}));
   }
   async update(actorId, rawId, input) {
     const actor = await this.repository.findActor(actorId);
@@ -33,6 +35,28 @@ class WorkSchedulesService {
     const employeeId = validateScheduleId(rawEmployeeId);
     return this.repository.assign(employeeId, validateAssignmentInput(body), actorId);
   }
+  async removeAssignment(actorId,rawEmployeeId,rawAssignmentId,body) {
+    const actor=await this.repository.findActor(actorId);
+    if(actor?.role!=='HR'||actor.status!=='ACTIVE')throw new AppError(403,'Only active HR users can remove schedule assignments.');
+    const employeeId=validateScheduleId(rawEmployeeId),assignmentId=validateScheduleId(rawAssignmentId);
+    if(body!==undefined&&(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length))throw new AppError(400,'This endpoint does not accept body fields.');
+    return this.repository.removeAssignment(employeeId,assignmentId,actorId);
+  }
+  async createDefault(actorId,input){
+    const actor=await this.repository.findActor(actorId);
+    if(actor?.role!=='HR'||actor.status!=='ACTIVE')throw new AppError(403,'Only active HR users can create default schedules.');
+    const schedule=validateCreateScheduleInput(input);
+    if(schedule.status!=='ACTIVE')throw new AppError(400,'Lịch mặc định phải ACTIVE.');
+    return this.repository.createDefault(schedule,actorId);
+  }
+  async createIndividual(actorId,input){
+    const actor=await this.repository.findActor(actorId);
+    if(actor?.role!=='HR'||actor.status!=='ACTIVE')throw new AppError(403,'Only active HR users can create individual schedules.');
+    const {schedule,employeeId,assignment}=validateCreateIndividual(input);
+    if(schedule.status!=='ACTIVE')throw new AppError(400,'Lịch riêng mới gán phải ACTIVE.');
+    return this.repository.createIndividual(schedule,employeeId,assignment,actorId);
+  }
+  async syncDefaults(employeeId=null){return this.repository.syncDefaults(employeeId);}
   async create(actorId, input) {
     const actor = await this.repository.findActor(actorId);
     if (actor?.role !== 'HR' || actor.status !== 'ACTIVE') throw new AppError(403, 'Only active HR users can create work schedules.');

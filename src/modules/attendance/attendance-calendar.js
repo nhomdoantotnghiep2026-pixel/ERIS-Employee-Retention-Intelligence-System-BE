@@ -24,7 +24,6 @@ function validateLeave(body, now = new Date()) {
     || Object.keys(body).some(key => !['fromDate', 'toDate', 'reason'].includes(key))) throw new AppError(400, 'Chỉ nhận fromDate, toDate và reason.');
   const dates = datesBetween(body.fromDate, body.toDate);
   if (body.fromDate <= todayInVietnam(now)) throw new AppError(400, 'Ngày bắt đầu nghỉ phải ở tương lai theo giờ Việt Nam.');
-  if (!dates.some(isWeekday)) throw new AppError(400, 'Đơn nghỉ phải có ít nhất một ngày làm việc.');
   if (typeof body.reason !== 'string' || !body.reason.trim() || body.reason.trim().length > 500) throw new AppError(400, 'Lý do nghỉ bắt buộc, tối đa 500 ký tự.');
   return { fromDate: body.fromDate, toDate: body.toDate, reason: body.reason.trim(), dates };
 }

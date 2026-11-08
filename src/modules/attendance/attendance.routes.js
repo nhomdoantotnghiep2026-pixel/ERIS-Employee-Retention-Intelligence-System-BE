@@ -2,7 +2,7 @@ const { validateAttendanceId } = require('./attendance.validation');
 const express = require('express');
 const { AppError } = require('../../common/errors/app-error');
 
-function createAttendanceRouter({ service, authenticate, databasePool }) {
+function createAttendanceRouter({ service, authenticate, databasePool, syncSchedules=null }) {
   const router = express.Router();
   router.use((_req, res, next) => { res.set('Cache-Control', 'no-store, private'); res.set('Vary', 'Authorization'); next(); });
   router.use(authenticate);
@@ -16,6 +16,7 @@ function createAttendanceRouter({ service, authenticate, databasePool }) {
       if (!user || user.status !== 'ACTIVE') throw new AppError(401, 'Active account required.');
       if (user.employeeId == null) throw new AppError(403, 'An employee profile is required for attendance.');
       if (user.employmentStatus !== 'ACTIVE') throw new AppError(403, 'An ACTIVE employee profile is required for attendance.');
+      if(syncSchedules)await syncSchedules(user.employeeId);
       req.attendanceUser = user;
       next();
     } catch (error) { next(error); }
@@ -34,7 +35,7 @@ function createAttendanceRouter({ service, authenticate, databasePool }) {
   router.get('/', requireHr, handler(req => service.list(req.attendanceUser)));
   router.get('/company-location', requireHr, handler(req => service.companyLocation(req.attendanceUser)));
   router.put('/company-location', requireHr, handler(req => service.updateCompanyLocation(req.attendanceUser, req.body)));
-  router.get('/config', requireProfile, handler(() => service.configuration()));
+  router.get('/config', requireProfile, handler(req => service.configuration(req.attendanceUser)));
   router.get('/today', requireProfile, handler(req => service.today(req.attendanceUser)));
   router.post('/leave-requests', requireProfile, handler(req => service.requestLeave(req.attendanceUser,req.body)));
   router.get('/leave-requests/me', requireProfile, handler(req => service.myLeaveRequests(req.attendanceUser)));

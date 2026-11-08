@@ -92,10 +92,12 @@ app.use('/api/positions', createPositionsRouter({ positionsController, authentic
 const { WorkSchedulesRepository } = require('./modules/work-schedules/work-schedules.repository');
 const { WorkSchedulesService } = require('./modules/work-schedules/work-schedules.service');
 const { createWorkSchedulesRouter, createScheduleAssignmentsRouter } = require('./modules/work-schedules/work-schedules.routes');
-app.use('/api/employees', createScheduleAssignmentsRouter({ service: new WorkSchedulesService(new WorkSchedulesRepository(databasePool)), authenticate }));
-app.use('/api/work-schedules', createWorkSchedulesRouter({
-  service: new WorkSchedulesService(new WorkSchedulesRepository(databasePool)), authenticate
-}));
+const { DefaultScheduleStore } = require('./modules/work-schedules/work-schedules-default.store');
+const defaultScheduleStore=new DefaultScheduleStore({redisClient,ensureRedisConnection,
+  key:'eris:default-schedule:pending:'+require('node:crypto').createHash('sha256').update([require('./config/env').env.database.host,require('./config/env').env.database.port,require('./config/env').env.database.name].join(':')).digest('hex').slice(0,16)});
+const workSchedulesService=new WorkSchedulesService(new WorkSchedulesRepository(databasePool,{defaultStore:defaultScheduleStore}));
+app.use('/api/employees',createScheduleAssignmentsRouter({service:workSchedulesService,authenticate}));
+app.use('/api/work-schedules',createWorkSchedulesRouter({service:workSchedulesService,authenticate}));
 app.use('/api/surveys', createSurveysRouter({ surveysController, authenticate }));
 app.use('/api/users', createUsersRouter({ usersController, authenticate }));
 const { PolicyDemoRepository } = require('./modules/prediction_results/policy-demo.repository');
@@ -103,6 +105,8 @@ const { createPolicyDemoRouter } = require('./modules/prediction_results/policy-
 app.use('/api', createPolicyDemoRouter({ repository: new PolicyDemoRepository(databasePool), authenticate }));
 app.get('/policy-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/policy-demo.html'));});
 app.get('/leave-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/leave-demo.html'));});
+app.get('/work-schedules-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/work-schedules-demo.html'));});
+app.get('/survey-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/survey-demo.html'));});
 const { AuditReadRepository } = require('./modules/audit_logs/audit-read.repository');
 const { AuditReadService } = require('./modules/audit_logs/audit-read.service');
 const { createAuditReadRouter } = require('./modules/audit_logs/audit-read.routes');
@@ -132,7 +136,7 @@ const attendanceService = createAttendanceService(attendanceSettings, new Attend
 const companyDemoPath = require('node:path').join(__dirname, '../demo/company-location');
 app.get('/company-location-demo', (_req, res) => { res.set('Cache-Control', 'no-store'); res.sendFile(require('node:path').join(companyDemoPath, 'index.html')); });
 app.use('/company-location-demo/assets', express.static(companyDemoPath, { index: false, etag: false, setHeaders: res => res.set('Cache-Control', 'no-store') }));
-app.use('/api/v1/attendance', require('./modules/attendance/attendance.routes').createAttendanceRouter({ service: attendanceService, authenticate, databasePool }));
+app.use('/api/v1/attendance', require('./modules/attendance/attendance.routes').createAttendanceRouter({ service: attendanceService, authenticate, databasePool, syncSchedules: employeeId=>workSchedulesService.syncDefaults(employeeId) }));
 const path = require('node:path');
 for (const [route, directory] of [['/demo', 'portal'], ['/attendance-demo', 'attendance']]) {
   const folder = path.join(__dirname, '../demo', directory);
@@ -141,4 +145,4 @@ for (const [route, directory] of [['/demo', 'portal'], ['/attendance-demo', 'att
 }
 app.use(errorHandler);
 
-module.exports = { app, attendanceService };
+module.exports = { app, attendanceService, workSchedulesService };

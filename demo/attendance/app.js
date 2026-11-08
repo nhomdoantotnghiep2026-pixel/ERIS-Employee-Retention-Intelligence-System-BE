@@ -30,7 +30,7 @@
     $('status').textContent = names[today.attendance?.attendanceStatus] || 'Chưa chấm công';
     $('working').textContent = `${today.attendance?.workingMinutes ?? 0} phút`;
     $('overtime').textContent = `${today.attendance?.overtimeMinutes ?? 0} phút`;
-    $('stateTitle').textContent = today.attendance?.attendanceStatus==='ON_LEAVE' ? 'Bạn nghỉ phép hôm nay · 08:00–17:00' : today.checkedOut ? 'Bạn đã hoàn tất chấm công hôm nay' : today.checkedIn ? 'Bạn đã check-in hôm nay' : today.workday ? 'Bạn chưa check-in hôm nay' : 'Hôm nay không cần chấm công';
+    $('stateTitle').textContent = today.attendance?.attendanceStatus==='ON_LEAVE' ? 'Bạn nghỉ phép hôm nay' : today.checkedOut ? 'Bạn đã hoàn tất chấm công hôm nay' : today.checkedIn ? 'Bạn đã check-in hôm nay' : today.workday ? 'Bạn chưa check-in hôm nay' : 'Hôm nay không cần chấm công';
   }
   async function load() {
     const current = session;
@@ -38,6 +38,8 @@
     const config = await request(base + '/config');
     if (current !== session || !token) return;
     today = data;
+    $('scheduleDescription').textContent =
+      `${config.workStart}–${config.workEnd} · Nghỉ trưa ${config.lunchStart}–${config.lunchEnd} · Ngày làm (1=T2, 7=CN): ${config.schedule.workingDays.join(', ')} · ${config.schedule.name}`;
     $('companyAddress').textContent = config.companyLocation.address || 'Vị trí công ty';
     $('companyCoordinates').textContent = `${config.companyLocation.latitude}, ${config.companyLocation.longitude} · Bán kính ${config.allowedRadiusMeters} m · GPS sai số tối đa ${config.maximumAccuracyMeters} m`;
     render();

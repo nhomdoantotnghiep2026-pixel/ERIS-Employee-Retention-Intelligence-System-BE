@@ -1,3 +1,4 @@
+const { scheduleSql, resolveSchedule, requireSchedule, isScheduledDay, calculateAttendance, at } = require('./attendance-schedule');
 const { AppError } = require('../../common/errors/app-error');
 function fail(code, message) { const error = new AppError(409, message); error.code = code; throw error; }
 const columns = `id, employee_id AS "employeeId", to_char(work_date, 'YYYY-MM-DD') AS "workDate",
@@ -23,7 +24,8 @@ class AttendanceRepository {
   async find(employeeId, date) {
     return (await this.pool.query(`SELECT ${columns} FROM public.attendance WHERE employee_id=$1 AND work_date=$2::date`, [employeeId, date])).rows[0] || null;
   }
-  async record({ userId, employeeId, date, instant, action, attendanceStatus }) {
+  async getSchedule(employeeId,date) { return resolveSchedule(this.pool,employeeId,date); }
+  async record({ userId, employeeId, date, instant, action }) {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -31,11 +33,14 @@ class AttendanceRepository {
         WHERE u.id=$1 AND u.employee_id=$2 AND u.status='ACTIVE' AND e.employment_status='ACTIVE' FOR SHARE OF u,e`, [userId, employeeId]);
       if (!actors[0]) throw new AppError(403, 'An ACTIVE linked employee profile is required.');
       await client.query(`SELECT pg_advisory_xact_lock(hashtext('attendance:' || $1::text || ':' || $2::text))`, [employeeId,date]);
+      const schedule=requireSchedule(await resolveSchedule(client,employeeId,date));
+      if(!isScheduledDay(date,schedule)) fail('NON_WORKDAY','This date is not a working day in the employee schedule.');
       const repository = new AttendanceRepository(client);
       const current = await repository.find(employeeId,date);
       if (['ON_LEAVE','HOLIDAY'].includes(current?.attendanceStatus)) fail('NON_WORKDAY', 'Attendance is marked ON_LEAVE or HOLIDAY.');
       let result;
       if (action === 'check-in') {
+        const attendanceStatus=new Date(instant).getTime()>at(date,schedule.startTime)?'LATE':'PRESENT';
         if (current?.checkIn || current?.checkOut) fail('ALREADY_CHECKED_IN', 'Already checked in for this work date.');
         result = await client.query(`INSERT INTO public.attendance
           (employee_id,work_date,check_in,working_minutes,overtime_minutes,attendance_status,created_at,updated_at)
@@ -49,25 +54,17 @@ class AttendanceRepository {
         if (!current?.checkIn) fail('CHECK_IN_REQUIRED','Check in before checking out.');
         if (current.checkOut) fail('ALREADY_CHECKED_OUT','Already checked out for this work date.');
         if (new Date(instant) < new Date(current.checkIn)) fail('INVALID_CHECK_OUT','Check-out cannot precede check-in.');
-        result = await client.query(`WITH times AS (
-          SELECT $3::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh' AS finish
-        ) UPDATE public.attendance a SET check_out=t.finish,
-          attendance_status=CASE
-            WHEN a.check_in > a.work_date+TIME '08:00' AND t.finish < a.work_date+TIME '17:00' THEN 'LATE_EARLY_LEAVE'
-            WHEN a.check_in > a.work_date+TIME '08:00' THEN 'LATE'
-            WHEN t.finish < a.work_date+TIME '17:00' THEN 'EARLY_LEAVE'
-            ELSE 'PRESENT' END,
-          working_minutes=GREATEST(0,FLOOR(EXTRACT(EPOCH FROM (t.finish-a.check_in)) / 60
-            - GREATEST(0,EXTRACT(EPOCH FROM (LEAST(t.finish,a.work_date+TIME '13:00')
-                - GREATEST(a.check_in,a.work_date+TIME '12:00'))) / 60)))::integer,
-          overtime_minutes=GREATEST(0,FLOOR(EXTRACT(EPOCH FROM (t.finish-GREATEST(a.check_in,a.work_date+TIME '17:00'))) / 60))::integer,
-          updated_at=t.finish FROM times t
+        const totals=calculateAttendance(date,current.checkIn,instant,schedule);
+        result = await client.query(`UPDATE public.attendance a SET
+          check_out=$3::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh',
+          attendance_status=$4,working_minutes=$5,overtime_minutes=$6,
+          updated_at=$3::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh'
           WHERE a.employee_id=$1 AND a.work_date=$2::date AND a.check_out IS NULL AND a.check_in IS NOT NULL
           RETURNING ${columns.replace(/^id,/, 'a.id,')}`,
-          [employeeId,date,instant]);
+          [employeeId,date,instant,totals.attendanceStatus,totals.workingMinutes,totals.overtimeMinutes]);
       }
       if (!result.rows[0]) fail('ATTENDANCE_CONFLICT','Attendance was changed; reload and try again.');
-      await client.query('COMMIT'); return result.rows[0];
+      await client.query('COMMIT'); return {...result.rows[0],schedule};
     } catch (error) { await client.query('ROLLBACK'); throw error; }
     finally { client.release(); }
   }
@@ -96,7 +93,10 @@ class AttendanceRepository {
   async closeAbsent(date) {
     const { rowCount } = await this.pool.query(`INSERT INTO public.attendance
       (employee_id,work_date,attendance_status,working_minutes,overtime_minutes)
-      SELECT e.id,$1::date,'ABSENT',0,0 FROM employees e WHERE e.employment_status='ACTIVE'
+      SELECT e.id,$1::date,'ABSENT',0,0 FROM employees e
+        JOIN LATERAL (${scheduleSql('e.id','$1::date')}) schedule ON schedule.status='ACTIVE'
+          AND EXTRACT(ISODOW FROM $1::date)::integer=ANY(schedule.working_days)
+        WHERE e.employment_status='ACTIVE'
         AND e.hire_date<=$1::date AND EXISTS (SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')
         AND EXISTS (SELECT 1 FROM employee_job_histories h WHERE h.employee_id=e.id AND h.change_type='HIRE'
           AND (h.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date<=$1::date)

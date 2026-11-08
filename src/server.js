@@ -1,5 +1,5 @@
 const { env } = require('./config/env');
-const { app, attendanceService } = require('./app');
+const { app, attendanceService, workSchedulesService } = require('./app');
 
 app.listen(env.port, () => {
   console.log(`ERIS Backend is listening on port ${env.port}.`);
@@ -13,6 +13,7 @@ async function syncTodayCalendar() {
   if(calendarRunning)return;
   calendarRunning=true;
   try {
+    await workSchedulesService.syncDefaults();
     await attendanceService.syncTodayHoliday();
     await attendanceService.syncTodayLeaves();
   } catch(error) {console.error(`Attendance calendar sync failed: ${error.message}`);}

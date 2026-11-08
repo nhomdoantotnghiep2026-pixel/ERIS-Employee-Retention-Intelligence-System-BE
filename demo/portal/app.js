@@ -112,8 +112,8 @@
       if(!Array.isArray(survey?.questions))throw new Error('Không nhận được danh sách câu hỏi.');
       openedSurvey=survey;$('surveyTitle').textContent=survey.title;
       for(const question of survey.questions){
-        const group=document.createElement('fieldset'),title=document.createElement('legend');title.textContent=question.questionText+(question.required?' *':'');group.append(title);
-        const label=document.createElement('label');label.textContent='Mức độ đồng ý (1–4)';const score=document.createElement('select');score.name='score-'+question.id;score.required=question.required;score.append(new Option('Chọn điểm',''));for(let n=1;n<=4;n++)score.append(new Option(String(n),String(n)));label.append(score);
+        const group=document.createElement('fieldset'),title=document.createElement('legend');title.textContent=question.questionText+' *';group.append(title);
+        const label=document.createElement('label');label.textContent='Mức độ đồng ý (1–5)';const score=document.createElement('select');score.name='score-'+question.id;score.required=true;score.append(new Option('Chọn điểm',''));for(let n=1;n<=5;n++)score.append(new Option(String(n),String(n)));label.append(score);
         const commentLabel=document.createElement('label');commentLabel.textContent='Nhận xét';const comment=document.createElement('textarea');comment.name='comment-'+question.id;comment.maxLength=1000;comment.rows=2;commentLabel.append(comment);group.append(label,commentLabel);$('questions').append(group);
       }
       $('answerSurvey').hidden=false;show(data,status,'GET',url);notify('Đã mở khảo sát. Chọn điểm và nhập nhận xét nếu có.','success');

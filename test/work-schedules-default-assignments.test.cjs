@@ -41,18 +41,8 @@ function fixture() {
   return { state, repository };
 }
 
-test('default switches atomically, logs both changes, is idempotent and rolls back on failure', async () => {
-  const { state, repository } = fixture();
-  assert.equal((await repository.setDefault(2, 7)).is_default, true);
-  assert.deepEqual(state.schedules.map(s => s.is_default), [false, true]); assert.equal(state.logs.length, 2);
-  await repository.setDefault(2, 7); assert.equal(state.logs.length, 2);
-  await assert.rejects(repository.setDefault(99,7), e => e.statusCode === 404);
-  state.schedules[0].status = 'INACTIVE';
-  await assert.rejects(repository.setDefault(1,7), e => e.statusCode === 409);
-  state.schedules[0].status = 'ACTIVE'; state.auditFailure = true;
-  await assert.rejects(repository.setDefault(1,7), /audit failed/);
-  assert.deepEqual(state.schedules.map(s => s.is_default), [false, true]);
-  assert(state.sql.some(sql => sql.includes('pg_advisory_xact_lock')));
+test('default scheduling fails closed when no pending-command store is configured',async()=>{
+ const {repository}=fixture();await assert.rejects(()=>repository.setDefault(2,7),{statusCode:503});
 });
 
 test('assignments enforce inclusive overlaps, open ends, existence, active schedules and atomic audit', async () => {
