@@ -131,16 +131,13 @@ function createAttendanceService(config, repository, clock=()=>new Date(), locat
     },
     async syncTodayLeaves() { return syncLeavesForDay(todayInVietnam(clock())); },
     async holidays(user) {
-      assertHr(user); if(!calendarStore) error('UNAVAILABLE','Cần Redis để xem ngày lễ.',503);
+      assertHr(user); if(!calendarStore) error('UNAVAILABLE','Chưa cấu hình nơi lưu ngày lễ.',503);
       return {data:await calendarStore.holidays()};
     },
     async createHoliday(user,body) {
-      assertHr(user); if(!calendarStore) error('UNAVAILABLE','Cần Redis để tạo ngày lễ.',503);
+      assertHr(user); if(!calendarStore) error('UNAVAILABLE','Chưa cấu hình nơi lưu ngày lễ.',503);
       const input=validateHoliday(body,clock());
-      const holiday={...input,createdBy:user.id,createdAt:clock().toISOString()};
-      if((await calendarStore.addHoliday(holiday))!==1) error('HOLIDAY_EXISTS','Ngày này đã được đánh dấu nghỉ lễ.');
-      try { return {data:holiday,affectedEmployees:input.date===todayInVietnam(clock()) ? await repository.markHoliday(input.date) : 0}; }
-      catch (cause) { await calendarStore.removeHoliday(input.date); throw cause; }
+      return calendarStore.createHoliday(input,user.id,todayInVietnam(clock()));
     },
     async syncTodayHoliday() {
       if (!calendarStore) return {date:todayInVietnam(clock()),affectedEmployees:0};

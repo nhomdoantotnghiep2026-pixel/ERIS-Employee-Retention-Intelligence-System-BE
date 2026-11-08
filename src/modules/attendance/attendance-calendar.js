@@ -29,22 +29,44 @@ function validateLeave(body, now = new Date()) {
 }
 function validateHoliday(body, now = new Date()) {
   if (!body || typeof body !== 'object' || Array.isArray(body)
-    || Object.keys(body).some(key => !['date', 'name'].includes(key))) throw new AppError(400, 'Chỉ nhận date và name.');
-  const date = validDate(body.date, 'date');
-  if (date < todayInVietnam(now)) throw new AppError(400, 'Không thể tạo ngày lễ trong quá khứ.');
-  if (typeof body.name !== 'string' || !body.name.trim() || body.name.trim().length > 150) throw new AppError(400, 'Tên ngày lễ bắt buộc, tối đa 150 ký tự.');
-  return { date, name: body.name.trim() };
+    || Object.keys(body).some(key => !['start_date', 'end_date', 'name'].includes(key))) throw new AppError(400, 'Chỉ nhận start_date, end_date và name.');
+  const start_date = validDate(body.start_date, 'start_date');
+  const end_date = validDate(body.end_date, 'end_date');
+  if (start_date < todayInVietnam(now)) throw new AppError(400, 'Không thể tạo ngày lễ trong quá khứ.');
+  if (end_date < start_date) throw new AppError(400, 'end_date phải lớn hơn hoặc bằng start_date.');
+  if (typeof body.name !== 'string' || !body.name.trim() || Array.from(body.name.trim()).length > 150) throw new AppError(400, 'Tên ngày lễ bắt buộc, tối đa 150 ký tự.');
+  return { start_date, end_date, name: body.name.trim() };
 }
-const HOLIDAYS = 'eris:attendance:holidays:v1';
+const { transaction } = require('../audit_logs/audit.repository');
+const { AttendanceRepository } = require('./attendance.repository');
+const columns = 'id, name, start_date::text, end_date::text, created_by, created_at, updated_at';
 class AttendanceCalendarStore {
-  constructor({ redisClient, ensureRedisConnection }) { this.redis = redisClient; this.connect = ensureRedisConnection; }
-  async run(action) {
-    try { await this.connect(); return await action(); }
-    catch (error) { if (error instanceof AppError) throw error; throw new AppError(503, 'Không truy cập được lịch chấm công trong Redis.'); }
+  constructor({ databasePool }) { this.pool = databasePool; }
+  async holiday(date) {
+    const { rows } = await this.pool.query(`SELECT ${columns} FROM holidays WHERE start_date <= $1::date AND end_date >= $1::date LIMIT 1`, [date]);
+    return rows[0] || null;
   }
-  holiday(date) { return this.run(async () => { const raw = await this.redis.hget(HOLIDAYS, date); return raw ? JSON.parse(raw) : null; }); }
-  holidays() { return this.run(async () => Object.values(await this.redis.hgetall(HOLIDAYS)).map(JSON.parse).sort((a, b) => a.date.localeCompare(b.date))); }
-  addHoliday(holiday) { return this.run(async () => this.redis.hsetnx(HOLIDAYS, holiday.date, JSON.stringify(holiday))); }
-  removeHoliday(date) { return this.run(async () => this.redis.hdel(HOLIDAYS, date)); }
+  async holidays() {
+    const { rows } = await this.pool.query(`SELECT ${columns} FROM holidays ORDER BY start_date ASC, id ASC`);
+    return rows;
+  }
+  async createHoliday(input, actorId, today) {
+    try {
+      return await transaction(this.pool, async client => {
+        const { rows } = await client.query(
+          `INSERT INTO holidays (name, start_date, end_date, created_by) VALUES ($1, $2, $3, $4) RETURNING ${columns}`,
+          [input.name, input.start_date, input.end_date, actorId]);
+        const affectedEmployees = input.start_date <= today && today <= input.end_date
+          ? await new AttendanceRepository(client).markHoliday(today, client) : 0;
+        return { data: rows[0], affectedEmployees };
+      });
+    } catch (cause) {
+      if (cause.code === '23P01') {
+        const error = new AppError(409, 'Khoảng nghỉ lễ chồng lấn với ngày lễ đã tồn tại.');
+        error.code = 'HOLIDAY_EXISTS'; throw error;
+      }
+      throw cause;
+    }
+  }
 }
 module.exports = { AttendanceCalendarStore, todayInVietnam, validDate, datesBetween, isWeekday, validateLeave, validateHoliday };

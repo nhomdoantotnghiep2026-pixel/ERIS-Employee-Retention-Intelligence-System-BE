@@ -130,7 +130,7 @@ const companyLocationStore = new CompanyLocationStore({
   fallback: { latitude: attendanceSettings.attendance.latitude, longitude: attendanceSettings.attendance.longitude,
     address: process.env.COMPANY_LOCATION_LABEL || 'FPT University HCMC' }
 });
-const attendanceCalendarStore = new AttendanceCalendarStore({ redisClient, ensureRedisConnection });
+const attendanceCalendarStore = new AttendanceCalendarStore({ databasePool });
 const attendanceService = createAttendanceService(attendanceSettings, new AttendanceRepository(databasePool), undefined, companyLocationStore, attendanceCalendarStore, new LeaveRequestsRepository(databasePool));
 
 const companyDemoPath = require('node:path').join(__dirname, '../demo/company-location');

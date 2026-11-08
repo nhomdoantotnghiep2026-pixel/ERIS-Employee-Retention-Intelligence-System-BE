@@ -20,9 +20,9 @@ test('ngày lễ được ghi vào attendance đúng ngày và đồng bộ lạ
   const service = createAttendanceService({attendance:{latitude:0,longitude:0,radiusMeters:100,maxAccuracyMeters:50}},
     { markHoliday: async date => { marked++; assert.equal(date, '2026-11-05'); return 2; } },
     () => now, null,
-    { holiday: async date => holidays.get(date), addHoliday: async holiday => { holidays.set(holiday.date, holiday); return 1; }, removeHoliday: async date => holidays.delete(date) });
+    { holiday: async date => holidays.get(date), createHoliday: async (holiday, actorId) => { holidays.set(holiday.start_date, holiday); return { data: { ...holiday, created_by: actorId }, affectedEmployees: 0 }; } });
   const hr = {id:1,status:'ACTIVE',role_name:'HR',employeeId:1};
-  const created = await service.createHoliday(hr,{date:'2026-11-05',name:'Nghỉ lễ'});
+  const created = await service.createHoliday(hr,{start_date:'2026-11-05',end_date:'2026-11-05',name:'Nghỉ lễ'});
   assert.equal(created.affectedEmployees,0);
   assert.equal(marked,0);
   now = new Date('2026-11-04T17:01:00Z'); // 00:01 ngày 05/11 tại Việt Nam

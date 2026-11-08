@@ -68,10 +68,10 @@ class AttendanceRepository {
     } catch (error) { await client.query('ROLLBACK'); throw error; }
     finally { client.release(); }
   }
-  async markHoliday(date) {
-    const client = await this.pool.connect();
+  async markHoliday(date, transactionClient = null) {
+    const client = transactionClient || await this.pool.connect();
     try {
-      await client.query('BEGIN');
+      if (!transactionClient) await client.query('BEGIN');
       const { rows: employees } = await client.query(`SELECT e.id FROM employees e WHERE e.employment_status='ACTIVE'
         AND e.hire_date<=$1::date AND EXISTS (SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')
         ORDER BY e.id`, [date]);
@@ -86,9 +86,9 @@ class AttendanceRepository {
           WHERE (attendance.attendance_status='ON_LEAVE' OR (attendance.check_in IS NULL AND attendance.check_out IS NULL))
             AND attendance.attendance_status IS DISTINCT FROM 'HOLIDAY'`, [employee.id,date]);
       }
-      await client.query('COMMIT'); return employees.length;
-    } catch (error) { await client.query('ROLLBACK'); throw error; }
-    finally { client.release(); }
+      if (!transactionClient) await client.query('COMMIT'); return employees.length;
+    } catch (error) { if (!transactionClient) await client.query('ROLLBACK'); throw error; }
+    finally { if (!transactionClient) client.release(); }
   }
   async closeAbsent(date) {
     const { rowCount } = await this.pool.query(`INSERT INTO public.attendance
