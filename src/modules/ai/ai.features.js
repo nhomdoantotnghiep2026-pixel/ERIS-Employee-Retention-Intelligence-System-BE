@@ -13,7 +13,7 @@ function valid(k,v,today=todayVN()) {
   if(k==='Age') return numeric(v,18,120,true);
   if(k==='Employee_Satisfaction_Score') return numeric(v,1,5);
   if(k==='Work_Hours_Per_Week') return numeric(v,0,168);
-  if(k==='Years_At_Company') return numeric(v,0,102);
+  if(k==='Years_At_Company') return numeric(v,0,102,true);
   return numeric(v,0,Number.MAX_SAFE_INTEGER,k==='Promotions');
 }
 function object(value) { return value!==null && typeof value==='object' && !Array.isArray(value); }
@@ -43,17 +43,18 @@ function build(row,opts,today=todayVN()) {
   const dob=row.date_of_birth;
   if(iso(dob)&&dob<=today) add('Age',Number(today.slice(0,4))-Number(dob.slice(0,4))-(today.slice(5)<dob.slice(5)?1:0),'employees.date_of_birth; tuổi tròn tại snapshot');
   add('Hire_Date',row.hire_date,'employees.hire_date');
-  if(iso(row.hire_date)&&row.hire_date<=today) add('Years_At_Company',Number(((Date.parse(today)-Date.parse(row.hire_date))/86400000/365.2425).toFixed(4)),'employees.hire_date; năm thập phân, 365.2425 ngày/năm');
+  if(iso(row.hire_date)&&row.hire_date<=today) add('Years_At_Company',Number(today.slice(0,4))-Number(row.hire_date.slice(0,4))-(today.slice(5)<row.hire_date.slice(5)?1:0),'employees.hire_date; completed years at snapshot');
   add('Education_Level',row.education_level,'employee_educations ACTIVE; bằng cao nhất');
   const salary=finite(row.current_salary);
   if(salary!==null&&opts.vndPerUsd) add('Monthly_Salary',Number((salary/opts.vndPerUsd).toFixed(4)),'employees.current_salary VND / vndPerUsd do HR nhập');
   add('Promotions',finite(row.promotions),'employee_job_histories PROMOTION đến snapshot');
-  add('Employee_Satisfaction_Score',finite(row.satisfaction),'survey đã nộp gần nhất; trung bình điểm');
-  if(opts.periodStart && Number(row.completed_days)>0 && Number(row.incomplete_days)===0) {
-    const days=(Date.parse(opts.periodEnd)-Date.parse(opts.periodStart))/86400000+1;
-    add('Work_Hours_Per_Week',Number((Number(row.working_minutes)/60*7/days).toFixed(4)),'attendance thực ghi: tổng working_minutes / 60 / số ngày lịch * 7; gồm overtime');
-    add('Overtime_Hours',Number((Number(row.overtime_minutes)/60).toFixed(4)),'attendance: tổng overtime_minutes / 60 trong kỳ đã chọn');
-  } else if(opts.periodStart) issues.push('Kỳ attendance không có ngày check-out hoàn tất hoặc còn ngày check-in chưa check-out; chưa tự tính giờ.');
+  add('Employee_Satisfaction_Score',finite(row.satisfaction)===null?null:Number(Number(row.satisfaction).toFixed(2)),'Latest submitted survey; mean rounded to 2 decimals');
+  add('Work_Hours_Per_Week',finite(row.scheduled_weekly_hours),'Current ACTIVE schedule: weekly hours excluding breaks and overtime');
+  if(Number(row.ytd_incomplete_days)===0) {
+    const overtime=finite(row.ytd_overtime_minutes);
+    if(overtime!==null) add('Overtime_Hours',Number((overtime/60).toFixed(2)),'Completed attendance overtime; January 1 through snapshot');
+  } else if(row.ytd_incomplete_days!==undefined) issues.push('Year-to-date attendance has unfinished checkouts; overtime is not ready.');
+  add('Sick_Days',finite(row.absence_days),'Year-to-date scheduled ON_LEAVE + ABSENT dates; excludes holidays and business travel; broader than dataset sick days');
   for(const [key,value] of Object.entries(opts.supplementalFeatures)) {
     if(Object.hasOwn(features,key)) throw new AppError(400,`Không ghi đè ${key} đã lấy từ database.`);
     features[key]=value;provenance[key]='MANUAL_DEMO: HR bổ sung, không cập nhật hồ sơ gốc';

@@ -7,7 +7,7 @@ class AiService {
   async preview(actorId,employeeId,body={},allowSave=false) {
     await this.repository.assertHr(actorId);
     const now=this.clock(),today=todayVN(now),opts=options(body,allowSave,today);
-    const row=await this.repository.read(id(employeeId),opts,today);
+    const row=await this.repository.read(id(employeeId),opts,today,now.toISOString());
     const preview={employee:{id:row.id,employeeCode:row.employeeCode,fullName:row.fullName},capturedAt:now.toISOString(),snapshotDate:today,...build(row,opts,today),warning:WARNING};
     if(preview.missingFeatures.length)return {...preview,snapshotCreated:false,snapshotId:null,ready:false};
     const snapshotId=await this.repository.createSnapshot(actorId,preview);
