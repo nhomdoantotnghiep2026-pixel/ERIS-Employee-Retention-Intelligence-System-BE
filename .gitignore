@@ -9,3 +9,6 @@ docs/
 .env.vps-backup
 
 .env.local-backup
+
+# Runtime model artifacts and service secrets (local only)
+.local/

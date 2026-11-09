@@ -143,6 +143,15 @@ for (const [route, directory] of [['/demo', 'portal'], ['/attendance-demo', 'att
   app.get(route, (_req, res) => { res.set('Cache-Control', 'no-store'); res.sendFile(path.join(folder, 'index.html')); });
   app.use(route + '/assets', express.static(folder, { index: false, etag: false, setHeaders: res => res.set('Cache-Control', 'no-store') }));
 }
+const { AiRepository } = require('./modules/ai/ai.repository');
+const { AiService } = require('./modules/ai/ai.service');
+const { AiClient, aiConfig } = require('./modules/ai/ai.client');
+const { createAiRouter } = require('./modules/ai/ai.routes');
+const aiRepository = new AiRepository(databasePool);
+const aiService = new AiService({ repository: aiRepository, client: new AiClient(aiConfig()) });
+app.use('/api/ai', createAiRouter({ service: aiService, repository: aiRepository, authenticate }));
+app.get('/ai-demo', (_req,res) => { res.set('Cache-Control','no-store'); res.sendFile(require('node:path').join(__dirname,'../demo/portal/ai-demo.html')); });
+
 app.use(errorHandler);
 
 module.exports = { app, attendanceService, workSchedulesService };
