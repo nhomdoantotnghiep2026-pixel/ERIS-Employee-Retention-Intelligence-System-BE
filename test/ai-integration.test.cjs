@@ -22,12 +22,16 @@ test('Missing fields are explicit; supplemental values never overwrite database 
 test('Invalid values and future/partial period rejected, no numeric strings or NaN',()=>{
  for(const body of [null,[],{save:'true'},{unexpected:true},{periodStart:'2026-11-01'},{periodStart:'2026-11-01',periodEnd:'2026-11-09'},{vndPerUsd:0},{supplementalFeatures:{Monthly_Salary:-1}},{supplementalFeatures:{Age:'30'}},{supplementalFeatures:{Age:true}},{supplementalFeatures:{Overtime_Hours:NaN}},{supplementalFeatures:{Employee_Satisfaction_Score:6}},{supplementalFeatures:{Hire_Date:'2026-02-30'}}]) assert.throws(()=>options(body,true,'2026-11-08'),AppError);
 });
-test('Period calculation does not count overtime twice; incomplete checkout stays missing',()=>{
+test('Schedule hours exclude overtime; year-to-date totals do not depend on requested period',()=>{
  const opts={periodStart:'2026-11-01',periodEnd:'2026-11-07',supplementalFeatures:{}};
- const r=build({...row,completed_days:'5',incomplete_days:'0',working_minutes:'2460',overtime_minutes:'60'},opts,'2026-11-08');
- assert.equal(r.features.Work_Hours_Per_Week,41);assert.equal(r.features.Overtime_Hours,1);
- const incomplete=build({...row,completed_days:'5',incomplete_days:'1'},opts,'2026-11-08');
- assert.ok(incomplete.missingFeatures.includes('Work_Hours_Per_Week'));
+ const r=build({...row,scheduled_weekly_hours:'40',ytd_incomplete_days:'0',ytd_overtime_minutes:'601',absence_days:'3',satisfaction:'3.755'},opts,'2026-11-08');
+ assert.equal(r.features.Work_Hours_Per_Week,40);assert.equal(r.features.Overtime_Hours,10.02);
+ assert.equal(r.features.Years_At_Company,6);assert.equal(r.features.Sick_Days,3);
+ assert.equal(r.features.Employee_Satisfaction_Score,3.75);
+ assert.equal(build({...row,hire_date:'2024-11-09'},opts,'2026-11-08').features.Years_At_Company,1);
+ const incomplete=build({...row,scheduled_weekly_hours:'40',ytd_incomplete_days:'1',ytd_overtime_minutes:'600'},opts,'2026-11-08');
+ assert.ok(incomplete.missingFeatures.includes('Overtime_Hours'));
+ assert.equal(incomplete.features.Work_Hours_Per_Week,40);
 });
 test('AI client: exact ID/model contract and SHAP sum checked, timeout translated',async()=>{
  let sent;
