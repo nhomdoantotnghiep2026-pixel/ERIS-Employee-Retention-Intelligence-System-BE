@@ -34,15 +34,15 @@ class AiRepository {
         FROM (${scheduleSql('$1::integer','$2::date')}) s WHERE s.status='ACTIVE'`,[employeeId,today])).rows[0];
       Object.assign(rows[0],schedule);
       const stats=(await client.query(`SELECT
-        count(*) FILTER(WHERE a.check_in IS NOT NULL AND a.check_out IS NULL) AS ytd_incomplete_days,
-        COALESCE(sum(a.overtime_minutes) FILTER(WHERE a.check_in IS NOT NULL AND a.check_out IS NOT NULL
-          AND a.check_out <= ($4::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')
-          AND a.attendance_status IN ('PRESENT','LATE','EARLY_LEAVE','LATE_EARLY_LEAVE')),0) AS ytd_overtime_minutes,
-        count(DISTINCT a.work_date) FILTER(WHERE a.attendance_status IN ('ON_LEAVE','ABSENT')
-          AND s.status='ACTIVE' AND extract(isodow FROM a.work_date)::integer=ANY(s.working_days)
-          AND NOT EXISTS(SELECT 1 FROM holidays h WHERE h.status='ACTIVE' AND a.work_date BETWEEN h.start_date AND h.end_date)) AS absence_days
-        FROM attendance a LEFT JOIN LATERAL (${scheduleSql('a.employee_id','a.work_date')}) s ON TRUE
-        WHERE a.employee_id=$1 AND a.work_date BETWEEN greatest(date_trunc('year',$2::date)::date,$3::date) AND $2::date`,
+        count(*) FILTER(WHERE att.check_in IS NOT NULL AND att.check_out IS NULL) AS ytd_incomplete_days,
+        COALESCE(sum(att.overtime_minutes) FILTER(WHERE att.check_in IS NOT NULL AND att.check_out IS NOT NULL
+          AND att.check_out <= ($4::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND att.attendance_status IN ('PRESENT','LATE','EARLY_LEAVE','LATE_EARLY_LEAVE')),0) AS ytd_overtime_minutes,
+        count(DISTINCT att.work_date) FILTER(WHERE att.attendance_status IN ('ON_LEAVE','ABSENT')
+          AND s.status='ACTIVE' AND extract(isodow FROM att.work_date)::integer=ANY(s.working_days)
+          AND NOT EXISTS(SELECT 1 FROM holidays h WHERE h.status='ACTIVE' AND att.work_date BETWEEN h.start_date AND h.end_date)) AS absence_days
+        FROM attendance att LEFT JOIN LATERAL (${scheduleSql('att.employee_id','att.work_date')}) s ON TRUE
+        WHERE att.employee_id=$1 AND att.work_date BETWEEN greatest(date_trunc('year',$2::date)::date,$3::date) AND $2::date`,
         [employeeId,today,rows[0].hire_date,capturedAt])).rows[0];
       Object.assign(rows[0],stats);
       await client.query('COMMIT');
