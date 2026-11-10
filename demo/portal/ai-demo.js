@@ -1,14 +1,14 @@
 (() => {
   'use strict';
   const $=id=>document.getElementById(id);
-  let token='',generation=0,lastPreview=null,selectedSnapshot=null;
+  let token='',generation=0,lastPreview=null,selectedSnapshot=null,policyPredictionId=null;
   const notify=(message,isError=false)=>{
     $('notice').textContent=message;
     $('notice').style.background=isError?'#fff0ed':'';
     if($('actionNotice')){$('actionNotice').textContent=message;$('actionNotice').style.color=isError?'#b42318':'#1d5268';}
     if(isError)$('notice').scrollIntoView({behavior:'smooth',block:'center'});
   };
-  function logout(){selectedSnapshot=null;generation++;token='';lastPreview=null;$('password').value='';$('login').hidden=false;$('workspace').hidden=true;$('result').hidden=true;$('previewOutput').textContent='';$('json').textContent='';$('supplemental').value='{}';$('save').checked=false;}
+  function logout(){policyPredictionId=null;$('policyPanel').hidden=true;$('policyOutput').replaceChildren();selectedSnapshot=null;generation++;token='';lastPreview=null;$('password').value='';$('login').hidden=false;$('workspace').hidden=true;$('result').hidden=true;$('previewOutput').textContent='';$('json').textContent='';$('supplemental').value='{}';$('save').checked=false;}
   async function request(path,body){
     const response=await fetch(path,{method:body!==undefined?'POST':'GET',headers:{...(token?{Authorization:'Bearer '+token}:{}),...(body!==undefined?{'Content-Type':'application/json'}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});
     const data=await response.json();
@@ -54,6 +54,7 @@
   }
   function path(action){const employee=$('employee').value;if(!employee)throw new Error('Chọn nhân viên trước.');return '/api/ai/employees/'+encodeURIComponent(employee)+'/'+action;}
   function render(data){
+    policyPredictionId=data.saved?data.predictionId:null;$('policyPanel').hidden=!policyPredictionId;$('policyOutput').replaceChildren();
     const model=data.model,preview=data.preview;
     $('result').hidden=false;$('score').textContent=(model.score*100).toLocaleString('vi-VN',{maximumFractionDigits:2})+'%';
     $('source').textContent=(preview.employee.fullName||preview.employee.employeeCode)+' · '+preview.dataSource+' · '+(data.saved?'Đã lưu kết quả #'+data.predictionId:'Chưa lưu database');
@@ -98,5 +99,18 @@
     if(body.save&&!window.confirm('Lưu một bộ kết quả demo model thật vào database?'))return;
     const result=await request(path('predict'),body);if(version===generation)render(result);
   });
+  async function generatePolicies(save){
+    if(!policyPredictionId)throw new Error('Lưu kết quả model trước khi đề xuất policy.');
+    if(save&&!window.confirm('Lưu các đề xuất SUGGESTED cho policy đang có? Không tự thêm policy mới hoặc áp dụng cho nhân viên.'))return;
+    const data=await request('/api/ai/results/'+policyPredictionId+'/policy-recommendations',{save,limit:3});
+    $('policyOutput').replaceChildren();
+    const notice=document.createElement('p');notice.textContent=data.warning;$('policyOutput').append(notice);
+    if(!data.recommendations.length){const empty=document.createElement('p');empty.textContent='Chưa có yếu tố phù hợp để đề xuất policy theo quy tắc hiện tại.';$('policyOutput').append(empty);}
+    for(const r of data.recommendations){const item=document.createElement('section');item.className='card';const title=document.createElement('h3');title.textContent=r.rank+'. '+(r.policy?.name??r.policyDraft.name);const status=document.createElement('p');status.textContent=r.policy?'Policy đã có trong danh mục · '+r.status:'Chờ duyệt thêm policy vào danh mục';const reason=document.createElement('p');reason.textContent=r.reason;item.append(title,status,reason);$('policyOutput').append(item);}
+    if(save){const note=document.createElement('p');note.textContent='Đã tạo mới '+data.savedRecommendations.filter(r=>r.created).length+' đề xuất; policy chưa có vẫn chờ duyệt.';$('policyOutput').append(note);}
+    $('policyPanel').scrollIntoView({behavior:'smooth'});
+  }
+  $('previewPolicies').onclick=()=>busy(async()=>generatePolicies(false));
+  $('savePolicies').onclick=()=>busy(async()=>generatePolicies(true));
   $('loadResult').onclick=()=>busy(async(version)=>{const id=$('resultId').value;if(!/^[1-9]\d*$/.test(id))throw new Error('Nhập ID kết quả dương.');const result=await request('/api/ai/results/'+id);if(version===generation)render(result);});
 })();
