@@ -15,7 +15,7 @@ class AiPolicyRepository {
  }
  async generate(actorId,predictionId,body={}){
   predictionId=id(predictionId);
-  if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(k=>!['save','limit'].includes(k))||body.save!==undefined&&typeof body.save!=='boolean'||body.limit!==undefined&&(!Number.isInteger(body.limit)||body.limit<1||body.limit>5))throw new AppError(400,'Body chỉ nhận save (boolean) và limit (số nguyên 1–5).');
+  if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(k=>!['save','limit'].includes(k))||body.save!==undefined&&typeof body.save!=='boolean'||body.limit!==undefined&&(!Number.isInteger(body.limit)||body.limit<1||body.limit>12))throw new AppError(400,'Body chỉ nhận save (boolean) và limit (số nguyên 1–12).');
   const result=await this.context(actorId,predictionId);
   if(body.save!==true)return {...recommend(result,await this.policies(),body),saved:false,catalogModified:false};
   const client=await this.pool.connect();

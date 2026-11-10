@@ -31,7 +31,7 @@ test('Live-schema TEMP transaction: catalogue read-only, foreign keys, repeat sa
   const again=await repo.generate(1,1,{save:true});assert.ok(again.savedRecommendations.every(r=>!r.created));assert.equal(again.savedRecommendations[0].status,'APPROVED');
   failAudit=true;await assert.rejects(()=>repo.generate(1,1,{save:true,limit:5}),/Audit failed/);failAudit=false;
   assert.equal((await client.query('SELECT count(*)::int AS n FROM policy_recommendations')).rows[0].n,3);
-  assert.equal((await client.query('SELECT count(*)::int AS n FROM retention_policies')).rows[0].n,4);
+  assert.equal((await client.query('SELECT count(*)::int AS n FROM retention_policies')).rows[0].n,12);
   assert.equal((await client.query("SELECT count(*)::int AS n FROM audit_logs WHERE entity_type='policy_recommendations'")).rows[0].n,3);
   await client.query("UPDATE employees SET employment_status='INACTIVE' WHERE id=2");await assert.rejects(()=>repo.generate(1,1,{}),e=>e.statusCode===409);
  }finally{client.release(true);await databasePool.end();}

@@ -102,7 +102,7 @@
   async function generatePolicies(save){
     if(!policyPredictionId)throw new Error('Lưu kết quả model trước khi đề xuất policy.');
     if(save&&!window.confirm('Lưu các đề xuất SUGGESTED cho policy đang có? Không tự thêm policy mới hoặc áp dụng cho nhân viên.'))return;
-    const data=await request('/api/ai/results/'+policyPredictionId+'/policy-recommendations',{save,limit:3});
+    const data=await request('/api/ai/results/'+policyPredictionId+'/policy-recommendations',{save,limit:12});
     $('policyOutput').replaceChildren();
     const notice=document.createElement('p');notice.textContent=data.warning;$('policyOutput').append(notice);
     if(!data.recommendations.length){const empty=document.createElement('p');empty.textContent='Chưa có yếu tố phù hợp để đề xuất policy theo quy tắc hiện tại.';$('policyOutput').append(empty);}

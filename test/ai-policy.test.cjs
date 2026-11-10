@@ -10,20 +10,53 @@ function fixture(changes={}){
  return {predictionId:1,model:{model_id:MODEL_ID,schema_version:SCHEMA,validation_status:STATUS,demo_mode:true,base_value:0.1,score:0.1+Object.values(contributions).reduce((a,b)=>a+b,0),contributions},preview:{employee:{id:2},snapshotId:3,features,provenance:{Overtime_Hours:'MANUAL_DEMO'}}};
 }
 const catalog=DRAFTS.map((p,i)=>({...p,id:i+1,status:'ACTIVE'}));
-test('Only positive actionable signals; merge workload, sort by contribution, no demographic policy',()=>{
- const r=recommend(fixture(),catalog,{limit:5});assert.equal(r.recommendations.length,4);assert.equal(r.recommendations[0].policy.code,'RETENTION_WORKLOAD_REVIEW');assert.equal(r.recommendations[0].signals.length,2);
- assert.equal(r.recommendations[0].signals[0].source,'MANUAL_DEMO');assert.ok(r.excludedFactors.some(x=>x.feature==='Age'));assert.ok(r.excludedFactors.some(x=>x.feature==='Gender'));assert.ok(r.excludedFactors.some(x=>x.feature==='Hire_Date'));
- assert.equal(new Set(r.recommendations.map(x=>x.policy.id)).size,4);assert.equal(r.autoApplied,false);
+
+test('Policy description contains content only; recommendation reason owns the review condition',()=>{
+ assert.ok(DRAFTS.every(policy=>policy.description===policy.action));
+ const row=recommend(fixture(),catalog,{limit:12}).recommendations[0];
+ assert.match(row.reason,/^Điều kiện xem xét:/);
+ assert.ok(!row.reason.includes(row.policy.description));
 });
-test('Negative SHAP and invalid demo satisfaction never treated as grounds for intervention',()=>{
- const r=recommend(fixture({features:{Employee_Satisfaction_Score:0.1},contributions:{Overtime_Hours:-0.02,Work_Hours_Per_Week:-0.01}}),catalog,{limit:5});
- assert.ok(!r.recommendations.some(x=>[1,2].includes(x.policy.id)));assert.ok(r.excludedFactors.some(x=>x.feature==='Employee_Satisfaction_Score'));
- const high=recommend(fixture({features:{Employee_Satisfaction_Score:5,Promotions:2}}),catalog,{limit:5});assert.ok(!high.recommendations.some(x=>[1,4].includes(x.policy.id)));
+
+test('All 12 positive features map to separate ACTIVE V2 policies, including categorical features',()=>{
+ const contributions=Object.fromEntries(FEATURES.map((k,i)=>[k,(i+1)/10000]));
+ const r=recommend(fixture({contributions}),catalog,{limit:12});
+ assert.equal(r.ruleVersion,'SHAP_FEATURE_REVIEW_V2');assert.equal(r.recommendations.length,12);
+ assert.equal(new Set(r.recommendations.map(x=>x.policy.id)).size,12);
+ assert.ok(r.recommendations.every(x=>x.signals.length===1&&x.requiresHrConfirmation&&x.priority==='MEDIUM'));
+ assert.deepEqual(new Set(r.recommendations.map(x=>x.signals[0].feature)),new Set(FEATURES));
+ assert.equal(r.recommendations[0].signals[0].feature,FEATURES.at(-1));
+ const ot=r.recommendations.find(x=>x.signals[0].feature==='Overtime_Hours');
+ const hours=r.recommendations.find(x=>x.signals[0].feature==='Work_Hours_Per_Week');
+ assert.notEqual(ot.policy.id,hours.policy.id);assert.equal(ot.signals[0].source,'MANUAL_DEMO');
+ assert.equal(r.autoApplied,false);assert.equal(r.omittedCount,0);
+ assert.match(r.recommendations.find(x=>x.signals[0].feature==='Sick_Days').reason,/ON_LEAVE \+ ABSENT/);
 });
-test('Missing/inactive catalogue yields drafts, no invented policy ID or fixed demo prediction',()=>{
- const r=recommend(fixture(),catalog.map(p=>({...p,status:'INACTIVE'})),{limit:3});assert.equal(r.recommendations.length,3);assert.ok(r.recommendations.every(x=>!x.policy&&x.policyDraft&&x.status==='AWAITING_POLICY_APPROVAL'));
+test('Negative and zero SHAP never trigger; default limit stays 3 and maximum is 12',()=>{
+ const contributions=Object.fromEntries(FEATURES.map(k=>[k,-0.001]));contributions.Age=0;
+ assert.equal(recommend(fixture({contributions}),catalog,{limit:12}).recommendations.length,0);
+ const all=Object.fromEntries(FEATURES.map(k=>[k,0.001]));
+ const r=recommend(fixture({contributions:all}),catalog);assert.equal(r.recommendations.length,3);assert.equal(r.omittedCount,9);
+ for(const limit of [0,13,1.5,'12'])assert.throws(()=>recommend(fixture(),catalog,{limit}),e=>e.statusCode===400);
+});
+test('Out-of-domain values excluded, valid high satisfaction and previous promotions do not invent thresholds',()=>{
+ const r=recommend(fixture({features:{Employee_Satisfaction_Score:0.1}}),catalog,{limit:12});
+ assert.ok(!r.recommendations.some(x=>x.signals[0].feature==='Employee_Satisfaction_Score'));
+ assert.ok(r.excludedFactors.some(x=>x.feature==='Employee_Satisfaction_Score'));
+ const high=recommend(fixture({features:{Employee_Satisfaction_Score:5,Promotions:2}}),catalog,{limit:12});
+ assert.ok(high.recommendations.some(x=>x.signals[0].feature==='Employee_Satisfaction_Score'));
+ assert.ok(high.recommendations.some(x=>x.signals[0].feature==='Promotions'));
+ assert.match(high.recommendations.find(x=>x.signals[0].feature==='Employee_Satisfaction_Score').reason,/Điểm hài lòng thấp/);
+});
+test('Only ACTIVE catalogue, prefer exact V2 code, missing policy is draft; reject invalid SHAP or model',()=>{
+ const r=recommend(fixture(),catalog.map(p=>({...p,status:'INACTIVE'})),{limit:3});assert.equal(r.recommendations.length,3);
+ assert.ok(r.recommendations.every(x=>!x.policy&&x.policyDraft&&x.status==='AWAITING_POLICY_APPROVAL'));
+ const extra={...catalog[0],id:999,code:'LEGACY',targetFactor:'DEPARTMENT'};
+ const selection=recommend(fixture({contributions:{Department:0.02}}),[extra,...catalog],{limit:12});
+ assert.equal(selection.recommendations.find(x=>x.signals[0].feature==='Department').policy.code,catalog[0].code);
  const result=fixture();result.model.model_id='DEMO_FIXED_POLICY_V1';assert.throws(()=>recommend(result,catalog),e=>e.statusCode===409);
  const corrupted=fixture();corrupted.model.score=0.99;assert.throws(()=>recommend(corrupted,catalog),e=>e.statusCode===409);
+ const missing=fixture();delete missing.model.contributions.Department;assert.throws(()=>recommend(missing,catalog),e=>e.statusCode===409);
 });
 function fakeDb(){
  const state={recommendations:[],audits:[],policies:structuredClone(catalog),active:true,failAudit:false,backup:null};
@@ -47,13 +80,13 @@ test('Preview does not write; save is idempotent and never inserts catalogue pol
  const preview=await repo.generate(1,1,{});assert.equal(preview.saved,false);assert.equal(pool.state.recommendations.length,0);
  const saved=await repo.generate(1,1,{save:true});assert.equal(saved.savedRecommendations.length,3);assert.equal(pool.state.audits.length,3);
  pool.state.recommendations[0].status='APPROVED';const again=await repo.generate(1,1,{save:true});assert.equal(pool.state.recommendations.length,3);assert.ok(again.savedRecommendations.every(x=>!x.created));assert.equal(again.savedRecommendations[0].status,'APPROVED');
- assert.equal(pool.state.policies.length,4);
+ assert.equal(pool.state.policies.length,12);
 });
 test('Rollback on audit failure, permission, input and inactive employee validation',async()=>{
  const pool=fakeDb(),repo=new AiPolicyRepository(pool,ai);pool.state.failAudit=true;
  await assert.rejects(()=>repo.generate(1,1,{save:true}),/Audit failed/);assert.equal(pool.state.recommendations.length,0);assert.equal(pool.state.audits.length,0);
  await assert.rejects(()=>repo.generate(2,1,{}),e=>e.statusCode===403);
- for(const body of [null,[],{limit:0},{limit:6},{save:'true'},{policyId:999}])await assert.rejects(()=>repo.generate(1,1,body),e=>e.statusCode===400);
+ for(const body of [null,[],{limit:0},{limit:13},{save:'true'},{policyId:999}])await assert.rejects(()=>repo.generate(1,1,body),e=>e.statusCode===400);
  pool.state.active=false;await assert.rejects(()=>repo.generate(1,1,{}),e=>e.statusCode===409);
 });
 test('HTTP endpoint: authentication, HR, default preview and malformed ID/body',async()=>{
