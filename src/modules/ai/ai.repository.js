@@ -1,4 +1,5 @@
 const { AppError } = require('../../common/errors/app-error');
+const { scheduleSql } = require('../attendance/attendance-schedule');
 const { FEATURES } = require('./ai.features');
 const COLUMNS=['department','gender','age','hire_date','years_at_company','education_level','monthly_salary','work_hours_per_week','overtime_hours','sick_days','promotions','employee_satisfaction_score'];
 class AiRepository {
@@ -11,7 +12,7 @@ class AiRepository {
     await this.assertHr(actorId);
     return (await this.pool.query(`SELECT e.id,e.employee_code AS "employeeCode",e.full_name AS "fullName" FROM employees e WHERE e.employment_status='ACTIVE' AND EXISTS(SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE') ORDER BY e.id`)).rows;
   }
-  async read(employeeId,opts,today) {
+  async read(employeeId,opts,today,capturedAt=new Date().toISOString()) {
     const client=await this.pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
@@ -22,19 +23,28 @@ class AiRepository {
           ORDER BY array_position(ARRAY['High School','Bachelor','Master','PhD']::text[],ed.education_level::text) DESC,ed.id DESC LIMIT 1) AS education_level,
         (SELECT count(*)::int FROM employee_job_histories h WHERE h.employee_id=e.id AND h.change_type='PROMOTION' AND h.start_date<=$2::date) AS promotions,
         (SELECT avg(a.score) FROM survey_answers a WHERE a.response_id=(SELECT sr.id FROM survey_responses sr
-          WHERE sr.employee_id=e.id AND sr.submitted_at IS NOT NULL AND (sr.submitted_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date<=$2::date
+          WHERE sr.employee_id=e.id AND sr.submitted_at IS NOT NULL AND sr.submitted_at<=$3::timestamptz
           ORDER BY sr.submitted_at DESC,sr.id DESC LIMIT 1)) AS satisfaction
         FROM employees e LEFT JOIN departments d ON d.id=e.department_id WHERE e.id=$1 AND e.employment_status='ACTIVE'
-          AND EXISTS(SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')`,[employeeId,today]);
+          AND EXISTS(SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')`,[employeeId,today,capturedAt]);
       if(!rows[0]) throw new AppError(404,'Nhân viên không tồn tại hoặc hồ sơ/tài khoản chưa ACTIVE.');
-      if(opts.periodStart) {
-        const stats=(await client.query(`SELECT count(*) FILTER(WHERE check_in IS NOT NULL AND check_out IS NOT NULL AND attendance_status NOT IN ('ON_LEAVE','HOLIDAY')) AS completed_days,
-          count(*) FILTER(WHERE check_in IS NOT NULL AND check_out IS NULL) AS incomplete_days,
-          COALESCE(sum(working_minutes) FILTER(WHERE check_in IS NOT NULL AND check_out IS NOT NULL AND attendance_status NOT IN ('ON_LEAVE','HOLIDAY')),0) AS working_minutes,
-          COALESCE(sum(overtime_minutes) FILTER(WHERE check_in IS NOT NULL AND check_out IS NOT NULL AND attendance_status NOT IN ('ON_LEAVE','HOLIDAY')),0) AS overtime_minutes
-          FROM attendance WHERE employee_id=$1 AND work_date BETWEEN $2::date AND $3::date`,[employeeId,opts.periodStart,opts.periodEnd])).rows[0];
-        Object.assign(rows[0],stats);
-      }
+      const schedule=(await client.query(`SELECT round((extract(epoch FROM
+        (s.end_time-s.start_time-(s.break_end-s.break_start)))/3600
+        * cardinality(ARRAY(SELECT DISTINCT unnest(s.working_days))))::numeric,2) AS scheduled_weekly_hours
+        FROM (${scheduleSql('$1::integer','$2::date')}) s WHERE s.status='ACTIVE'`,[employeeId,today])).rows[0];
+      Object.assign(rows[0],schedule);
+      const stats=(await client.query(`SELECT
+        count(*) FILTER(WHERE a.check_in IS NOT NULL AND a.check_out IS NULL) AS ytd_incomplete_days,
+        COALESCE(sum(a.overtime_minutes) FILTER(WHERE a.check_in IS NOT NULL AND a.check_out IS NOT NULL
+          AND a.check_out <= ($4::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND a.attendance_status IN ('PRESENT','LATE','EARLY_LEAVE','LATE_EARLY_LEAVE')),0) AS ytd_overtime_minutes,
+        count(DISTINCT a.work_date) FILTER(WHERE a.attendance_status IN ('ON_LEAVE','ABSENT')
+          AND s.status='ACTIVE' AND extract(isodow FROM a.work_date)::integer=ANY(s.working_days)
+          AND NOT EXISTS(SELECT 1 FROM holidays h WHERE h.status='ACTIVE' AND a.work_date BETWEEN h.start_date AND h.end_date)) AS absence_days
+        FROM attendance a LEFT JOIN LATERAL (${scheduleSql('a.employee_id','a.work_date')}) s ON TRUE
+        WHERE a.employee_id=$1 AND a.work_date BETWEEN greatest(date_trunc('year',$2::date)::date,$3::date) AND $2::date`,
+        [employeeId,today,rows[0].hire_date,capturedAt])).rows[0];
+      Object.assign(rows[0],stats);
       await client.query('COMMIT');
       return rows[0];
     }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}

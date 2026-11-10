@@ -4,6 +4,9 @@ const requestSchema={type:'object',additionalProperties:false,properties:{period
 const params=[{in:'path',name:'employeeId',required:true,schema:{type:'integer',minimum:1}}];
 const op=(summary,description,extra={})=>({tags:['AI Demo'],summary,description,security:[{bearerAuth:[]}],responses:{200:{description:'Thành công.'},400:{description:'Đầu vào sai.'},401:{description:'Chưa đăng nhập.'},403:{description:'Không phải HR ACTIVE.'},404:{description:'Không tìm thấy hồ sơ ACTIVE/kết quả.'},422:{description:'Thiếu dữ liệu, trả details.missingFeatures và preview.'},502:{description:'Lỗi kết nối hoặc hợp đồng model.'},503:{description:'Chưa cấu hình key hoặc model chưa sẵn sàng.'},504:{description:'AI quá thời gian chờ.'}},...extra});
 const content=schema=>({required:false,content:{'application/json':{schema}}});
+requestSchema.properties.periodStart.description='Legacy period metadata only; does not change current schedule hours or year-to-date overtime/absence calculations. Send together with periodEnd.';
+requestSchema.properties.periodEnd.description='Legacy period metadata only; no future dates.';
+requestSchema.properties.supplementalFeatures.properties.Years_At_Company={type:'integer',minimum:0,maximum:102};
 const previewSchema=structuredClone(requestSchema);delete previewSchema.properties.save;
 const predictSchema={type:'object',additionalProperties:false,required:['snapshotId'],properties:{snapshotId:{type:'integer',minimum:1,example:3,description:'ID đã lưu trong ai_input, phải thuộc đúng employeeId.'},save:requestSchema.properties.save}};
 const aiPaths={
@@ -17,4 +20,5 @@ const aiPaths={
  '/api/ai/predict-batch':{post:op('Chạy nhiều nhân viên qua backend (HR)','1–25 nhân viên khác ID; tối đa 2 yêu cầu AI đồng thời. Backend gọi /v1/explain cho từng người vì batch Python chưa bật. Trả thành công/lỗi riêng từng người; có thể lưu từng người với save=true, không atomic cho toàn đợt.',{requestBody:content({type:'object',required:['employees'],additionalProperties:false,properties:{employees:{type:'array',minItems:1,maxItems:25,items:{...predictSchema,required:['employeeId','snapshotId'],properties:{employeeId:{type:'integer',minimum:1},...predictSchema.properties}}}}})})},
  '/api/ai/results/{id}':{get:op('Xem lại kết quả AI đã lưu (HR)','Trả snapshot, nguồn dữ liệu, score, SHAP và cảnh báo từ audit đi kèm. Không đọc kết quả policy cố định.',{parameters:[{in:'path',name:'id',required:true,schema:{type:'integer',minimum:1}}]})}
 };
+aiPaths['/api/ai/employees/{employeeId}/preview'].post.description += ' Years_At_Company: completed years. Work_Hours_Per_Week: current ACTIVE schedule hours excluding breaks/overtime. Overtime_Hours: completed actual overtime since January 1, rounded to 2 decimals. Sick_Days: distinct scheduled ON_LEAVE/ABSENT attendance dates since January 1, excluding ACTIVE holidays; this is total absence, not just illness. Business trips must not be recorded as leave/absence. Employee_Satisfaction_Score: mean answers of latest submitted survey at snapshot, rounded to 2 decimals; no submission means missing feature. Existing saved snapshots are unchanged.';
 module.exports={aiPaths};
