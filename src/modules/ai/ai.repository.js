@@ -1,5 +1,6 @@
 const { AppError } = require('../../common/errors/app-error');
 const { scheduleSql } = require('../attendance/attendance-schedule');
+const {assess}=require('./ai.assessment');
 const { FEATURES } = require('./ai.features');
 const COLUMNS=['department','gender','age','hire_date','years_at_company','education_level','monthly_salary','work_hours_per_week','overtime_hours','sick_days','promotions','employee_satisfaction_score'];
 class AiRepository {
@@ -34,15 +35,15 @@ class AiRepository {
         FROM (${scheduleSql('$1::integer','$2::date')}) s WHERE s.status='ACTIVE'`,[employeeId,today])).rows[0];
       Object.assign(rows[0],schedule);
       const stats=(await client.query(`SELECT
-        count(*) FILTER(WHERE a.check_in IS NOT NULL AND a.check_out IS NULL) AS ytd_incomplete_days,
-        COALESCE(sum(a.overtime_minutes) FILTER(WHERE a.check_in IS NOT NULL AND a.check_out IS NOT NULL
-          AND a.check_out <= ($4::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')
-          AND a.attendance_status IN ('PRESENT','LATE','EARLY_LEAVE','LATE_EARLY_LEAVE')),0) AS ytd_overtime_minutes,
-        count(DISTINCT a.work_date) FILTER(WHERE a.attendance_status IN ('ON_LEAVE','ABSENT')
-          AND s.status='ACTIVE' AND extract(isodow FROM a.work_date)::integer=ANY(s.working_days)
-          AND NOT EXISTS(SELECT 1 FROM holidays h WHERE h.status='ACTIVE' AND a.work_date BETWEEN h.start_date AND h.end_date)) AS absence_days
-        FROM attendance a LEFT JOIN LATERAL (${scheduleSql('a.employee_id','a.work_date')}) s ON TRUE
-        WHERE a.employee_id=$1 AND a.work_date BETWEEN greatest(date_trunc('year',$2::date)::date,$3::date) AND $2::date`,
+        count(*) FILTER(WHERE att.check_in IS NOT NULL AND att.check_out IS NULL) AS ytd_incomplete_days,
+        COALESCE(sum(att.overtime_minutes) FILTER(WHERE att.check_in IS NOT NULL AND att.check_out IS NOT NULL
+          AND att.check_out <= ($4::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND att.attendance_status IN ('PRESENT','LATE','EARLY_LEAVE','LATE_EARLY_LEAVE')),0) AS ytd_overtime_minutes,
+        count(DISTINCT att.work_date) FILTER(WHERE att.attendance_status IN ('ON_LEAVE','ABSENT')
+          AND s.status='ACTIVE' AND extract(isodow FROM att.work_date)::integer=ANY(s.working_days)
+          AND NOT EXISTS(SELECT 1 FROM holidays h WHERE h.status='ACTIVE' AND att.work_date BETWEEN h.start_date AND h.end_date)) AS absence_days
+        FROM attendance att LEFT JOIN LATERAL (${scheduleSql('att.employee_id','att.work_date')}) s ON TRUE
+        WHERE att.employee_id=$1 AND att.work_date BETWEEN greatest(date_trunc('year',$2::date)::date,$3::date) AND $2::date`,
         [employeeId,today,rows[0].hire_date,capturedAt])).rows[0];
       Object.assign(rows[0],stats);
       await client.query('COMMIT');
@@ -50,6 +51,7 @@ class AiRepository {
     }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
   }
   async save(actorId,preview,result) {
+    result=assess(result);
     const client=await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -59,14 +61,18 @@ class AiRepository {
         WHERE e.id=$1 AND e.employment_status='ACTIVE' AND u.status='ACTIVE' FOR SHARE OF e,u`,[employeeId]);
       if(!active.rows.length) throw new AppError(409,'Nhân viên không còn ACTIVE; không lưu kết quả.');
       const run=(await client.query(`INSERT INTO model_run(name,period_start,period_end,status,total_employees,model_version,created_by,started_at,completed_at)
-        VALUES('Mexwell AI demo — model thật',$1,$2,'COMPLETED',1,$3,$4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) RETURNING id`,[preview.period?.start??null,preview.period?.end??null,result.model_id,actorId])).rows[0];
+        VALUES($1,$2,$3,'COMPLETED',1,$4,$5,$6,$7) RETURNING id`,[
+          `Dự đoán ${preview.employee.employeeCode||employeeId} - ${preview.employee.fullName||''} - ${preview.snapshotDate||preview.capturedAt.slice(0,10)}`,
+          preview.period?.start??(preview.snapshotDate||preview.capturedAt.slice(0,10)).slice(0,4)+'-01-01',
+          preview.period?.end??preview.snapshotDate??preview.capturedAt.slice(0,10),result.model_id,actorId,
+          result.startedAt??new Date().toISOString(),result.completedAt??new Date().toISOString()])).rows[0];
       const values=FEATURES.map(k=>preview.features[k]);
       const snapshot={id:preview.snapshotId};
       if(!snapshot.id)throw new AppError(409,'Phải tạo hoặc chọn snapshot trước khi lưu dự đoán.');
       const current=await this.readSnapshot(actorId,employeeId,snapshot.id,client,true);
       if(FEATURES.some(key=>current.features[key]!==preview.features[key]))throw new AppError(409,'Snapshot đã bị thay đổi trong lúc chạy model. Hãy chạy lại.');
       const prediction=(await client.query(`INSERT INTO prediction_results(prediction_run_id,employee_id,snapshot_id,attrition_probability,risk_level,prediction_label)
-        VALUES($1,$2,$3,$4,NULL,NULL) RETURNING id`,[run.id,employeeId,snapshot.id,result.score])).rows[0];
+        VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,[run.id,employeeId,snapshot.id,result.score,result.riskLevel,result.predictionLabel])).rows[0];
       const ranked=Object.entries(result.contributions).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
       for(const [i,[key,value]] of ranked.entries()) await client.query(`INSERT INTO explainable(prediction_result_id,feature_name,feature_value,impact_value,impact_direction,rank_order) VALUES($1,$2,$3,$4,$5,$6)`,[prediction.id,key,String(preview.features[key]),value,value>0?'INCREASE':value<0?'DECREASE':'NEUTRAL',i+1]);
       await client.query(`INSERT INTO audit_logs(user_id,entity_type,entity_id,action,new_value) VALUES($1,'AI_PREDICTION',$2,'CREATE',$3::jsonb)`,[actorId,prediction.id,JSON.stringify({model:result,preview})]);

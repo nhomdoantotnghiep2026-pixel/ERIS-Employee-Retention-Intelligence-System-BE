@@ -103,7 +103,7 @@ test('Real PostgreSQL TEMP tables: save snapshot/result/12 SHAP/audit atomically
   assert.equal((await repo.snapshots(1,7)).length,1);
   await assert.rejects(()=>repo.readSnapshot(1,8,snapshotId),e=>e.statusCode===404);
   const counts=(await client.query('SELECT (SELECT count(*) FROM explainable)::int AS explanations,(SELECT count(*) FROM audit_logs)::int AS audits')).rows[0];assert.equal(counts.explanations,12);assert.equal(counts.audits,2);
-  const stored=(await client.query('SELECT risk_level,prediction_label FROM prediction_results')).rows[0];assert.equal(stored.risk_level,null);assert.equal(stored.prediction_label,null);
+  const stored=(await client.query('SELECT risk_level,prediction_label FROM prediction_results')).rows[0];assert.equal(stored.risk_level,'REVIEW_REQUIRED');assert.equal(stored.prediction_label,true);
   const reread=await repo.result(1,saved.predictionId);assert.equal(reread.model.model_id,MODEL_ID);assert.equal(reread.preview.provenance.Sick_Days,'MANUAL_DEMO');
   await client.query("ALTER TABLE audit_logs ADD CONSTRAINT reject_audit CHECK(action<>'CREATE') NOT VALID");
   await assert.rejects(()=>repo.save(1,preview,response()));
