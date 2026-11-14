@@ -1,19 +1,12 @@
 const { AppError } = require('../../common/errors/app-error');
 
-// Dates at both ends of an assignment are inclusive. A matching assignment
-// takes precedence even when its schedule is inactive (never silently fall back).
+// The current schema has one schedule FK on employees, without dated history.
+// Keep the date parameter for existing callers, but never infer historical assignments.
 function scheduleSql(employee, date) {
-  return `SELECT chosen.* FROM (
-    SELECT s.id,s.name,s.start_time,s.end_time,s.break_start,s.break_end,s.working_days,s.status,
-      a.id AS assignment_id,'ASSIGNMENT'::text AS source,0 AS priority
-    FROM employee_schedule_assignments a JOIN work_schedules s ON s.id=a.schedule_id
-    WHERE a.employee_id=${employee} AND a.effective_from<=${date}
-      AND (a.effective_to IS NULL OR a.effective_to>=${date})
-    UNION ALL
-    SELECT s.id,s.name,s.start_time,s.end_time,s.break_start,s.break_end,s.working_days,s.status,
-      NULL::integer AS assignment_id,'DEFAULT'::text AS source,1 AS priority
-    FROM work_schedules s WHERE s.is_default=TRUE AND s.status='ACTIVE'
-  ) chosen ORDER BY priority,assignment_id DESC NULLS LAST LIMIT 1`;
+  return `SELECT s.id,s.name,s.start_time,s.end_time,s.break_start,s.break_end,s.working_days,s.status,
+    NULL::integer AS assignment_id,'EMPLOYEE_CURRENT'::text AS source
+    FROM employees schedule_employee JOIN work_schedules s ON s.id=schedule_employee.work_schedule_id
+    WHERE schedule_employee.id=${employee} AND ${date} IS NOT NULL`;
 }
 async function resolveSchedule(db,employeeId,date) {
   const {rows}=await db.query(scheduleSql('$1::integer','$2::date'),[employeeId,date]);
@@ -26,7 +19,7 @@ async function resolveSchedule(db,employeeId,date) {
 }
 function requireSchedule(schedule) {
   if(!schedule) {
-    const error=new AppError(409,'No active work schedule applies to this date. Ask HR to assign a schedule or set an active default.');
+    const error=new AppError(409,'No active employee work schedule is configured. Ask HR to set employees.work_schedule_id.');
     error.code='SCHEDULE_NOT_CONFIGURED';throw error;
   }
   return schedule;
@@ -42,7 +35,7 @@ function overlap(start,end,breakStart,breakEnd) {
 function calculateAttendance(date,checkIn,checkOut,schedule) {
   const start=new Date(checkIn).getTime(),finish=new Date(checkOut).getTime();
   const shiftStart=at(date,schedule.startTime),shiftEnd=at(date,schedule.endTime);
-  const breakStart=at(date,schedule.breakStart),breakEnd=at(date,schedule.breakEnd);
+  const breakStart=schedule.breakStart==null?shiftStart:at(date,schedule.breakStart),breakEnd=schedule.breakEnd==null?shiftStart:at(date,schedule.breakEnd);
   const overtimeStart=Math.max(start,shiftEnd);
   const late=start>shiftStart,early=finish<shiftEnd;
   return {

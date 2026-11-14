@@ -1,7 +1,7 @@
 const express = require('express');
 function createWorkSchedulesRouter({ service, authenticate }) {
   const router = express.Router();
-  router.post('/default',authenticate,async(req,res,next)=>{try{res.status(201).json({message:'Đã hẹn lịch mặc định từ ngày mai.',data:await service.createDefault(req.auth.userId,req.body)});}catch(e){next(e);}});
+  router.post('/default',authenticate,async(req,res,next)=>{try{await service.setDefault(req.auth.userId,'1');}catch(e){next(e);}});
   router.post('/individual',authenticate,async(req,res,next)=>{try{res.status(201).json({message:'Đã tạo và gán lịch riêng.',data:await service.createIndividual(req.auth.userId,req.body)});}catch(e){next(e);}});
   router.post('/', authenticate, async (request, response, next) => {
     try {
@@ -33,6 +33,8 @@ module.exports = { createWorkSchedulesRouter };
 
 function createScheduleAssignmentsRouter({ service, authenticate }) {
   const router = express.Router();
+  router.put('/:id/work-schedule',authenticate,async(req,res,next)=>{try{res.json({data:await service.assign(req.auth.userId,req.params.id,req.body)});}catch(e){next(e);}});
+  router.get('/:id/work-schedule',authenticate,async(req,res,next)=>{try{const rows=await service.listAssignments(req.auth.userId,req.params.id);res.json({data:rows[0]||null});}catch(e){next(e);}});
   router.get('/:id/schedule-assignments', authenticate, async (request, response, next) => {
     try {
       const data = await service.listAssignments(request.auth.userId, request.params.id);
