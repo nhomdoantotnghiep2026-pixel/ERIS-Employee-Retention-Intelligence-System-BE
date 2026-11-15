@@ -152,6 +152,12 @@ const aiService = new AiService({ repository: aiRepository, client: new AiClient
 app.use('/api/ai', createAiRouter({ service: aiService, repository: aiRepository, authenticate }));
 app.get('/ai-demo', (_req,res) => { res.set('Cache-Control','no-store'); res.sendFile(require('node:path').join(__dirname,'../demo/portal/ai-demo.html')); });
 
+const { CareerProfileRepository } = require('./modules/career-profile/career-profile.repository');
+const { CareerProfileService } = require('./modules/career-profile/career-profile.service');
+const { createCareerProfileRouter } = require('./modules/career-profile/career-profile.routes');
+app.use('/api', createCareerProfileRouter({
+  service: new CareerProfileService(new CareerProfileRepository(databasePool)), authenticate
+}));
 app.use(errorHandler);
 
 module.exports = { app, attendanceService, workSchedulesService };
