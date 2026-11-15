@@ -22,7 +22,7 @@ class WorkSchedulesRepository {
   }
   async findAll() {
     const { rows } = await this.pool.query(
-      `SELECT id, name, start_time, end_time, break_start, break_end, working_days, is_default, status
+      `SELECT id, name, start_time, end_time, break_start, break_end, working_days, is_default, status, shift_type, attendance_policy
        FROM work_schedules ORDER BY id ASC`);
     return rows;
   }
@@ -31,12 +31,13 @@ class WorkSchedulesRepository {
       await this.defaults.lock(client);
       // Lock the schedule before inspecting history, including concurrent FK assignments.
       const found = await client.query(
-        `SELECT id, name, start_time, end_time, break_start, break_end, working_days, is_default, status
+        `SELECT id, name, start_time, end_time, break_start, break_end, working_days, is_default, status, shift_type, attendance_policy
          FROM work_schedules WHERE id = $1 FOR UPDATE`, [id]);
       const existing = found.rows[0];
       if (!existing) throw new AppError(404, 'Work schedule not found.');
-      const history = await client.query(
-        'SELECT EXISTS (SELECT 1 FROM employee_schedule_assignments WHERE schedule_id = $1) AS assigned', [id]);
+      const assignments = await client.query("SELECT to_regclass('employee_schedule_assignments') IS NOT NULL AS available");
+      const history = assignments.rows[0]?.available ? await client.query(
+        'SELECT EXISTS (SELECT 1 FROM employee_schedule_assignments WHERE schedule_id = $1) AS assigned', [id]) : {rows:[{assigned:false}]};
       const pending=await this.defaults.pending(client);
       const patch = prepareUpdate(existing, history.rows[0].assigned || pending?.scheduleId===id);
       const keys = Object.keys(patch);
@@ -46,7 +47,7 @@ class WorkSchedulesRepository {
       const { rows } = await client.query(
         `UPDATE work_schedules SET ${keys.map((key, index) => `${key} = $${index + 1}`).join(', ')}
          WHERE id = $${values.length}
-         RETURNING id, name, start_time, end_time, break_start, break_end, working_days, is_default, status`, values);
+         RETURNING id, name, start_time, end_time, break_start, break_end, working_days, is_default, status, shift_type, attendance_policy`, values);
       await recordChange(client, actorId, 'work_schedules', id, 'UPDATE', existing, rows[0]);
       return rows[0];
     });
@@ -114,10 +115,11 @@ class WorkSchedulesRepository {
   async create(schedule, actorId) {
     return transaction(this.pool, async client => {
       const { rows } = await client.query(
-        `INSERT INTO work_schedules (name, start_time, end_time, break_start, break_end, working_days, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id, name, start_time, end_time, break_start, break_end, working_days, is_default, status`,
-        [schedule.name, schedule.start_time, schedule.end_time, schedule.break_start, schedule.break_end, schedule.working_days, schedule.status]);
+        `INSERT INTO work_schedules (name, start_time, end_time, break_start, break_end, working_days, status, shift_type, attendance_policy)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+         RETURNING id, name, start_time, end_time, break_start, break_end, working_days, is_default, status, shift_type, attendance_policy`,
+        [schedule.name, schedule.start_time, schedule.end_time, schedule.break_start, schedule.break_end, schedule.working_days, schedule.status,
+          schedule.shift_type||null,JSON.stringify(schedule.attendance_policy||require('../attendance/attendance-import.rules').DEFAULT_POLICY)]);
       await writeAudit(client, { actorId, entityType: 'work_schedules', entityId: rows[0].id, action: 'CREATE', newValue: rows[0] });
       return rows[0];
     });

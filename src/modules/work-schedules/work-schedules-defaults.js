@@ -23,8 +23,9 @@ class ScheduleDefaults {
  }
  async current(client){return (await client.query('SELECT * FROM work_schedules WHERE is_default=TRUE ORDER BY id FOR UPDATE')).rows[0]||null;}
  async createWithin(client,schedule,actorId){
-  const {rows}=await client.query(`INSERT INTO work_schedules(name,start_time,end_time,break_start,break_end,working_days,status)
-   VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,[schedule.name,schedule.start_time,schedule.end_time,schedule.break_start,schedule.break_end,schedule.working_days,schedule.status]);
+  const {rows}=await client.query(`INSERT INTO work_schedules(name,start_time,end_time,break_start,break_end,working_days,status,shift_type,attendance_policy)
+   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb) RETURNING *`,[schedule.name,schedule.start_time,schedule.end_time,schedule.break_start,schedule.break_end,schedule.working_days,schedule.status,
+     schedule.shift_type||null,JSON.stringify(schedule.attendance_policy||require('../attendance/attendance-import.rules').DEFAULT_POLICY)]);
   await writeAudit(client,{actorId,entityType:'work_schedules',entityId:rows[0].id,action:'CREATE',newValue:rows[0]});return rows[0];
  }
  async insert(client,employeeId,scheduleId,start,end,actorId=null){

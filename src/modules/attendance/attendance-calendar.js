@@ -41,7 +41,7 @@ const { transaction } = require('../audit_logs/audit.repository');
 const { AttendanceRepository } = require('./attendance.repository');
 const columns = 'id, name, start_date::text, end_date::text, status, created_by, created_at, updated_at';
 class AttendanceCalendarStore {
-  constructor({ databasePool }) { this.pool = databasePool; }
+  constructor({ databasePool, materializeAttendance = true }) { this.pool = databasePool; this.materializeAttendance = materializeAttendance; }
   async holiday(date) {
     const { rows } = await this.pool.query(`SELECT ${columns} FROM holidays WHERE status = 'ACTIVE' AND start_date <= $1::date AND end_date >= $1::date LIMIT 1`, [date]);
     return rows[0] || null;
@@ -64,7 +64,7 @@ class AttendanceCalendarStore {
         const updated = await client.query(
           `UPDATE holidays SET name = $2, start_date = $3, end_date = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING ${columns}`,
           [id, input.name, input.start_date, input.end_date]);
-        const affectedEmployees = input.start_date <= today && today <= input.end_date
+        const affectedEmployees = this.materializeAttendance && input.start_date <= today && today <= input.end_date
           ? await new AttendanceRepository(client).markHoliday(today, client) : 0;
         return { data: updated.rows[0], affectedEmployees };
       });
@@ -97,7 +97,7 @@ class AttendanceCalendarStore {
         const { rows } = await client.query(
           `INSERT INTO holidays (name, start_date, end_date, created_by, status) VALUES ($1, $2, $3, $4, 'ACTIVE') RETURNING ${columns}`,
           [input.name, input.start_date, input.end_date, actorId]);
-        const affectedEmployees = input.start_date <= today && today <= input.end_date
+        const affectedEmployees = this.materializeAttendance && input.start_date <= today && today <= input.end_date
           ? await new AttendanceRepository(client).markHoliday(today, client) : 0;
         return { data: rows[0], affectedEmployees };
       });

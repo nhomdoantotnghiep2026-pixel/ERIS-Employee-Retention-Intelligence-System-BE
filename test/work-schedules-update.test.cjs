@@ -19,6 +19,7 @@ test('PATCH permissions, partial updates, history restrictions, validation and r
     if (sql === 'COMMIT') return { rows: [] };
     if (sql.includes('FOR UPDATE')) return { rows: schedule && params[0] === 1 ? [structuredClone(schedule)] : [] };
     if (sql.includes('SELECT EXISTS')) return { rows: [{ assigned }] };
+    if (sql.includes('to_regclass')) return { rows: [{ available:true }] };
     if (sql.startsWith('UPDATE')) {
       const assignments = sql.split(' SET ')[1].split('WHERE')[0].trim().split(', ');
       for (let i = 0; i < assignments.length; i++) schedule[assignments[i].split(' = ')[0]] = params[i];
@@ -49,7 +50,7 @@ test('PATCH permissions, partial updates, history restrictions, validation and r
     for (const actor of [2,3,4]) assert.equal((await patch({ name: 'New' }, '1', actor)).status, 403);
     for (const id of ['0','-1','abc','1.5','2147483648']) assert.equal((await patch({ name: 'New' }, id)).status, 400);
     assert.equal((await patch({ name: 'New' }, '99')).status, 404);
-    for (const body of [{}, [], null, { id: 2 }, { is_default: true }, { endsNextDay: true }, { name: '' }, { name: 'a'.repeat(151) }, { start_time: '22:00' }, { break_end: '17:00' }, { working_days: [] }, { working_days: [8] }, { status: null }]) {
+    for (const body of [{}, [], null, { id: 2 }, { is_default: true }, { endsNextDay: true }, { name: '' }, { name: 'a'.repeat(151) }, { end_time: '08:00' }, { break_end: '12:00' }, { working_days: [] }, { working_days: [8] }, { status: null }]) {
       assert.equal((await patch(body)).status, 400, JSON.stringify(body));
       assert.deepEqual(schedule, original());
     }

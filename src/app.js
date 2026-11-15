@@ -120,6 +120,8 @@ app.get('/health', (_request, response) => {
 
 const { createAttendanceService } = require('./modules/attendance/attendance.service');
 const { AttendanceRepository } = require('./modules/attendance/attendance.repository');
+const { AttendanceImportService } = require('./modules/attendance/attendance-import.service');
+const { AttendanceImportRepository } = require('./modules/attendance/attendance-import.repository');
 const { attendanceConfig } = require('./modules/attendance/attendance.config');
 const { CompanyLocationStore } = require('./modules/attendance/company-location.store');
 const { AttendanceCalendarStore } = require('./modules/attendance/attendance-calendar');
@@ -130,13 +132,17 @@ const companyLocationStore = new CompanyLocationStore({
   fallback: { latitude: attendanceSettings.attendance.latitude, longitude: attendanceSettings.attendance.longitude,
     address: process.env.COMPANY_LOCATION_LABEL || 'FPT University HCMC' }
 });
-const attendanceCalendarStore = new AttendanceCalendarStore({ databasePool });
-const attendanceService = createAttendanceService(attendanceSettings, new AttendanceRepository(databasePool), undefined, companyLocationStore, attendanceCalendarStore, new LeaveRequestsRepository(databasePool));
+const attendanceCalendarStore = new AttendanceCalendarStore({ databasePool, materializeAttendance:false });
+const legacyAttendanceService = createAttendanceService(attendanceSettings, new AttendanceRepository(databasePool), undefined, companyLocationStore, attendanceCalendarStore, new LeaveRequestsRepository(databasePool));
+const attendanceService = new AttendanceImportService(new AttendanceImportRepository(databasePool));
 
 const companyDemoPath = require('node:path').join(__dirname, '../demo/company-location');
 app.get('/company-location-demo', (_req, res) => { res.set('Cache-Control', 'no-store'); res.sendFile(require('node:path').join(companyDemoPath, 'index.html')); });
 app.use('/company-location-demo/assets', express.static(companyDemoPath, { index: false, etag: false, setHeaders: res => res.set('Cache-Control', 'no-store') }));
-app.use('/api/v1/attendance', require('./modules/attendance/attendance.routes').createAttendanceRouter({ service: attendanceService, authenticate, databasePool, syncSchedules: employeeId=>workSchedulesService.syncDefaults(employeeId) }));
+for (const prefix of ['/api/v1/attendance','/api/attendance']) {
+  app.use(prefix, require('./modules/attendance/attendance-legacy.routes').createAttendanceLegacyRouter({service:legacyAttendanceService,authenticate,databasePool}));
+  app.use(prefix, require('./modules/attendance/attendance.routes').createAttendanceRouter({service:attendanceService,authenticate,databasePool}));
+}
 const path = require('node:path');
 for (const [route, directory] of [['/demo', 'portal'], ['/attendance-demo', 'attendance']]) {
   const folder = path.join(__dirname, '../demo', directory);

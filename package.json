@@ -25,6 +25,9 @@
     "test:demo-contracts": "node --test test/demo-contracts.test.cjs",
     "test:survey-demo": "node test/survey-demo.db.test.cjs",
     "test:attendance-schedule": "node test/attendance-schedule.test.cjs",
+    "db:migrate:attendance": "node scripts/migrate-attendance-import.js",
+    "test:attendance": "node --test test/attendance-import.test.cjs test/attendance-import.db.test.cjs",
+    "check:attendance": "node --check src/modules/attendance/attendance-import.rules.js && node --check src/modules/attendance/attendance-import.excel.js && node --check src/modules/attendance/attendance-import.repository.js && node --check src/modules/attendance/attendance-import.service.js && node --check src/modules/attendance/attendance-legacy.routes.js && node --check scripts/migrate-attendance-import.js",
     "test:work-schedules-delete": "node test/work-schedules-delete.test.cjs",
     "test:work-schedules-default-history": "node test/work-schedules-default-history.test.cjs"
   },

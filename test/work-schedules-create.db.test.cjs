@@ -37,7 +37,7 @@ test('create schedule: authentication, HR permission, validation, defaults and a
     });
     assert.equal((await post(input, null)).status, 401);
     for (const id of [2,3,4,99]) assert.equal((await post(input,id)).status, 403);
-    for (const body of [null, [], {}, { ...input, endsNextDay: true }, { ...input, is_default: true }, { ...input, id: 9 }, { ...input, start_time: '22:00' }, { ...input, break_end: '12:00' }, { ...input, start_time: '25:00' }, { ...input, working_days: [] }, { ...input, working_days: [0] }, { ...input, working_days: [1.5] }, { ...input, status: null }]) {
+    for (const body of [null, [], {}, { ...input, endsNextDay: true }, { ...input, is_default: true }, { ...input, id: 9 }, { ...input, end_time: '08:00' }, { ...input, break_end: '12:00' }, { ...input, start_time: '25:00' }, { ...input, working_days: [] }, { ...input, working_days: [0] }, { ...input, working_days: [1.5] }, { ...input, status: null }]) {
       assert.equal((await post(body)).status, 400, JSON.stringify(body));
     }
     const response = await post(input); assert.equal(response.status,201);

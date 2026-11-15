@@ -2,14 +2,16 @@ const time = { type: 'string', example: '08:00', description: 'HH:mm or HH:mm:ss
 const properties = {
   name: { type: 'string', minLength: 1, maxLength: 150 },
   start_time: time, end_time: { ...time, example: '17:00' },
-  break_start: { ...time, example: '12:00' }, break_end: { ...time, example: '13:00' },
+  break_start: { ...time, nullable:true, example: '12:00' }, break_end: { ...time, nullable:true, example: '13:00' },
+  shift_type:{type:'string',nullable:true,pattern:'^[A-Za-z0-9_-]{1,50}$',description:'Unique code used by Attendance Excel import, e.g. HC, MID, NIGHT.'},
+  attendance_policy:{type:'object',additionalProperties:false,properties:Object.fromEntries(Object.entries(require('../attendance/attendance-import.rules').DEFAULT_POLICY).map(([key,value])=>[key,{type:'integer',minimum:0,maximum:2880,default:value}]))},
   working_days: { type: 'array', minItems: 1, items: { type: 'integer', minimum: 1, maximum: 7 }, default: [1, 2, 3, 4, 5] },
   status: { type: 'string', enum: ['ACTIVE', 'INACTIVE'], default: 'ACTIVE' }
 };
 const workSchedulesPaths = {
   '/api/work-schedules': { post: {
     tags: ['Work schedules'], summary: 'HR creates a work schedule', security: [{ bearerAuth: [] }],
-    description: 'Active HR only. start_time < break_start < break_end < end_time. Created with is_default=false. Duplicate names are allowed.',
+    description: 'Active HR only. Overnight shifts are supported. Start and end must differ. Break must lie within the shift timeline; both break fields may be null. Created with is_default=false. Duplicate names are allowed; shift_type is unique.',
     requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', additionalProperties: false,
       required: ['name', 'start_time', 'end_time', 'break_start', 'break_end'], properties } } } },
     responses: {
@@ -37,7 +39,7 @@ workSchedulesPaths['/api/work-schedules'].get = {
 };
 workSchedulesPaths['/api/work-schedules/{id}'] = { patch: {
   tags: ['Work schedules'], summary: 'HR updates permitted work schedule fields', security: [{ bearerAuth: [] }],
-  description: 'Active HR only. Default schedules and schedules with any assignment history permit name updates only. Other schedules permit name, time, working_days and status updates. Merged times must satisfy start_time < break_start < break_end < end_time. id and is_default cannot be changed.',
+  description: 'Active HR only. Default schedules and schedules with assignment history permit name, shift_type and attendance_policy updates. Other schedules also permit time, working_days and status updates. Overnight shifts supported; break must fit the shift timeline. Attendance history retains its snapshot. id and is_default cannot be changed.',
   parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer', minimum: 1, maximum: 2147483647 } }],
   requestBody: { required: true, content: { 'application/json': { schema: {
     type: 'object', additionalProperties: false, minProperties: 1,
