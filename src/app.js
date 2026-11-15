@@ -106,6 +106,8 @@ app.use('/api', createPolicyDemoRouter({ repository: new PolicyDemoRepository(da
 app.get('/policy-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/policy-demo.html'));});
 app.get('/leave-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/leave-demo.html'));});
 app.get('/work-schedules-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/work-schedules-demo.html'));});
+app.get('/attendance-import-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/attendance-import/index.html'));});
+app.use('/attendance-import-demo/assets', express.static(require('node:path').join(__dirname,'../demo/attendance-import'),{index:false,etag:false,setHeaders:res=>res.set('Cache-Control','no-store')}));
 app.get('/survey-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/survey-demo.html'));});
 const { AuditReadRepository } = require('./modules/audit_logs/audit-read.repository');
 const { AuditReadService } = require('./modules/audit_logs/audit-read.service');

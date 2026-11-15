@@ -14,9 +14,6 @@ function createAttendanceRouter({ service, authenticate, databasePool, syncSched
          FROM users u JOIN role r ON r.id = u.role_id LEFT JOIN employees e ON e.id = u.employee_id WHERE u.id = $1`, [req.auth.userId]);
       const user = rows[0];
       if (!user || user.status !== 'ACTIVE') throw new AppError(401, 'Active account required.');
-      if (user.employeeId == null) throw new AppError(403, 'An employee profile is required for attendance.');
-      if (user.employmentStatus !== 'ACTIVE') throw new AppError(403, 'An ACTIVE employee profile is required for attendance.');
-      if(syncSchedules)await syncSchedules(user.employeeId);
       req.attendanceUser = user;
       next();
     } catch (error) { next(error); }
@@ -32,7 +29,9 @@ function createAttendanceRouter({ service, authenticate, databasePool, syncSched
     next();
   };
   const requireHr = (req, _res, next) => req.attendanceUser.role_name==='HR' ? next() : next(new AppError(403,'Only HR can view attendance history.'));
-  router.get('/', requireHr, handler(req => service.list(req.attendanceUser)));
+  router.get('/', requireHr, handler(req => service.list(req.attendanceUser,req.query.recordStatus)));
+  require('./attendance.import').registerImport(router, requireHr, databasePool);
+  router.delete('/:id', requireHr, handler(req=>require('./attendance.cancellation').cancelAttendance(databasePool,req.auth.userId,req.params.id,req.body)));
   router.get('/company-location', requireHr, handler(req => service.companyLocation(req.attendanceUser)));
   router.put('/company-location', requireHr, handler(req => service.updateCompanyLocation(req.attendanceUser, req.body)));
   router.get('/config', requireProfile, handler(req => service.configuration(req.attendanceUser)));
@@ -53,9 +52,6 @@ function createAttendanceRouter({ service, authenticate, databasePool, syncSched
       res.status(204).end();
     } catch (error) { next(error); }
   });
-  router.post('/close-day', requireHr, handler(req => service.closeDay(req.attendanceUser,req.body)));
-  router.post('/check-in', requireProfile, handler(req => service.checkIn(req.attendanceUser, req.body)));
-  router.post('/check-out', requireProfile, handler(req => service.checkOut(req.attendanceUser, req.body)));
   router.get('/:id', requireHr, handler(req => service.detail(req.attendanceUser, validateAttendanceId(req.params.id))));
   // Keep business error codes local to attendance, matching the current app's message format.
   router.use((error, req, res, next) => {

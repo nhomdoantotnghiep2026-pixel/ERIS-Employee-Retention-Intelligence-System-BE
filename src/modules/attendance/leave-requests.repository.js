@@ -187,7 +187,7 @@ class LeaveRequestsRepository {
         const result=await client.query(`INSERT INTO attendance(employee_id,work_date,attendance_status,check_in,check_out,working_minutes,overtime_minutes,created_at,updated_at)
           VALUES($1,$2::date,'ON_LEAVE',$2::date+$3::time,$2::date+$4::time,0,0,
             CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh',CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh')
-          ON CONFLICT(employee_id,work_date) DO UPDATE SET attendance_status='ON_LEAVE',working_minutes=0,overtime_minutes=0,
+          ON CONFLICT (employee_id,work_date) WHERE (record_status='ACTIVE') DO UPDATE SET attendance_status='ON_LEAVE',working_minutes=0,overtime_minutes=0,
             check_in=EXCLUDED.check_in,check_out=EXCLUDED.check_out,
             updated_at=CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh'
           WHERE attendance.attendance_status IN ('ABSENT','ON_LEAVE') AND attendance.check_in IS NULL AND attendance.check_out IS NULL
