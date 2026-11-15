@@ -1,0 +1,6 @@
+-- SUPERSEDED: no migration is required for the current surveys implementation.
+-- Cycle is derived from survey_questions -> survey_categories.cycle_number.
+-- Rating configuration uses the existing answer_config column and RATING enum.
+-- Satisfaction scoring and validation run in backend code.
+-- Legacy conflicting triggers were removed by the database owner.
+-- This file intentionally contains no DDL or data changes.
