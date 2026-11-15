@@ -30,7 +30,7 @@ function createAttendanceRouter({service,authenticate,databasePool}) {
   router.get('/:id',json(req=>service.detail(req.attendanceUser,req.params.id)));
   router.use((error,_req,res,next)=>{
     if(error instanceof multer.MulterError)return res.status(400).json({code:'ATT-001',message:error.message});
-    if(error instanceof AppError)return res.status(error.statusCode).json({message:error.message,...(error.code?{code:error.code}:{})});
+    if(error instanceof AppError)return res.status(error.statusCode).json({message:error.message,...(error.code?{code:error.code}:{}),...(error.conflicts?{conflicts:error.conflicts}:{})});
     if(error.code==='23505')return res.status(409).json({code:'ATTENDANCE_CONFLICT',message:'Data changed concurrently; reload preview.'});
     next(error);
   });

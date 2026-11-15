@@ -1,3 +1,4 @@
+const { lockEmployee, assertNoLeave } = require('../leave-records/leave-records.repository');
 const { scheduleSql, resolveSchedule, requireSchedule, isScheduledDay, calculateAttendance, at } = require('./attendance-schedule');
 const { AppError } = require('../../common/errors/app-error');
 function fail(code, message) { const error = new AppError(409, message); error.code = code; throw error; }
@@ -35,7 +36,9 @@ class AttendanceRepository {
       const { rows: actors } = await client.query(`SELECT u.employee_id FROM users u JOIN employees e ON e.id=u.employee_id
         WHERE u.id=$1 AND u.employee_id=$2 AND u.status='ACTIVE' AND e.employment_status='ACTIVE' FOR SHARE OF u,e`, [userId, employeeId]);
       if (!actors[0]) throw new AppError(403, 'An ACTIVE linked employee profile is required.');
+      await lockEmployee(client,employeeId);
       await client.query(`SELECT pg_advisory_xact_lock(hashtext('attendance:' || $1::text || ':' || $2::text))`, [employeeId,date]);
+      await assertNoLeave(client,employeeId,date);
       const schedule=requireSchedule(await resolveSchedule(client,employeeId,date));
       if(!isScheduledDay(date,schedule)) fail('NON_WORKDAY','This date is not a working day in the employee schedule.');
       const repository = new AttendanceRepository(client);
@@ -79,7 +82,8 @@ class AttendanceRepository {
         AND e.hire_date<=$1::date AND EXISTS (SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')
         ORDER BY e.id`, [date]);
       for (const employee of employees) {
-        await client.query(`SELECT pg_advisory_xact_lock(hashtext('attendance:' || $1::text || ':' || $2::text))`, [employee.id,date]);
+        await lockEmployee(client,employeeId);
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext('attendance:' || $1::text || ':' || $2::text))`, [employee.id,date]);
         const current = await new AttendanceRepository(client).find(employee.id,date);
         if (current?.attendanceStatus !== 'ON_LEAVE' && (current?.checkIn || current?.checkOut)) throw new AppError(409, `Đã có người chấm công ngày ${date}; không thể đặt ngày lễ.`);
         await client.query(`INSERT INTO public.attendance (employee_id,work_date,attendance_status,working_minutes,overtime_minutes)

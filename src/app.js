@@ -163,6 +163,11 @@ const { createCareerProfileRouter } = require('./modules/career-profile/career-p
 app.use('/api', createCareerProfileRouter({
   service: new CareerProfileService(new CareerProfileRepository(databasePool)), authenticate
 }));
+const { LeaveRecordsRepository } = require('./modules/leave-records/leave-records.repository');
+const { LeaveRecordsService } = require('./modules/leave-records/leave-records.service');
+const { createLeaveRecordsRouter } = require('./modules/leave-records/leave-records.routes');
+const leaveRecordsService = new LeaveRecordsService(new LeaveRecordsRepository(databasePool));
+app.use('/api', createLeaveRecordsRouter({ service: leaveRecordsService, authenticate }));
 app.use(errorHandler);
 
 module.exports = { app, attendanceService, workSchedulesService };

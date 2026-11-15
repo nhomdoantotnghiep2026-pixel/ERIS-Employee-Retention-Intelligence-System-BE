@@ -1,3 +1,4 @@
+const { assertNoLeave, lockEmployee } = require('../leave-records/leave-records.repository');
 const { randomUUID, createHash } = require('node:crypto');
 const R = require('./attendance-import.rules');
 const { parseWorkbook, errorsWorkbook } = require('./attendance-import.excel');
@@ -37,6 +38,7 @@ class AttendanceImportService {
             if(!row.candidates.includes(row.work_date))R.fail('ATT-007','Selected shift date is not a matching candidate.');
             Object.assign(row,R.calculate(row.work_date,row.check_in,row.check_out,schedule));
             if(!(schedule.working_days||[]).includes(new Date(row.work_date+'T00:00:00Z').getUTCDay()||7))row.issues.push(issue('ATT-011','Attendance is outside the schedule working days.','WARNING'));
+            await assertNoLeave(db,employee.id,row.work_date);
             const current=await this.repo.current(db,employee.id,row.work_date);
             row.existing=existingToken(current);row.previous=current;
             row.action=!current?'INSERT':same(row,current)?'SKIP':'CHANGED';
@@ -113,6 +115,7 @@ class AttendanceImportService {
       for(const sid of scheduleIds) { const s=(await db.query('SELECT * FROM work_schedules WHERE id=$1 FOR SHARE',[sid])).rows[0];schedules.set(sid,s); }
       const employeeIds=[...new Set(included.map(r=>r.employee_id))].sort((a,b)=>a-b);
       for(const eid of employeeIds) {
+        await lockEmployee(db,eid);
         const e=(await db.query('SELECT id,employee_code,full_name FROM employees WHERE id=$1 FOR SHARE',[eid])).rows[0];
         if(!e||included.some(r=>r.employee_id===eid&&(r.employee_code!==e.employee_code||r.full_name!==e.full_name)))R.fail('STALE_PREVIEW','Employee profile changed; preview again.',409);
       }
@@ -184,6 +187,7 @@ class AttendanceImportService {
       const target=action==='CANCEL'?'CANCEL':'ACTIVE';
       if(row.record_status===target)R.fail('INVALID_TRANSITION',`Record already ${target}.`,409);
       if(action==='RESTORE') {
+        await assertNoLeave(db,row.employee_id,row.work_date);
         if(!row.schedule_snapshot||!row.check_in||!row.check_out)R.fail('LEGACY_RECORD','Restore requires a valid timestamp pair and schedule snapshot.',409);
         R.calculate(row.work_date,row.check_in,row.check_out,row.schedule_snapshot);
       }

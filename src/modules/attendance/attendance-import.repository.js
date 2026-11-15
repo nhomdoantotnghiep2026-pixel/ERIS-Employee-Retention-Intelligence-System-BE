@@ -1,3 +1,4 @@
+const { lockEmployee, assertNoLeave } = require('../leave-records/leave-records.repository');
 const { fail, CALCULATION_VERSION } = require('./attendance-import.rules');
 const { writeAudit } = require('../audit_logs/audit.repository');
 // Format local timestamps in SQL; pg's host timezone must never change their meaning.
@@ -35,6 +36,7 @@ class AttendanceImportRepository {
       WHERE a.id=$1 ${lock?'FOR UPDATE OF a':''}`, [id])).rows[0] || null;
   }
   async lockKey(db, employeeId, workDate) {
+    await lockEmployee(db, employeeId);
     await db.query("SELECT pg_advisory_xact_lock(hashtext('attendance:' || $1::text || ':' || $2::text))",[employeeId,workDate]);
   }
   async batch(db, id, lock=false) {
@@ -48,6 +50,7 @@ class AttendanceImportRepository {
     await writeAudit(db,{actorId,entityType:'attendance',entityId:after.id,action,oldValue:before,newValue:{...after,audit_reason:reason}});
   }
   async write(db, row, before, actorId, reason=null, batchId=null) {
+    await assertNoLeave(db, row.employee_id, row.work_date);
     const values=[row.employee_id,row.work_date,row.work_schedule_id,row.check_in,row.check_out,row.working_minutes,
       row.late_mins,row.early_mins,row.overtime_minutes,row.outside_shift_minutes,JSON.stringify(row.schedule_snapshot),CALCULATION_VERSION,batchId];
     if (before) {
