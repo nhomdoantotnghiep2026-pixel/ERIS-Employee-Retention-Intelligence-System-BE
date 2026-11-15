@@ -8,7 +8,7 @@ test('TEMP schema: create, assign, validate, import, duplicate, unassign and aud
  try{
   await c.query(`CREATE TEMP TABLE role(id int primary key,name text);
    CREATE TEMP TABLE users(id int primary key,role_id int,status text);
-   CREATE TEMP TABLE work_schedules(id serial primary key,name text,shift_type text,start_time time,end_time time,break_start time,break_end time,working_days int[],status text);
+   CREATE TEMP TABLE work_schedules(id serial primary key,name text,shift_type text,start_time time,end_time time,break_start time,break_end time,working_days int[],status text,attendance_policy jsonb);
    CREATE TEMP TABLE employees(id int primary key,employee_code text unique,hire_date date,work_schedule_id int references work_schedules(id));
    CREATE TEMP TABLE attendance(id serial primary key,employee_id int references employees(id),work_date date,check_in timestamp,check_out timestamp,working_minutes int,overtime_minutes int,late_mins int,early_mins int,leave_type text,attendance_status text,record_status text DEFAULT 'ACTIVE',cancellation_reason text,cancelled_by int REFERENCES users(id),cancelled_at timestamptz,updated_at timestamp);
    CREATE UNIQUE INDEX ON attendance(employee_id,work_date) WHERE record_status='ACTIVE';

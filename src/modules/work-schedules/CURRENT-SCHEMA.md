@@ -1,7 +1,7 @@
 # Current work schedule contract
 
 Employees hold one nullable work_schedule_id FK to work_schedules.id.
-There are no dated assignment rows and no is_default column. Assignment updates are immediate.
+There are no dated assignment rows in the current contract. Assignment updates are immediate. A legacy is_default column may exist after the additive Attendance migration; it is not used by current scheduling and no default-schedule job runs.
 
 - POST /api/work-schedules creates a shift (name, shift_type, start_time, end_time,
   break_start, break_end, working_days, status).
@@ -18,12 +18,15 @@ Only active HR can mutate. New assignments require ACTIVE schedules. Changes and
 Break times may both be null for a shift without an unpaid break. Current database requires
 the table owner to run scripts/work-schedules-optional-break.sql first. A single null break
 boundary is rejected. Shift length is determined by start/end, never fixed to eight hours.
-Time, status, working-day and shift_type changes to currently assigned schedules are blocked;
-create a new shift definition and reassign instead. Renaming is allowed.
+Time, status and working-day changes to currently assigned schedules are blocked;
+create a new shift definition and reassign instead. Renaming and import metadata (shift_type,
+attendance_policy) updates are allowed. Overnight shifts and breaks after midnight are supported.
 
-Import uses the employee's current schedule even for historical attendance. Without historical
-schedule data it cannot establish the shift actually used in the past. Warnings/errors must be
-reviewed against source records, not resolved by silently changing imported values.
+The active Attendance importer resolves work_schedules by shift_type from Excel, independently
+of employees.work_schedule_id. It saves a calculation snapshot for historical edits. Employee
+current schedule remains the source for other features such as AI and leave eligibility.
+The former one-step importer checked the employee FK; its helpers are retained for compatibility
+tests but its HTTP endpoint returns 410. Use /attendance-demo and the Preview/Confirm APIs.
 
 AI schedule lookup now reads the employee FK. Weekly hours still use the current ACTIVE schedule.
 Absence totals use imported ON_LEAVE/ABSENT records, excluding active holidays; current working_days
@@ -31,4 +34,5 @@ are no longer used to filter historical absences. Existing model semantics remai
 Sick_Days still means all imported absence, not confirmed illness. New model selection is separate.
 
 The former DEFAULT-FLOW.md and dated-assignment tests describe the retired contract;
-use attendance-import.test.cjs, import-shift-validation.test.cjs and attendance-import-current.db.test.cjs.
+use attendance-import.test.cjs and attendance-import.db.test.cjs for the active import flow;
+attendance-legacy-import.test.cjs, import-shift-validation.test.cjs and attendance-import-current.db.test.cjs preserve the retired helper coverage.

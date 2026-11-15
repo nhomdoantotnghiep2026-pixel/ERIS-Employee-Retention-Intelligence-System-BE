@@ -1,5 +1,11 @@
 -- Execute as attendance table owner. No attendance rows are deleted.
+-- LEGACY ONLY: Preview/Confirm installations must use npm run db:migrate:attendance.
 BEGIN;
+DO $$ BEGIN
+ IF EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='attendance' AND column_name='calculation_version') THEN
+  RAISE EXCEPTION 'Legacy cancellation migration is incompatible with Preview/Confirm Attendance. Use scripts/migrate-attendance-import.js.';
+ END IF;
+END $$;
 SET LOCAL lock_timeout='5s';
 ALTER TABLE public.attendance ADD COLUMN IF NOT EXISTS record_status varchar(20);
 ALTER TABLE public.attendance ADD COLUMN IF NOT EXISTS cancellation_reason text;

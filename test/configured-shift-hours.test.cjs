@@ -26,7 +26,8 @@ test('each employee shift defines its own OT; break overlap, late arrival after 
 });
 test('create and import enforce the same break-pair and day validation',()=>{
  const noBreak=validateCreateScheduleInput({...shift,break_start:null,break_end:null});assert.equal(noBreak.break_start,null);
- for(const schedule of [{...shift,break_end:null},{...shift,break_start:null},{...shift,break_start:'18:30:00',break_end:'19:00:00'},{...shift,working_days:[1,1]},{...shift,working_days:[0]},{...shift,end_time:'08:00:00'}]){
+ for(const schedule of [{...shift,break_end:null},{...shift,break_start:null},{...shift,break_start:'18:30:00',break_end:'19:00:00'},{...shift,working_days:[1,1]},{...shift,working_days:[0]},{...shift,end_time:'09:00:00'}]){
  assert.throws(()=>validateCreateScheduleInput(schedule));assert.ok(run({},schedule).errors.some(e=>e.code==='INVALID_SCHEDULE'));
  }
+ assert.equal(validateCreateScheduleInput({...shift,start_time:'22:00:00',end_time:'06:00:00',break_start:'02:00:00',break_end:'03:00:00'}).end_time,'06:00:00');
 });

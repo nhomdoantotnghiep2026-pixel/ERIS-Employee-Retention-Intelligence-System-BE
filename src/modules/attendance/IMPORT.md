@@ -51,3 +51,8 @@ Response: `{total,created,failed,results:[{row,status,id?,employeeCode?,errors?:
 Filter FAILED results to show HR the rows to correct and re-upload.
 
 Removed HTTP write endpoints: check-in, check-out, close-day. Existing history endpoints remain.
+# Retired one-step importer
+
+This document describes the previous format and direct-import helper. The live `/import`
+endpoint now returns 410. Use [README.md](README.md), `/attendance-demo`, and the
+Preview → Confirm endpoints. The legacy demo URL redirects to the current demo.

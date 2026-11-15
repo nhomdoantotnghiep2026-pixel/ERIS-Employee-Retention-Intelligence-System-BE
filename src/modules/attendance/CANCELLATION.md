@@ -28,3 +28,8 @@ Select Đã hủy to inspect metadata. Reimport creates a new ID; a second ACTIV
 
 Verification: node test/attendance-import-current.db.test.cjs uses TEMP tables only and tests
 cancellation, repeat cancellation, permission, reason, audit rollback and reimport.
+# Legacy cancellation contract
+
+The active API uses PATCH `/:id/cancel` and `/:id/restore`, `record_status=CANCEL`,
+an expected version, and a mandatory reason. Cancelled rows retain the employee/date unique
+key. See [README.md](README.md). The DELETE/CANCELLED flow below is historical and is not mounted.

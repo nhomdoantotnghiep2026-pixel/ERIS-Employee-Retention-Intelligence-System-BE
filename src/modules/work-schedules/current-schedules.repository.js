@@ -1,6 +1,6 @@
 const {AppError}=require('../../common/errors/app-error');
 const {transaction,recordChange}=require('../audit_logs/audit.repository');
-const columns='id,name,shift_type,start_time,end_time,break_start,break_end,working_days,status';
+const columns='id,name,shift_type,start_time,end_time,break_start,break_end,working_days,status,attendance_policy';
 class WorkSchedulesRepository {
  constructor(pool){this.pool=pool;}
  async findActor(id){return (await this.pool.query('SELECT r.name AS role,u.status FROM users u JOIN role r ON r.id=u.role_id WHERE u.id=$1',[id])).rows[0]||null;}
@@ -10,7 +10,7 @@ class WorkSchedulesRepository {
  async create(schedule,actorId){return transaction(this.pool,c=>this.insert(c,schedule,actorId));}
  async insert(c,s,actorId){
   await this.checkBreakSchema(c,s);
-  const row=(await c.query(`INSERT INTO work_schedules(name,shift_type,start_time,end_time,break_start,break_end,working_days,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING ${columns}`,[s.name,s.shift_type,s.start_time,s.end_time,s.break_start,s.break_end,s.working_days,s.status])).rows[0];
+  const row=(await c.query(`INSERT INTO work_schedules(name,shift_type,start_time,end_time,break_start,break_end,working_days,status,attendance_policy) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb) RETURNING ${columns}`,[s.name,s.shift_type,s.start_time,s.end_time,s.break_start,s.break_end,s.working_days,s.status,JSON.stringify(s.attendance_policy||require('../attendance/attendance-import.rules').DEFAULT_POLICY)])).rows[0];
   await recordChange(c,actorId,'work_schedules',row.id,'CREATE',null,row);return row;
  }
  async update(id,actorId,prepare){return transaction(this.pool,async c=>{

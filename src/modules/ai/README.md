@@ -61,4 +61,3 @@ npm run test:ai: test mapping, thiếu feature không tạo snapshot, kiểm tra
 npm run test:ai:smoke: Express thật → Python thật, chọn snapshot đã lưu, save=false, không tạo domain data. Không tự tạo snapshot nếu DB chưa có snapshot hoàn chỉnh.
 
 Model mexwell-rf12-demo-v1-20e0a090ced2 có schema mexwell-12-v1 và validation_status NO_QUALIFIED_MEXWELL_MODEL. ROC-AUC OOF ~0.504, chưa đạt chất lượng dự báo; dùng demo kỹ thuật. Không tự gán mức rủi ro, không tự sinh policy. SHAP là xác suất: 0.01 = 1 điểm phần trăm, không xác nhận nguyên nhân. Model không có horizon 90 ngày.
-

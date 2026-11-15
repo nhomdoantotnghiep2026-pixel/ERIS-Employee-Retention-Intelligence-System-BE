@@ -1,0 +1,42 @@
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const express=require('express');
+const {databasePool}=require('../src/config/database');
+const {WorkSchedulesRepository}=require('../src/modules/work-schedules/work-schedules.repository');
+const {WorkSchedulesService}=require('../src/modules/work-schedules/work-schedules.service');
+const {createWorkSchedulesRouter,createScheduleAssignmentsRouter}=require('../src/modules/work-schedules/work-schedules.routes');
+const {errorHandler}=require('../src/common/middleware/error-handler');
+test('merged current-schedule HTTP contract: auth, overnight policy, FK assignment, snapshot-safe metadata and rollback',async()=>{
+ let c,server;
+ try{
+  c=await databasePool.connect();
+  await c.query(`CREATE TEMP TABLE role(id int primary key,name text);
+    CREATE TEMP TABLE users(id int primary key,role_id int,status text);
+    CREATE TEMP TABLE work_schedules(id serial primary key,name text,shift_type text unique,start_time time,end_time time,break_start time,break_end time,working_days int[],status text,attendance_policy jsonb);
+    CREATE TEMP TABLE employees(id int primary key,work_schedule_id int references work_schedules(id));
+    CREATE TEMP TABLE audit_logs(id serial primary key,user_id int,entity_type text,entity_id bigint,action text,old_value jsonb,new_value jsonb);
+    INSERT INTO role VALUES(1,'HR'),(2,'EMPLOYEE');INSERT INTO users VALUES(1,1,'ACTIVE'),(2,2,'ACTIVE'),(3,1,'INACTIVE');INSERT INTO employees VALUES(10,NULL);`);
+  const pool={query:(...a)=>c.query(...a),connect:async()=>({query:(...a)=>c.query(...a),release(){}})};
+  const service=new WorkSchedulesService(new WorkSchedulesRepository(pool));
+  const authenticate=(req,res,next)=>{if(!req.get('actor'))return res.sendStatus(401);req.auth={userId:Number(req.get('actor'))};next();};
+  const app=express();app.use(express.json());app.use('/schedules',createWorkSchedulesRouter({service,authenticate}));app.use('/employees',createScheduleAssignmentsRouter({service,authenticate}));app.use(errorHandler);
+  server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
+  const url=`http://127.0.0.1:${server.address().port}`;
+  const call=(path,method='GET',body,actor=1)=>fetch(url+path,{method,headers:{'Content-Type':'application/json',...(actor?{actor:String(actor)}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});
+  const input={name:'Night',shift_type:'NIGHT',start_time:'22:00',end_time:'06:00',break_start:'02:00',break_end:'03:00',attendance_policy:{late_arrival_minutes:600}};
+  assert.equal((await call('/schedules','POST',input,null)).status,401);
+  for(const actor of [2,3])assert.equal((await call('/schedules','POST',input,actor)).status,403);
+  const response=await call('/schedules','POST',input);assert.equal(response.status,201);const row=(await response.json()).data;
+  assert.equal(row.attendance_policy.late_arrival_minutes,600);assert.equal(row.end_time,'06:00:00');
+  assert.equal((await call('/employees/10/work-schedule','PUT',{work_schedule_id:row.id})).status,200);
+  assert.equal((await call('/employees/10/work-schedule').then(r=>r.json())).data.shift_type,'NIGHT');
+  assert.equal((await call('/schedules/'+row.id,'PATCH',{end_time:'07:00'})).status,409);
+  const patched=await call('/schedules/'+row.id,'PATCH',{shift_type:'NIGHT_V2',attendance_policy:{late_arrival_minutes:700}});assert.equal(patched.status,200);assert.equal((await patched.json()).data.attendance_policy.late_arrival_minutes,700);
+  assert.equal((await call('/schedules/'+row.id,'PATCH',{working_days:[1,1]})).status,409);
+  assert.equal((await call('/schedules/default','POST',{})).status,410);
+  assert.equal((await call('/employees/10/work-schedule','PUT',{schedule_id:row.id,effective_from:'2026-11-16'})).status,400);
+  await c.query("ALTER TABLE audit_logs ADD CONSTRAINT fail_update CHECK(action <> 'UPDATE') NOT VALID");
+  assert.equal((await call('/schedules/'+row.id,'PATCH',{name:'Must rollback'})).status,500);
+  assert.equal((await c.query('SELECT name FROM work_schedules WHERE id=$1',[row.id])).rows[0].name,'Night');
+ }finally{if(server)await new Promise(resolve=>server.close(resolve));if(c){await c.query('ROLLBACK');await c.query('DISCARD TEMP');c.release();}await databasePool.end();}
+});
