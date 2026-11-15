@@ -11,6 +11,7 @@ function createAttendanceRouter({service,authenticate,databasePool}) {
   });
   const hr=(req,_res,next)=>req.attendanceUser.role_name==='HR'?next():next(new AppError(403,'Only HR can manage attendance.'));
   const json=fn=>async(req,res,next)=>{try{res.json(await fn(req));}catch(e){next(e);}};
+  router.post('/import',hr,(_req,res)=>res.status(410).json({code:'IMPORT_RETIRED',message:'Use POST /import/preview and POST /import/:batchId/confirm. Attendance metrics are calculated by the server.'}));
   router.post('/import/preview',hr,upload.single('file'),json(req=>service.preview(req.attendanceUser,req.file)));
   router.get('/import/history',hr,json(req=>service.history(req.attendanceUser,req.query)));
   router.get('/import/:batchId',hr,json(req=>service.batch(req.attendanceUser,req.params.batchId)));

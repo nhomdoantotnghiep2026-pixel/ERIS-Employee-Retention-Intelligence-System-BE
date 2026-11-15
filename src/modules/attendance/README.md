@@ -35,7 +35,7 @@ Set each importable Work Schedule's unique `shift_type` using `PATCH /api/work-s
 }
 ```
 
-These are configurable technical defaults, not legal/payroll rules. Both break fields may be null for a shift without breaks. The break must fit entirely inside the shift timeline. A shift cannot have equal start/end times. Assigned/default schedules retain their existing restrictions on changing time fields; their code and import policy can be edited.
+These are configurable technical defaults, not legal/payroll rules. Both break fields may be null for a shift without breaks. The break must fit entirely inside the shift timeline. A shift cannot have equal start/end times. Currently assigned schedules retain restrictions on changing time fields; their code and import policy can be edited. Assignment for other features uses employees.work_schedule_id; default scheduling is retired and no automatic scheduling job runs.
 
 ## Excel and Preview
 
@@ -91,4 +91,4 @@ The demo at `/attendance-demo` supports login, upload, Preview, candidate choice
 
 `test/attendance-import.test.cjs` covers the numeric HC/NIGHT examples, invalid breaks/dates, candidate ambiguity and Excel date systems. `test/attendance-import.db.test.cjs` creates a unique disposable PostgreSQL schema, applies the actual migration twice, and verifies Preview states, idempotence, duplicate decisions, concurrent imports from two HR users, stale data, snapshot history, mutation Audit, full rollback on Audit failure, permissions and HTTP upload/routes. It drops only its own generated schema; it does not modify employee/Attendance data in public.
 
-The separate legacy `work-schedules-default-history.test.cjs` requires `public.employee_schedule_assignments`, which is absent in the current database; that test cannot initialize here. Attendance import and schedule-code mapping are verified without that optional table. Browser interaction for the replaced demo has not been automated.
+Tests for dated/default assignments describe a retired contract. `npm run test:work-schedules` verifies the merged current-FK contract, overnight configuration, metadata edits and audit rollback. Attendance import remains independent of employee assignments. Browser interaction for the replaced demo has not been automated.

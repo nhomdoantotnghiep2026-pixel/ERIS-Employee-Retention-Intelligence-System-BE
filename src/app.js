@@ -92,10 +92,7 @@ app.use('/api/positions', createPositionsRouter({ positionsController, authentic
 const { WorkSchedulesRepository } = require('./modules/work-schedules/work-schedules.repository');
 const { WorkSchedulesService } = require('./modules/work-schedules/work-schedules.service');
 const { createWorkSchedulesRouter, createScheduleAssignmentsRouter } = require('./modules/work-schedules/work-schedules.routes');
-const { DefaultScheduleStore } = require('./modules/work-schedules/work-schedules-default.store');
-const defaultScheduleStore=new DefaultScheduleStore({redisClient,ensureRedisConnection,
-  key:'eris:default-schedule:pending:'+require('node:crypto').createHash('sha256').update([require('./config/env').env.database.host,require('./config/env').env.database.port,require('./config/env').env.database.name].join(':')).digest('hex').slice(0,16)});
-const workSchedulesService=new WorkSchedulesService(new WorkSchedulesRepository(databasePool,{defaultStore:defaultScheduleStore}));
+const workSchedulesService=new WorkSchedulesService(new WorkSchedulesRepository(databasePool));
 app.use('/api/employees',createScheduleAssignmentsRouter({service:workSchedulesService,authenticate}));
 app.use('/api/work-schedules',createWorkSchedulesRouter({service:workSchedulesService,authenticate}));
 app.use('/api/surveys', createSurveysRouter({ surveysController, authenticate }));
@@ -106,6 +103,8 @@ app.use('/api', createPolicyDemoRouter({ repository: new PolicyDemoRepository(da
 app.get('/policy-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/policy-demo.html'));});
 app.get('/leave-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/leave-demo.html'));});
 app.get('/work-schedules-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/work-schedules-demo.html'));});
+app.get('/attendance-import-demo', (_req,res) => {res.set('Cache-Control','no-store');res.redirect('/attendance-demo');});
+app.use('/attendance-import-demo/assets', express.static(require('node:path').join(__dirname,'../demo/attendance-import'),{index:false,etag:false,setHeaders:res=>res.set('Cache-Control','no-store')}));
 app.get('/survey-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/survey-demo.html'));});
 const { AuditReadRepository } = require('./modules/audit_logs/audit-read.repository');
 const { AuditReadService } = require('./modules/audit_logs/audit-read.service');
@@ -149,6 +148,15 @@ for (const [route, directory] of [['/demo', 'portal'], ['/attendance-demo', 'att
   app.get(route, (_req, res) => { res.set('Cache-Control', 'no-store'); res.sendFile(path.join(folder, 'index.html')); });
   app.use(route + '/assets', express.static(folder, { index: false, etag: false, setHeaders: res => res.set('Cache-Control', 'no-store') }));
 }
+const { AiRepository } = require('./modules/ai/ai.repository');
+const { AiService } = require('./modules/ai/ai.service');
+const { AiClient, aiConfig } = require('./modules/ai/ai.client');
+const { createAiRouter } = require('./modules/ai/ai.routes');
+const aiRepository = new AiRepository(databasePool);
+const aiService = new AiService({ repository: aiRepository, client: new AiClient(aiConfig()) });
+app.use('/api/ai', createAiRouter({ service: aiService, repository: aiRepository, authenticate }));
+app.get('/ai-demo', (_req,res) => { res.set('Cache-Control','no-store'); res.sendFile(require('node:path').join(__dirname,'../demo/portal/ai-demo.html')); });
+
 app.use(errorHandler);
 
 module.exports = { app, attendanceService, workSchedulesService };
