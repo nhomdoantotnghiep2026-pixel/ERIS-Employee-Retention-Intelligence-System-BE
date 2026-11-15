@@ -48,7 +48,7 @@ function build(row,opts,today=todayVN()) {
   const salary=finite(row.current_salary);
   if(salary!==null&&opts.vndPerUsd) add('Monthly_Salary',Number((salary/opts.vndPerUsd).toFixed(4)),'employees.current_salary VND / vndPerUsd do HR nhập');
   add('Promotions',finite(row.promotions),'employee_job_histories PROMOTION đến snapshot');
-  add('Employee_Satisfaction_Score',finite(row.satisfaction)===null?null:Number(Number(row.satisfaction).toFixed(2)),'Latest submitted survey; mean rounded to 2 decimals');
+  add('Employee_Satisfaction_Score',finite(row.satisfaction)===null?null:Number(Number(row.satisfaction).toFixed(2)),'Latest submitted survey with configured core questions; core-only mean rounded to 2 decimals');
   add('Work_Hours_Per_Week',finite(row.scheduled_weekly_hours),'Current ACTIVE schedule: weekly hours excluding breaks and overtime');
   if(Number(row.ytd_incomplete_days)===0) {
     const overtime=finite(row.ytd_overtime_minutes);

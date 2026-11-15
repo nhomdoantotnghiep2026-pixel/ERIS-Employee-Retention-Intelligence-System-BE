@@ -95,7 +95,7 @@ const { createWorkSchedulesRouter, createScheduleAssignmentsRouter } = require('
 const workSchedulesService=new WorkSchedulesService(new WorkSchedulesRepository(databasePool));
 app.use('/api/employees',createScheduleAssignmentsRouter({service:workSchedulesService,authenticate}));
 app.use('/api/work-schedules',createWorkSchedulesRouter({service:workSchedulesService,authenticate}));
-app.use('/api/surveys', createSurveysRouter({ surveysController, authenticate }));
+app.use('/api/surveys', require('./modules/surveys/surveys.dynamic').createDynamicSurveysRouter({ pool: databasePool, authenticate }));
 app.use('/api/users', createUsersRouter({ usersController, authenticate }));
 const { PolicyDemoRepository } = require('./modules/prediction_results/policy-demo.repository');
 const { createPolicyDemoRouter } = require('./modules/prediction_results/policy-demo.routes');
@@ -163,6 +163,8 @@ const { createCareerProfileRouter } = require('./modules/career-profile/career-p
 app.use('/api', createCareerProfileRouter({
   service: new CareerProfileService(new CareerProfileRepository(databasePool)), authenticate
 }));
+app.get('/career-goals-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/career-goals/index.html'));});
+app.use('/career-goals-demo/assets', express.static(require('node:path').join(__dirname,'../demo/career-goals'),{index:false,etag:false,setHeaders:res=>res.set('Cache-Control','no-store')}));
 app.use(errorHandler);
 
 module.exports = { app, attendanceService, workSchedulesService };
