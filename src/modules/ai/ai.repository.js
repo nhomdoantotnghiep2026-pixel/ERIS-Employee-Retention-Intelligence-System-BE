@@ -1,3 +1,4 @@
+const { latestSatisfaction } = require('../surveys/surveys.satisfaction');
 const { AppError } = require('../../common/errors/app-error');
 const { scheduleSql } = require('../attendance/attendance-schedule');
 const {assess}=require('./ai.assessment');
@@ -23,14 +24,13 @@ class AiRepository {
           AND ed.education_level IN ('High School','Bachelor','Master','PhD')
           ORDER BY array_position(ARRAY['High School','Bachelor','Master','PhD']::text[],ed.education_level::text) DESC,ed.id DESC LIMIT 1) AS education_level,
         (SELECT count(*)::int FROM employee_job_histories h WHERE h.employee_id=e.id AND h.change_type='PROMOTION' AND h.start_date<=$2::date) AS promotions,
-        (SELECT avg(a.score) FROM survey_answers a WHERE a.response_id=(SELECT sr.id FROM survey_responses sr
-          WHERE sr.employee_id=e.id AND sr.submitted_at IS NOT NULL AND sr.submitted_at<=$3::timestamptz
-          ORDER BY sr.submitted_at DESC,sr.id DESC LIMIT 1)) AS satisfaction
+        NULL::numeric AS satisfaction
         FROM employees e LEFT JOIN departments d ON d.id=e.department_id WHERE e.id=$1 AND e.employment_status='ACTIVE'
-          AND EXISTS(SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')`,[employeeId,today,capturedAt]);
+          AND EXISTS(SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')`,[employeeId,today]);
       if(!rows[0]) throw new AppError(404,'Nhân viên không tồn tại hoặc hồ sơ/tài khoản chưa ACTIVE.');
+      rows[0].satisfaction=await latestSatisfaction(client,employeeId,capturedAt);
       const schedule=(await client.query(`SELECT round((extract(epoch FROM
-        (s.end_time-s.start_time-(s.break_end-s.break_start)))/3600
+        (s.end_time-s.start_time-COALESCE(s.break_end-s.break_start,INTERVAL '0')))/3600
         * cardinality(ARRAY(SELECT DISTINCT unnest(s.working_days))))::numeric,2) AS scheduled_weekly_hours
         FROM (${scheduleSql('$1::integer','$2::date')}) s WHERE s.status='ACTIVE'`,[employeeId,today])).rows[0];
       Object.assign(rows[0],schedule);
@@ -40,10 +40,9 @@ class AiRepository {
           AND att.check_out <= ($4::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND att.attendance_status IN ('PRESENT','LATE','EARLY_LEAVE','LATE_EARLY_LEAVE')),0) AS ytd_overtime_minutes,
         count(DISTINCT att.work_date) FILTER(WHERE att.attendance_status IN ('ON_LEAVE','ABSENT')
-          AND s.status='ACTIVE' AND extract(isodow FROM att.work_date)::integer=ANY(s.working_days)
           AND NOT EXISTS(SELECT 1 FROM holidays h WHERE h.status='ACTIVE' AND att.work_date BETWEEN h.start_date AND h.end_date)) AS absence_days
-        FROM attendance att LEFT JOIN LATERAL (${scheduleSql('att.employee_id','att.work_date')}) s ON TRUE
-        WHERE att.employee_id=$1 AND att.work_date BETWEEN greatest(date_trunc('year',$2::date)::date,$3::date) AND $2::date`,
+        FROM attendance att
+        WHERE att.employee_id=$1 AND att.record_status='ACTIVE' AND att.work_date BETWEEN greatest(date_trunc('year',$2::date)::date,$3::date) AND $2::date`,
         [employeeId,today,rows[0].hire_date,capturedAt])).rows[0];
       Object.assign(rows[0],stats);
       await client.query('COMMIT');

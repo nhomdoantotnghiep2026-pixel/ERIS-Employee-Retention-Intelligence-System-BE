@@ -56,7 +56,7 @@ function createAttendanceService(config, repository, clock=()=>new Date(), locat
     if(user?.status!=='ACTIVE'||user?.role_name!=='HR') error('FORBIDDEN','Only ACTIVE HR can view attendance history.',403);
   }
   return {
-    async list(user) { assertHr(user); return repository.list(); },
+    async list(user,recordStatus='ACTIVE') { assertHr(user); if(!['ACTIVE','CANCELLED','ALL'].includes(recordStatus))throw new AppError(400,'recordStatus must be ACTIVE, CANCELLED or ALL.');return repository.list(recordStatus); },
     async detail(user,id) { assertHr(user); const row=await repository.findById(id); if(!row) error('NOT_FOUND','Attendance record not found.',404); return {data:row}; },
     async companyLocation(user) { assertLocationHr(user); const current = await currentSettings(); return { data: { address: current.address, latitude: current.latitude, longitude: current.longitude, source: current.source, updatedAt: current.updatedAt, updatedBy: current.updatedBy }, allowedRadiusMeters: settings.radiusMeters }; },
     async updateCompanyLocation(user,body) {
@@ -77,13 +77,12 @@ function createAttendanceService(config, repository, clock=()=>new Date(), locat
       const now=clock(),day=localDay(now);
       const schedule=requireSchedule(await repository.getSchedule(user.employeeId,day.date));
       const scheduledWorkday=isScheduledDay(day.date,schedule);
-      await syncLeavesForDay(day.date,user.employeeId);
       const row=await repository.find(user.employeeId,day.date);
       const holiday=calendarStore && await calendarStore.holiday(day.date);
       const blocked=!!holiday||['ON_LEAVE','HOLIDAY'].includes(row?.attendanceStatus);
       const attendance=row || (holiday ? {employeeId:user.employeeId,workDate:day.date,attendanceStatus:'HOLIDAY',checkIn:null,checkOut:null,workingMinutes:0,overtimeMinutes:0} : null);
       return {user:{id:user.id,employeeId:user.employeeId},date:day.date,serverTime:now.toISOString(),timeZone:zone,schedule,workday:scheduledWorkday&&!blocked,
-        checkedIn:!!row?.checkIn,checkedOut:!!row?.checkOut,showCheckInPrompt:scheduledWorkday&&!blocked&&!row?.checkIn,
+        checkedIn:!!row?.checkIn,checkedOut:!!row?.checkOut,showCheckInPrompt:false,
         checkedInAt:row?.checkIn||null,checkedInAtLocal:local(row?.checkIn),checkedOutAt:row?.checkOut||null,checkedOutAtLocal:local(row?.checkOut),
         attendance,storage:'postgresql',mockMode:false};
     },

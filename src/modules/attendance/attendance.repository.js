@@ -1,3 +1,4 @@
+const { lockEmployee, assertNoLeave } = require('../leave-records/leave-records.repository');
 const { scheduleSql, resolveSchedule, requireSchedule, isScheduledDay, calculateAttendance, at } = require('./attendance-schedule');
 const { AppError } = require('../../common/errors/app-error');
 function fail(code, message) { const error = new AppError(409, message); error.code = code; throw error; }
@@ -5,15 +6,18 @@ const columns = `id, employee_id AS "employeeId", to_char(work_date, 'YYYY-MM-DD
   to_char(check_in, 'YYYY-MM-DD"T"HH24:MI:SS.US') || '+07:00' AS "checkIn",
   to_char(check_out, 'YYYY-MM-DD"T"HH24:MI:SS.US') || '+07:00' AS "checkOut",
   working_minutes AS "workingMinutes", overtime_minutes AS "overtimeMinutes", attendance_status AS "attendanceStatus",
+  late_mins AS "lateArrivalMins", early_mins AS "earlyExitMins", leave_type AS "leaveType",
+  record_status AS "recordStatus", cancellation_reason AS "cancellationReason", cancelled_by AS "cancelledBy",
+  to_jsonb(attendance)->>'cancelled_at' AS "cancelledAt",
   to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') || '+07:00' AS "createdAt",
   to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') || '+07:00' AS "updatedAt"`;
 class AttendanceRepository {
   constructor(pool) { this.pool = pool; }
-  async list() {
+  async list(recordStatus='ACTIVE') {
     const { rows } = await this.pool.query(`SELECT a.*, e.employee_code AS "employeeCode", e.full_name AS "fullName"
-      FROM (SELECT ${columns} FROM public.attendance) a
+      FROM (SELECT ${columns} FROM public.attendance WHERE ($1::text='ALL' OR record_status=$1)) a
       JOIN employees e ON e.id=a."employeeId"
-      ORDER BY a."workDate" DESC, a.id DESC`);
+      ORDER BY a."workDate" DESC, a.id DESC`,[recordStatus]);
     return { data: rows };
   }
   async findById(id) {
@@ -22,7 +26,7 @@ class AttendanceRepository {
     return rows[0]||null;
   }
   async find(employeeId, date) {
-    return (await this.pool.query(`SELECT ${columns} FROM public.attendance WHERE employee_id=$1 AND work_date=$2::date`, [employeeId, date])).rows[0] || null;
+    return (await this.pool.query(`SELECT ${columns} FROM public.attendance WHERE employee_id=$1 AND work_date=$2::date AND record_status='ACTIVE'`, [employeeId, date])).rows[0] || null;
   }
   async getSchedule(employeeId,date) { return resolveSchedule(this.pool,employeeId,date); }
   async record({ userId, employeeId, date, instant, action }) {
@@ -32,7 +36,9 @@ class AttendanceRepository {
       const { rows: actors } = await client.query(`SELECT u.employee_id FROM users u JOIN employees e ON e.id=u.employee_id
         WHERE u.id=$1 AND u.employee_id=$2 AND u.status='ACTIVE' AND e.employment_status='ACTIVE' FOR SHARE OF u,e`, [userId, employeeId]);
       if (!actors[0]) throw new AppError(403, 'An ACTIVE linked employee profile is required.');
+      await lockEmployee(client,employeeId);
       await client.query(`SELECT pg_advisory_xact_lock(hashtext('attendance:' || $1::text || ':' || $2::text))`, [employeeId,date]);
+      await assertNoLeave(client,employeeId,date);
       const schedule=requireSchedule(await resolveSchedule(client,employeeId,date));
       if(!isScheduledDay(date,schedule)) fail('NON_WORKDAY','This date is not a working day in the employee schedule.');
       const repository = new AttendanceRepository(client);
@@ -46,7 +52,7 @@ class AttendanceRepository {
           (employee_id,work_date,check_in,working_minutes,overtime_minutes,attendance_status,created_at,updated_at)
           VALUES ($1,$2::date,$3::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh',0,0,$4,
             $3::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh',$3::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')
-          ON CONFLICT (employee_id,work_date) DO UPDATE SET check_in=EXCLUDED.check_in,
+          ON CONFLICT (employee_id,work_date) WHERE (record_status='ACTIVE') DO UPDATE SET check_in=EXCLUDED.check_in,
             working_minutes=0,overtime_minutes=0,attendance_status=EXCLUDED.attendance_status,updated_at=EXCLUDED.updated_at
           WHERE attendance.check_in IS NULL AND attendance.check_out IS NULL AND attendance.attendance_status NOT IN ('ON_LEAVE','HOLIDAY')
           RETURNING ${columns}`, [employeeId,date,instant,attendanceStatus]);
@@ -76,12 +82,13 @@ class AttendanceRepository {
         AND e.hire_date<=$1::date AND EXISTS (SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')
         ORDER BY e.id`, [date]);
       for (const employee of employees) {
-        await client.query(`SELECT pg_advisory_xact_lock(hashtext('attendance:' || $1::text || ':' || $2::text))`, [employee.id,date]);
+        await lockEmployee(client,employeeId);
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext('attendance:' || $1::text || ':' || $2::text))`, [employee.id,date]);
         const current = await new AttendanceRepository(client).find(employee.id,date);
         if (current?.attendanceStatus !== 'ON_LEAVE' && (current?.checkIn || current?.checkOut)) throw new AppError(409, `Đã có người chấm công ngày ${date}; không thể đặt ngày lễ.`);
         await client.query(`INSERT INTO public.attendance (employee_id,work_date,attendance_status,working_minutes,overtime_minutes)
           VALUES ($1,$2::date,'HOLIDAY',0,0)
-          ON CONFLICT (employee_id,work_date) DO UPDATE SET attendance_status='HOLIDAY',check_in=NULL,check_out=NULL,
+          ON CONFLICT (employee_id,work_date) WHERE (record_status='ACTIVE') DO UPDATE SET attendance_status='HOLIDAY',check_in=NULL,check_out=NULL,
             working_minutes=0,overtime_minutes=0,updated_at=CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh'
           WHERE (attendance.attendance_status='ON_LEAVE' OR (attendance.check_in IS NULL AND attendance.check_out IS NULL))
             AND attendance.attendance_status IS DISTINCT FROM 'HOLIDAY'`, [employee.id,date]);
@@ -100,7 +107,7 @@ class AttendanceRepository {
         AND e.hire_date<=$1::date AND EXISTS (SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')
         AND EXISTS (SELECT 1 FROM employee_job_histories h WHERE h.employee_id=e.id AND h.change_type='HIRE'
           AND (h.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date<=$1::date)
-      ON CONFLICT (employee_id,work_date) DO NOTHING`, [date]);
+      ON CONFLICT (employee_id,work_date) WHERE (record_status='ACTIVE') DO NOTHING`, [date]);
     return rowCount;
   }
 }

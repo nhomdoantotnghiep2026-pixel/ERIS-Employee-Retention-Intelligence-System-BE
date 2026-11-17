@@ -92,13 +92,10 @@ app.use('/api/positions', createPositionsRouter({ positionsController, authentic
 const { WorkSchedulesRepository } = require('./modules/work-schedules/work-schedules.repository');
 const { WorkSchedulesService } = require('./modules/work-schedules/work-schedules.service');
 const { createWorkSchedulesRouter, createScheduleAssignmentsRouter } = require('./modules/work-schedules/work-schedules.routes');
-const { DefaultScheduleStore } = require('./modules/work-schedules/work-schedules-default.store');
-const defaultScheduleStore=new DefaultScheduleStore({redisClient,ensureRedisConnection,
-  key:'eris:default-schedule:pending:'+require('node:crypto').createHash('sha256').update([require('./config/env').env.database.host,require('./config/env').env.database.port,require('./config/env').env.database.name].join(':')).digest('hex').slice(0,16)});
-const workSchedulesService=new WorkSchedulesService(new WorkSchedulesRepository(databasePool,{defaultStore:defaultScheduleStore}));
+const workSchedulesService=new WorkSchedulesService(new WorkSchedulesRepository(databasePool));
 app.use('/api/employees',createScheduleAssignmentsRouter({service:workSchedulesService,authenticate}));
 app.use('/api/work-schedules',createWorkSchedulesRouter({service:workSchedulesService,authenticate}));
-app.use('/api/surveys', createSurveysRouter({ surveysController, authenticate }));
+app.use('/api/surveys', require('./modules/surveys/surveys.dynamic').createDynamicSurveysRouter({ pool: databasePool, authenticate }));
 app.use('/api/users', createUsersRouter({ usersController, authenticate }));
 const { PolicyDemoRepository } = require('./modules/prediction_results/policy-demo.repository');
 const { createPolicyDemoRouter } = require('./modules/prediction_results/policy-demo.routes');
@@ -106,6 +103,8 @@ app.use('/api', createPolicyDemoRouter({ repository: new PolicyDemoRepository(da
 app.get('/policy-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/policy-demo.html'));});
 app.get('/leave-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/leave-demo.html'));});
 app.get('/work-schedules-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/work-schedules-demo.html'));});
+app.get('/attendance-import-demo', (_req,res) => {res.set('Cache-Control','no-store');res.redirect('/attendance-demo');});
+app.use('/attendance-import-demo/assets', express.static(require('node:path').join(__dirname,'../demo/attendance-import'),{index:false,etag:false,setHeaders:res=>res.set('Cache-Control','no-store')}));
 app.get('/survey-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/portal/survey-demo.html'));});
 const { AuditReadRepository } = require('./modules/audit_logs/audit-read.repository');
 const { AuditReadService } = require('./modules/audit_logs/audit-read.service');
@@ -120,6 +119,8 @@ app.get('/health', (_request, response) => {
 
 const { createAttendanceService } = require('./modules/attendance/attendance.service');
 const { AttendanceRepository } = require('./modules/attendance/attendance.repository');
+const { AttendanceImportService } = require('./modules/attendance/attendance-import.service');
+const { AttendanceImportRepository } = require('./modules/attendance/attendance-import.repository');
 const { attendanceConfig } = require('./modules/attendance/attendance.config');
 const { CompanyLocationStore } = require('./modules/attendance/company-location.store');
 const { AttendanceCalendarStore } = require('./modules/attendance/attendance-calendar');
@@ -130,13 +131,17 @@ const companyLocationStore = new CompanyLocationStore({
   fallback: { latitude: attendanceSettings.attendance.latitude, longitude: attendanceSettings.attendance.longitude,
     address: process.env.COMPANY_LOCATION_LABEL || 'FPT University HCMC' }
 });
-const attendanceCalendarStore = new AttendanceCalendarStore({ databasePool });
-const attendanceService = createAttendanceService(attendanceSettings, new AttendanceRepository(databasePool), undefined, companyLocationStore, attendanceCalendarStore, new LeaveRequestsRepository(databasePool));
+const attendanceCalendarStore = new AttendanceCalendarStore({ databasePool, materializeAttendance:false });
+const legacyAttendanceService = createAttendanceService(attendanceSettings, new AttendanceRepository(databasePool), undefined, companyLocationStore, attendanceCalendarStore, new LeaveRequestsRepository(databasePool));
+const attendanceService = new AttendanceImportService(new AttendanceImportRepository(databasePool));
 
 const companyDemoPath = require('node:path').join(__dirname, '../demo/company-location');
 app.get('/company-location-demo', (_req, res) => { res.set('Cache-Control', 'no-store'); res.sendFile(require('node:path').join(companyDemoPath, 'index.html')); });
 app.use('/company-location-demo/assets', express.static(companyDemoPath, { index: false, etag: false, setHeaders: res => res.set('Cache-Control', 'no-store') }));
-app.use('/api/v1/attendance', require('./modules/attendance/attendance.routes').createAttendanceRouter({ service: attendanceService, authenticate, databasePool, syncSchedules: employeeId=>workSchedulesService.syncDefaults(employeeId) }));
+for (const prefix of ['/api/v1/attendance','/api/attendance']) {
+  app.use(prefix, require('./modules/attendance/attendance-legacy.routes').createAttendanceLegacyRouter({service:legacyAttendanceService,authenticate,databasePool}));
+  app.use(prefix, require('./modules/attendance/attendance.routes').createAttendanceRouter({service:attendanceService,authenticate,databasePool}));
+}
 const path = require('node:path');
 for (const [route, directory] of [['/demo', 'portal'], ['/attendance-demo', 'attendance']]) {
   const folder = path.join(__dirname, '../demo', directory);
@@ -152,6 +157,19 @@ const aiService = new AiService({ repository: aiRepository, client: new AiClient
 app.use('/api/ai', createAiRouter({ service: aiService, repository: aiRepository, authenticate }));
 app.get('/ai-demo', (_req,res) => { res.set('Cache-Control','no-store'); res.sendFile(require('node:path').join(__dirname,'../demo/portal/ai-demo.html')); });
 
+const { CareerProfileRepository } = require('./modules/career-profile/career-profile.repository');
+const { CareerProfileService } = require('./modules/career-profile/career-profile.service');
+const { createCareerProfileRouter } = require('./modules/career-profile/career-profile.routes');
+app.use('/api', createCareerProfileRouter({
+  service: new CareerProfileService(new CareerProfileRepository(databasePool)), authenticate
+}));
+const { LeaveRecordsRepository } = require('./modules/leave-records/leave-records.repository');
+const { LeaveRecordsService } = require('./modules/leave-records/leave-records.service');
+const { createLeaveRecordsRouter } = require('./modules/leave-records/leave-records.routes');
+const leaveRecordsService = new LeaveRecordsService(new LeaveRecordsRepository(databasePool));
+app.use('/api', createLeaveRecordsRouter({ service: leaveRecordsService, authenticate }));
+app.get('/career-goals-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/career-goals/index.html'));});
+app.use('/career-goals-demo/assets', express.static(require('node:path').join(__dirname,'../demo/career-goals'),{index:false,etag:false,setHeaders:res=>res.set('Cache-Control','no-store')}));
 app.use(errorHandler);
 
 module.exports = { app, attendanceService, workSchedulesService };
