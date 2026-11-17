@@ -1,36 +1,40 @@
-# Surveys: three cycles and category defaults
+# Flexible employee surveys
 
-HR creates a survey with title, description (including its purpose), cycleNumber (1..3), startDate and endDate. No objective, cycleYear, publishedAt or editable scoring flags are required. The selected cycle is inferred through survey_questions.category_id -> survey_categories.cycle_number. No surveys.cycle_number is read or written. Creation and default insertion share one transaction; a failed inference rolls back the draft. Legacy surveys without owned questions return a NULL cycle. Change to another cycle by creating a new draft.
+No cycles: the runtime never reads cycle_number or requires a cycleNumber request. HR chooses any combination of the fixed database categories. Category creation is not exposed; unmatched questions belong in OTHER, as agreed with the user on 2026-11-17.
 
-GET /api/surveys/categories?cycleNumber=1 returns only categories whose survey_categories.cycle_number equals 1. NULL categories are not available. Backend enforces this restriction when adding/editing questions and again at publication. Category allocation changes never rewrite published questions or answers.
+Each of the 10 current categories has 4 default satisfaction questions and 10 optional bank questions. The authored module is the seed source; the runtime reads stored catalog rows from survey_questions through surveys.catalog.js, with an authored fallback for an unseeded category/kind. OTHER also has four provisional satisfaction items, scoped to the contents HR places in OTHER. This is ERIS-authored content, not a validated scale or translation. OTHER mixes potentially unrelated concerns and its score must be interpreted in the context of the actual questions in that survey.
 
-HR must choose at least one category through categoryIds on creation. Only those categories are included; duplicate, unknown or out-of-cycle IDs are rejected. Defaults are previewed before creation. The additional question editor is restricted to selected categories. Selected topics are inferred from the default questions, without a new table or column. Category selection is fixed after draft creation in this version; create a new draft to change scope. Their default RATING questions are copied from surveys.satisfaction-templates.js into survey_questions. HR can add diagnostic questions but cannot modify/delete defaults. There is no automatic keyword matching. No is_satisfaction_core column is required: a server-owned templateCode in answer_config identifies the copied default. Public question requests reject this property. Templates and labels are snapshots, retained with the survey.
+GET /api/surveys/categories returns id, name, description, defaultQuestions and questionBank for all categories. It accepts no cycle query. No bank or category management API is provided. No database migration or category insertion is needed. The 140 authored items have been inserted into survey_questions with survey_id=NULL. answer_config.erisCatalog identifies source ERIS_SURVEY_CATALOG, kind SATISFACTION or BANK, stable code and version; answer_config.answerConfig contains the actual response configuration. Historic untagged shared questions are ignored by the catalog reader.
 
-Question request fields: questionText, categoryId, questionType, answerConfig, displayOrder. All questions must be answered; backend enforces completeness.
+Creation request: title, description, categoryIds, questions, startDate, endDate. At least one category is required. Questions is the array of bank/custom questions HR staged locally. On creation the server adds every selected category's default questions once, then inserts staged questions in the same transaction. The total including defaults is limited to 200. Default configuration is generated server-side and cannot be forged in a custom question payload. Unknown categories, cross-category payloads and duplicate custom questions are rejected. An unconfigured future category requires at least one custom question and produces no invented default score.
 
+Screen /survey-demo: select a category in the question builder; inspect the default set; add bank questions directly or copy one into the composer; alternatively write a custom question. Add appends one preview to the local draft. HR can edit/remove staged questions and continue composing before Save draft persists everything. A bank item is not automatically a satisfaction item, including when a custom/bank item uses RATING.
+
+Saved draft metadata and custom questions can be edited. Default questions cannot be edited/deleted through the API. Library wording is copied to each survey; the V2 catalog does not rewrite prior V1 surveys or invalidate an old draft only because the catalog changed. Questions freeze on publication. Publication snapshots ACTIVE employee accounts in survey_responses. Employees submit all answers once within the time window; writes are transactional and audited. Closing stops submissions and retains history. These controls run in backend code; direct SQL writes do not have the legacy trigger protections removed by the database owner.
+
+Question request: questionText, categoryId, questionType, answerConfig, displayOrder.
 - TEXT: answerConfig=null; answerValue is a nonempty string.
-- SINGLE_CHOICE/MULTIPLE_CHOICE: answerConfig={options:[{code,label},...]}; answerValue={selectedCodes:[...]}. Only allowed, distinct codes may be submitted.
-- RATING: answerConfig={min:1,max:5,labels:[five labels]}; answerValue is a JSON integer 1..5. A custom RATING is reported separately and never automatically contributes to satisfaction.
+- SINGLE_CHOICE / MULTIPLE_CHOICE: answerConfig={options:[{code,label}]}; answerValue={selectedCodes:[...]}. Allowed, unique codes are required.
+- RATING: answerConfig={min:1,max:5,labels:[five labels]}; answerValue is a JSON integer 1..5.
 
-Satisfaction = mean of category means over default questions only, rounded to two decimals after aggregation. Missing defaults or incomplete answers produce NULL / prevent submission. Ordinary RATING questions, choices and text are excluded. AI latestSatisfaction and survey submission reuse the same application scoring function; no SQL function is required.
+Only server-created default RATING questions, identified by their snapshotted templateCode, contribute to satisfaction. Per-category score = mean of that category's default responses. Survey score = mean of category scores, giving each scored category equal weight regardless of its number of custom questions. Scores are rounded to two decimals. Bank/custom answers have their own distributions and averages. A missing compatible response produces NULL, not a fabricated score. AI latestSatisfaction reuses the application scorer and needs no SQL function.
 
-These Vietnamese questions are ERIS adaptations of facet-based satisfaction concepts, not validated translations. A cycle-specific score is not proof of compatibility with the model's original training feature. Scores of different subject scopes should not be interpreted as like-for-like trends.
+Different category selections measure different scopes. An equal numeric range does not establish comparability across surveys or compatibility with the model training feature; model feature mapping still requires its own review.
 
-Assigned categories (confirmed by user):
-1: COMPENSATION_BENEFITS, JOB_FIT.
-2: WORKING_TIME, WORK_ENVIRONMENT, MANAGEMENT, WORK_LIFE_BALANCE, COMMUNICATION_CULTURE.
-3: CAREER_DEVELOPMENT, EMPLOYEE_ENGAGEMENT.
-OTHER: NULL.
-
-No migration is required for the current schema (survey_id, answer_config, RATING and category cycle_number already exist). Legacy survey triggers have been removed by the database owner. All API content freeze, answer validation, cross-survey ownership and completeness checks run in backend transactions. Direct SQL writes do not have the removed trigger protections. Do not run the superseded 20261116-dynamic-surveys.sql file.
-
-Category assignments must not be reassigned after publication without considering historical reports: inferred cycles follow the category data. Missing or mixed cycles prevent publication.
-
-Demo: /survey-demo. HR chooses cycle and dates, creates draft (defaults appear automatically), adds questions, publishes; EMPLOYEE answers once; HR views results and responses. Publication snapshots ACTIVE employee accounts as survey_responses with NULL submitted_at. Submissions are transactional, audited, immutable and limited to the published time window. Closing preserves history.
-
-Verification: node test/surveys-dynamic.test.cjs exercises validation and lifecycle using TEMP tables on PostgreSQL; public business tables are not modified by tests. The staged ui-test.cjs uses mocked HTTP responses and checks numeric rating submission in Edge.
-
-Results include categoryScores: per-category mean satisfaction from defaults, with response counts. Custom questions remain in the detailed report.
+Tests: node test/surveys-dynamic.test.cjs uses TEMP tables with no cycle column; public business data is not modified. It checks catalog counts, arbitrary category combinations, OTHER-only surveys, bank and custom answers, default spoofing, freeze, audit rollback, reports and V1 snapshots. The staged ui-test.cjs uses mocked HTTP in Edge. live-smoke.cjs reads the actual database/API only.
 
 
-Creation screen: inline question builder before saving. Category dropdown shows the chosen cycle plus OTHER for every cycle. Selecting a category previews defaults only. Add question appends a local custom question and includes that topic's default set once. Add default set supports a defaults-only topic. Save draft sends categoryIds plus questions, validated and inserted with defaults in one transaction. OTHER has no defaults and does not change the inferred cycle or satisfaction score; at least one main topic is needed for these satisfaction surveys. Changing cycle clears staged questions after confirmation. Nothing is persisted by the local Add button.
+HR participation APIs:
+- GET /api/surveys/:id/participants returns only employees with submitted_at set, including responseId, employeeId, employeeCode, fullName, submittedAt, satisfactionScore and answerCount. Invitees who have not submitted are excluded.
+- GET /api/surveys/:id/participants/:employeeId returns that employee's submitted response in this survey, or 404. Requires ACTIVE HR, as does the participant list.
+- Existing GET /api/surveys/:id/responses/:responseId now includes questionText, questionType, categoryId/categoryName, snapshotted answerConfig, raw answerValue, selectedOptions labels, displayAnswer and comment. Existing raw-answer fields remain available.
+- HR survey detail includes invitedCount and participantCount. /survey-demo has a participant list and per-employee answer viewer.
+
+List/detail reads share the survey lock used by submit, so submission status and answers cannot change halfway through these API reads. Answer metadata comes from questions stored with the survey, not the current question bank. No new database columns or migration.
+
+
+Automatic defaults in local draft: the first Add for a category (bank or custom) snapshots its defaults into the visible draft. A Map keyed by categoryId + templateCode deduplicates defaults when returning to that category. Merely changing the dropdown has no effect. Preview shows all defaults plus custom/bank questions and counts toward the same 200-question limit. Removing a custom question leaves that topic's defaults; Remove topic explicitly removes the entire set. Save sends categoryIds and only custom/bank questions, so the server creates defaults exactly once rather than accepting client-authored scoring flags. Save/clear/logout resets staged defaults. No database changes.
+
+Bank expansion: 10 questions per category (100 total). Existing bank codes 1–6 and all default scoring questions retain their definitions. New items 7–10 cover frequency, preferred support, concrete examples and follow-up. Frequency and support responses have no satisfaction scores.
+
+Seeding uses a transaction and advisory lock. Existing matching catalog codes are skipped; differing content is rejected for review rather than overwritten. No existing survey questions or answers are updated. Catalog items are copied into a survey when it is created, retaining question wording and response configuration as a snapshot. The TEMP lifecycle test also verifies repeat seeding, DB priority and refusal to overwrite changed catalog content.
