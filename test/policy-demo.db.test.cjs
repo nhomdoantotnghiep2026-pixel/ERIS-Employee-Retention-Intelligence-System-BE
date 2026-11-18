@@ -17,14 +17,12 @@ test('Policy demo: HTTP/JWT + PostgreSQL TEMP, liên kết đủ 4 bảng, quy�
   }})};
   try {
     await client.query("SET statement_timeout TO '10s'");
-    for(const table of ['role','employees','users','model_run','ai_input','prediction_results','explainable','retention_policies','policy_recommendations']) {
+    for(const table of ['role','employees','users','audit_logs','ai_input','prediction_results','explainable','retention_policies','policy_recommendations']) {
       await client.query(`CREATE TEMP TABLE ${table} (LIKE public.${table} INCLUDING ALL)`);
     }
     await client.query(`SET search_path TO pg_temp,public;
-      ALTER TABLE model_run ADD FOREIGN KEY(created_by) REFERENCES users(id);
       ALTER TABLE ai_input ADD FOREIGN KEY(employee_id) REFERENCES employees(id);
-      ALTER TABLE prediction_results ADD FOREIGN KEY(prediction_run_id) REFERENCES model_run(id),
-        ADD FOREIGN KEY(snapshot_id,employee_id) REFERENCES ai_input(id,employee_id) DEFERRABLE INITIALLY DEFERRED;
+      ALTER TABLE prediction_results ADD FOREIGN KEY(snapshot_id,employee_id) REFERENCES ai_input(id,employee_id) DEFERRABLE INITIALLY DEFERRED;
       ALTER TABLE explainable ADD FOREIGN KEY(prediction_result_id) REFERENCES prediction_results(id);
       ALTER TABLE policy_recommendations ADD FOREIGN KEY(prediction_result_id) REFERENCES prediction_results(id),
         ADD FOREIGN KEY(policy_id) REFERENCES retention_policies(id);
@@ -53,7 +51,7 @@ test('Policy demo: HTTP/JWT + PostgreSQL TEMP, liên kết đủ 4 bảng, quy�
       return {status:res.status,body:await res.json()};
     };
     const counts=async()=> (await client.query(`SELECT
-      (SELECT count(*)::int FROM model_run) AS runs,(SELECT count(*)::int FROM ai_input) AS inputs,
+      (SELECT count(*)::int FROM audit_logs) AS audits,(SELECT count(*)::int FROM ai_input) AS inputs,
       (SELECT count(*)::int FROM prediction_results) AS predictions,(SELECT count(*)::int FROM explainable) AS explanations,
       (SELECT count(*)::int FROM retention_policies) AS policies,(SELECT count(*)::int FROM policy_recommendations) AS recommendations`)).rows[0];
 
@@ -68,14 +66,14 @@ test('Policy demo: HTTP/JWT + PostgreSQL TEMP, liên kết đủ 4 bảng, quy�
       assert.equal((await call('POST','/prediction-results/demo',body)).status,400);
     }
     assert.equal((await call('POST','/prediction-results/demo',{employeeIds:[employeeIds[0],2147483647]})).status,409);
-    assert.deepEqual(await counts(),{runs:0,inputs:0,predictions:0,explanations:0,policies:0,recommendations:0});
+    assert.deepEqual(await counts(),{audits:0,inputs:0,predictions:0,explanations:0,policies:0,recommendations:0});
     const created=await call('POST','/prediction-results/demo',{employeeIds});
     assert.equal(created.status,201);
     assert.equal(created.body.dataSource,'DEMO_FIXED');
     assert.equal(created.body.modelInvoked,false);
-    assert.equal(created.body.run.modelVersion,'DEMO_FIXED_POLICY_V1');
+    assert.equal(created.body.results[0].modelVersion,'DEMO_FIXED_POLICY_V1');
     assert.equal(created.body.results.length,2);
-    assert.deepEqual(await counts(),{runs:1,inputs:2,predictions:2,explanations:4,policies:2,recommendations:4});
+    assert.deepEqual(await counts(),{audits:2,inputs:2,predictions:2,explanations:4,policies:2,recommendations:4});
     for(const result of created.body.results) {
       assert.equal(result.attritionProbability,0.78);
       assert.equal(result.riskLevel,'HIGH');
@@ -104,12 +102,12 @@ test('Policy demo: HTTP/JWT + PostgreSQL TEMP, liên kết đủ 4 bảng, quy�
     await client.query("UPDATE users SET status='INACTIVE' WHERE id=$1",[actors.HR.id]);
     assert.equal((await call('GET','/retention-policies')).status,403);
     assert.equal((await call('POST','/prediction-results/demo',{employeeIds})).status,403);
-    console.log('PASS: dữ liệu cố định không gọi model; 4 bảng + model_run/ai_input liên kết hợp lệ; GET trả policy và nhân viên; HR/JWT/validation; dùng lại catalog; rollback cả bộ.');
+    console.log('PASS: dữ liệu cố định không gọi model; 4 bảng + audit_logs/ai_input liên kết hợp lệ; GET trả policy và nhân viên; HR/JWT/validation; dùng lại catalog; rollback cả bộ.');
   } finally {
     if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
     await client.query('RESET search_path');
     await client.query(`DROP TABLE IF EXISTS pg_temp.policy_recommendations,pg_temp.explainable,pg_temp.prediction_results,
-      pg_temp.ai_input,pg_temp.model_run,pg_temp.retention_policies,pg_temp.users,pg_temp.employees,pg_temp.role`);
+      pg_temp.ai_input,pg_temp.audit_logs,pg_temp.retention_policies,pg_temp.users,pg_temp.employees,pg_temp.role`);
     client.release();await databasePool.end();
   }
 });

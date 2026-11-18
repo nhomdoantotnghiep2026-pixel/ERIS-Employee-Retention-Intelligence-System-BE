@@ -2,6 +2,12 @@ const { AppError } = require('../../common/errors/app-error');
 const { DEMO_VERSION, DEMO_POLICIES, DEMO_EXPLANATIONS } = require('./policy-demo.data');
 const policyColumns=`id,code,name,description,target_factor AS "targetFactor",status,created_at AS "createdAt",updated_at AS "updatedAt"`;
 const source = version => version===DEMO_VERSION?'DEMO_FIXED':'STORED';
+const predictionMetadata = alias => `LEFT JOIN LATERAL (
+  SELECT COALESCE(a.new_value->>'modelVersion',a.new_value#>>'{model,model_id}') AS model_version
+  FROM audit_logs a
+  WHERE a.entity_id=${alias}.id AND a.entity_type IN ('AI_PREDICTION','DEMO_FIXED_PREDICTION') AND a.action='CREATE'
+  ORDER BY a.id DESC LIMIT 1
+) m ON true`;
 
 class PolicyDemoRepository {
   constructor(pool) {this.pool=pool;}
@@ -30,19 +36,17 @@ class PolicyDemoRepository {
         }
         policies.push(rows[0]);
       }
-      const {rows:runs}=await client.query(`INSERT INTO model_run(name,period_start,period_end,status,total_employees,model_version,created_by,started_at,completed_at)
-        VALUES('Demo kết quả và policy cố định',(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,
-          (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,'COMPLETED',$1,$2,$3,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-        RETURNING id,name,status,model_version AS "modelVersion",total_employees AS "totalEmployees"`,[employees.length,DEMO_VERSION,actorId]);
       const resultIds=[];
       for(const employee of employees) {
         // Only the two illustrative features are populated. No real model is invoked.
         const {rows:inputs}=await client.query(`INSERT INTO ai_input(employee_id,overtime_hours,employee_satisfaction_score)
           VALUES($1,24,2.0) RETURNING id`,[employee.id]);
         const {rows:predictions}=await client.query(`INSERT INTO prediction_results
-          (prediction_run_id,employee_id,snapshot_id,attrition_probability,risk_level,prediction_label)
-          VALUES($1,$2,$3,0.78,'HIGH',true) RETURNING id`,[runs[0].id,employee.id,inputs[0].id]);
+          (employee_id,snapshot_id,attrition_probability,risk_level,prediction_label)
+          VALUES($1,$2,0.78,'HIGH',true) RETURNING id`,[employee.id,inputs[0].id]);
         const predictionId=predictions[0].id;
+        await client.query(`INSERT INTO audit_logs(user_id,entity_type,entity_id,action,new_value)
+          VALUES($1,'DEMO_FIXED_PREDICTION',$2,'CREATE',$3::jsonb)`,[actorId,predictionId,JSON.stringify({modelVersion:DEMO_VERSION})]);
         for(const explanation of DEMO_EXPLANATIONS) {
           await client.query(`INSERT INTO explainable(prediction_result_id,feature_name,feature_value,impact_value,impact_direction,rank_order)
             VALUES($1,$2,$3,$4,$5,$6)`,[predictionId,explanation.featureName,explanation.featureValue,explanation.impactValue,explanation.impactDirection,explanation.rankOrder]);
@@ -59,7 +63,7 @@ class PolicyDemoRepository {
       return {dataSource:'DEMO_FIXED',modelInvoked:false,
         explanationScale:'DEMO_ILLUSTRATIVE_NOT_SHAP',
         message:'Kết quả cố định để thiết kế giao diện và policy, không phải đánh giá thực tế của nhân viên.',
-        run:runs[0],policies,results};
+        policies,results};
     } catch(error) {await client.query('ROLLBACK');throw error;}
     finally {client.release();}
   }
@@ -76,7 +80,7 @@ class PolicyDemoRepository {
       pr.attrition_probability AS probability,pr.risk_level AS "riskLevel",m.model_version AS "modelVersion"
       FROM policy_recommendations r JOIN retention_policies p ON p.id=r.policy_id
       JOIN prediction_results pr ON pr.id=r.prediction_result_id JOIN employees e ON e.id=pr.employee_id
-      JOIN model_run m ON m.id=pr.prediction_run_id ${where} ORDER BY r.id DESC`,values);
+      ${predictionMetadata('pr')} ${where} ORDER BY r.id DESC`,values);
     return rows.map(row=>({id:row.id,predictionResultId:row.predictionResultId,policyId:row.policyId,
       employee:{id:row.employeeId,employeeCode:row.employeeCode,fullName:row.fullName},
       policy:{id:row.policyId,code:row.code,name:row.name,description:row.description,targetFactor:row.targetFactor,status:row.policyStatus},
@@ -90,18 +94,18 @@ class PolicyDemoRepository {
     return {data:id?data[0]:data};
   }
   async readPrediction(client,id) {
-    const {rows}=await client.query(`SELECT p.id,p.prediction_run_id AS "predictionRunId",p.snapshot_id AS "snapshotId",
+    const {rows}=await client.query(`SELECT p.id,p.snapshot_id AS "snapshotId",
       p.attrition_probability AS "attritionProbability",p.risk_level AS "riskLevel",p.prediction_label AS "predictionLabel",p.created_at AS "createdAt",
       e.id AS "employeeId",e.employee_code AS "employeeCode",e.full_name AS "fullName",m.model_version AS "modelVersion",
       to_jsonb(i)-'employee_id' AS input
-      FROM prediction_results p JOIN employees e ON e.id=p.employee_id JOIN model_run m ON m.id=p.prediction_run_id
+      FROM prediction_results p JOIN employees e ON e.id=p.employee_id ${predictionMetadata('p')}
       JOIN ai_input i ON i.id=p.snapshot_id AND i.employee_id=p.employee_id WHERE p.id=$1`,[id]);
     if(!rows[0]) throw new AppError(404,'Không tìm thấy kết quả dự đoán.');
     const row=rows[0];
     const {rows:explanations}=await client.query(`SELECT id,feature_name AS "featureName",feature_value AS "featureValue",
       impact_value AS "impactValue",impact_direction AS "impactDirection",rank_order AS "rankOrder"
       FROM explainable WHERE prediction_result_id=$1 ORDER BY rank_order,id`,[id]);
-    return {id:row.id,predictionRunId:row.predictionRunId,snapshotId:row.snapshotId,
+    return {id:row.id,snapshotId:row.snapshotId,
       employee:{id:row.employeeId,employeeCode:row.employeeCode,fullName:row.fullName},
       dataSource:source(row.modelVersion),modelVersion:row.modelVersion,
       ...(row.modelVersion===DEMO_VERSION?{modelInvoked:false,explanationScale:'DEMO_ILLUSTRATIVE_NOT_SHAP'}:{}),

@@ -7,10 +7,10 @@ class AiPolicyRepository {
  async context(actorId,predictionId,client=this.pool){
   await this.aiRepository.assertHr(actorId,client);
   const result=await this.aiRepository.result(actorId,predictionId);
-  const {rows}=await client.query(`SELECT p.id FROM prediction_results p JOIN model_run m ON m.id=p.prediction_run_id
+  const {rows}=await client.query(`SELECT p.id FROM prediction_results p
     JOIN employees e ON e.id=p.employee_id WHERE p.id=$1 AND e.employment_status='ACTIVE'
-    AND m.status='COMPLETED' AND EXISTS(SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')`,[predictionId]);
-  if(!rows.length)throw new AppError(409,'Kết quả chưa hoàn tất hoặc nhân viên không còn ACTIVE.');
+    AND EXISTS(SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')`,[predictionId]);
+  if(!rows.length)throw new AppError(409,'Nhân viên không còn ACTIVE.');
   return result;
  }
  async generate(actorId,predictionId,body={}){
