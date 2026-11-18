@@ -1,8 +1,8 @@
-const {AppError}=require('../../common/errors/app-error');
-const fail=m=>{throw new AppError(400,m);};
-function object(x,keys){if(!x||typeof x!=='object'||Array.isArray(x)||Object.keys(x).some(k=>!keys.includes(k)))fail('Unsupported or invalid fields.');}
-function id(x){if(!/^[1-9]\d*$/.test(String(x))||!Number.isSafeInteger(Number(x))||Number(x)>2147483647)fail('Invalid ID.');return Number(x);}
-function text(x,max,required=true){if(!required&&(x==null||x===''))return null;if(typeof x!=='string'||!x.trim()||x.trim().length>max||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(x))fail('Invalid text value.');return x.trim();}
+const { AppError } = require('../../common/errors/app-error');
+const fail = m => { throw new AppError(400, m); };
+function object(x, keys) { if (!x || typeof x !== 'object' || Array.isArray(x) || Object.keys(x).some(k => !keys.includes(k))) fail('Unsupported or invalid fields.'); }
+function id(x) { if (!/^[1-9]\d*$/.test(String(x)) || !Number.isSafeInteger(Number(x)) || Number(x) > 2147483647) fail('Invalid ID.'); return Number(x); }
+function text(x, max, required = true) { if (!required && (x == null || x === '')) return null; if (typeof x !== 'string' || !x.trim() || x.trim().length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(x)) fail('Invalid text value.'); return x.trim(); }
 
 function survey(b,patch=false){const keys=['title','description','categoryIds','questions','startDate','endDate'];object(b,keys);if(patch&&!Object.keys(b).length)fail('Empty update.');const d={};for(const k of keys){if(patch&&!Object.hasOwn(b,k))continue;if(k==='questions'){if(patch)fail('Use the question endpoints to edit saved questions.');const items=b[k]??[];if(!Array.isArray(items)||items.length>200)fail('questions must be an array, maximum 200.');d[k]=items.map(question);}else if(k==='categoryIds'){if(patch)fail('Selected topics cannot be changed through metadata updates.');if(!Array.isArray(b[k])||!b[k].length||b[k].length>50)fail('Choose at least one topic, maximum 50.');d[k]=b[k].map(id);if(new Set(d[k]).size!==d[k].length)fail('Duplicate categoryIds.');}else if(['title','description'].includes(k))d[k]=text(b[k],k==='title'?255:4000,k==='title');else{const x=b[k];if(x==null||x==='')d[k]=null;else{if(typeof x!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/.test(x)||!Number.isFinite(Date.parse(x)))fail('Use ISO date-time with timezone.');d[k]=new Date(x).toISOString();}}}if(d.startDate&&d.endDate&&d.startDate>=d.endDate)fail('endDate must be after startDate.');return d;}
 const ratingConfig=()=>({min:1,max:5,labels:['Rất không hài lòng','Không hài lòng','Không hài lòng cũng không bất mãn','Hài lòng','Rất hài lòng']});

@@ -10,6 +10,22 @@ requestSchema.properties.supplementalFeatures.properties.Years_At_Company={type:
 const previewSchema=structuredClone(requestSchema);delete previewSchema.properties.save;
 const predictSchema={type:'object',additionalProperties:false,required:['snapshotId'],properties:{snapshotId:{type:'integer',minimum:1,example:3,description:'ID đã lưu trong ai_input, phải thuộc đúng employeeId.'},save:requestSchema.properties.save}};
 const aiPaths={
+ '/api/ai/employees/{employeeId}/results':{get:op(
+   'Danh sách kết quả AI đã lưu của nhân viên (HR)',
+   'Các kết quả có thể mở qua GET /api/ai/results/{id}, mới nhất trước. Trả mảng rỗng khi không có kết quả.',
+   {parameters:params,responses:{
+     200:{description:'Danh sách kết quả.',content:{'application/json':{schema:{
+       type:'object',properties:{data:{type:'array',items:{type:'object',properties:{
+         predictionId:{type:'integer',minimum:1},
+         snapshotId:{type:'integer',minimum:1},
+         createdAt:{type:'string',format:'date-time'}
+       }}}}
+     }}}},
+     400:{description:'ID nhân viên không hợp lệ.'},
+     401:{description:'Chưa đăng nhập.'},
+     403:{description:'Yêu cầu quyền HR đang hoạt động.'}
+   }}
+ )},
  '/api/ai/results/{id}/policy-recommendations':{post:op('Đề xuất policy từ kết quả model đã lưu (HR)','Xét đủ 12 feature, chỉ gợi ý khi SHAP dương và giá trị feature hợp lệ. Mỗi feature có policy riêng; không gộp giờ làm và tăng ca. Lý do kèm hành động, điều kiện HR xác minh; không tự đặt ngưỡng tăng ca cao hoặc kết luận lương thấp. Ghép policy ACTIVE đã có; không INSERT retention_policies. save=false chỉ xem trước; save=true lưu SUGGESTED và audit cho policy đã có, gọi lại không tạo trùng. Policy chưa có trả AWAITING_POLICY_APPROVAL. Đề xuất bằng quy tắc backend, HR xác nhận, model demo chưa đủ chất lượng để quyết định thực tế.',{parameters:[{in:'path',name:'id',required:true,schema:{type:'integer',minimum:1}}],requestBody:content({type:'object',additionalProperties:false,properties:{save:{type:'boolean',default:false},limit:{type:'integer',minimum:1,maximum:12,default:3}}})})},
  '/api/ai/model':{get:op('Kiểm tra model đang chạy (HR)','Chỉ chấp nhận model mexwell-rf12-demo-v1-20e0a090ced2. Trả schema và cảnh báo chất lượng; không chạy dự đoán.')},
  '/api/ai/employees':{get:op('Nhân viên có thể chọn chạy thử AI (HR)','Hồ sơ và tài khoản đều ACTIVE. Không có nghĩa đã đủ 12 feature.')},

@@ -1,6 +1,7 @@
 const { latestSatisfaction } = require('../surveys/surveys.satisfaction');
 const { AppError } = require('../../common/errors/app-error');
 const { scheduleSql } = require('../attendance/attendance-schedule');
+const {assess}=require('./ai.assessment');
 const { FEATURES } = require('./ai.features');
 const COLUMNS=['department','gender','age','hire_date','years_at_company','education_level','monthly_salary','work_hours_per_week','overtime_hours','sick_days','promotions','employee_satisfaction_score'];
 class AiRepository {
@@ -48,6 +49,7 @@ class AiRepository {
     }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
   }
   async save(actorId,preview,result) {
+    result=assess(result);
     const client=await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -57,20 +59,35 @@ class AiRepository {
         WHERE e.id=$1 AND e.employment_status='ACTIVE' AND u.status='ACTIVE' FOR SHARE OF e,u`,[employeeId]);
       if(!active.rows.length) throw new AppError(409,'Nhân viên không còn ACTIVE; không lưu kết quả.');
       const run=(await client.query(`INSERT INTO model_run(name,period_start,period_end,status,total_employees,model_version,created_by,started_at,completed_at)
-        VALUES('Mexwell AI demo — model thật',$1,$2,'COMPLETED',1,$3,$4,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) RETURNING id`,[preview.period?.start??null,preview.period?.end??null,result.model_id,actorId])).rows[0];
+        VALUES($1,$2,$3,'COMPLETED',1,$4,$5,$6,$7) RETURNING id`,[
+          `Dự đoán ${preview.employee.employeeCode||employeeId} - ${preview.employee.fullName||''} - ${preview.snapshotDate||preview.capturedAt.slice(0,10)}`,
+          preview.period?.start??(preview.snapshotDate||preview.capturedAt.slice(0,10)).slice(0,4)+'-01-01',
+          preview.period?.end??preview.snapshotDate??preview.capturedAt.slice(0,10),result.model_id,actorId,
+          result.startedAt??new Date().toISOString(),result.completedAt??new Date().toISOString()])).rows[0];
       const values=FEATURES.map(k=>preview.features[k]);
       const snapshot={id:preview.snapshotId};
       if(!snapshot.id)throw new AppError(409,'Phải tạo hoặc chọn snapshot trước khi lưu dự đoán.');
       const current=await this.readSnapshot(actorId,employeeId,snapshot.id,client,true);
       if(FEATURES.some(key=>current.features[key]!==preview.features[key]))throw new AppError(409,'Snapshot đã bị thay đổi trong lúc chạy model. Hãy chạy lại.');
       const prediction=(await client.query(`INSERT INTO prediction_results(prediction_run_id,employee_id,snapshot_id,attrition_probability,risk_level,prediction_label)
-        VALUES($1,$2,$3,$4,NULL,NULL) RETURNING id`,[run.id,employeeId,snapshot.id,result.score])).rows[0];
+        VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,[run.id,employeeId,snapshot.id,result.score,result.riskLevel,result.predictionLabel])).rows[0];
       const ranked=Object.entries(result.contributions).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
       for(const [i,[key,value]] of ranked.entries()) await client.query(`INSERT INTO explainable(prediction_result_id,feature_name,feature_value,impact_value,impact_direction,rank_order) VALUES($1,$2,$3,$4,$5,$6)`,[prediction.id,key,String(preview.features[key]),value,value>0?'INCREASE':value<0?'DECREASE':'NEUTRAL',i+1]);
       await client.query(`INSERT INTO audit_logs(user_id,entity_type,entity_id,action,new_value) VALUES($1,'AI_PREDICTION',$2,'CREATE',$3::jsonb)`,[actorId,prediction.id,JSON.stringify({model:result,preview})]);
       await client.query('COMMIT');
       return {predictionId:prediction.id,runId:run.id,snapshotId:snapshot.id};
     }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+  }
+  async results(actorId,employeeId) {
+    await this.assertHr(actorId);
+    const {rows}=await this.pool.query(`SELECT p.id AS "predictionId",p.snapshot_id AS "snapshotId",p.created_at AS "createdAt"
+      FROM prediction_results p
+      WHERE p.employee_id=$1 AND EXISTS (
+        SELECT 1 FROM audit_logs a
+        WHERE a.entity_type='AI_PREDICTION' AND a.entity_id=p.id AND a.action='CREATE'
+      )
+      ORDER BY p.created_at DESC,p.id DESC`,[employeeId]);
+    return rows;
   }
   async result(actorId,resultId) {
     await this.assertHr(actorId);

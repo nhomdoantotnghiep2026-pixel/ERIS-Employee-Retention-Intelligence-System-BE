@@ -1,7 +1,8 @@
 const {ExchangeRateService}=require('./ai.exchange-rate');
 const { AppError } = require('../../common/errors/app-error');
 const { build,options,id,todayVN } = require('./ai.features');
-const WARNING='Model demo chưa đạt tiêu chí đánh giá; không dùng để kết luận nhân viên sẽ nghỉ việc. Chưa có ngưỡng rủi ro hoặc thời hạn dự báo.';
+const {assess}=require('./ai.assessment');
+const WARNING='Cảnh báo hỗ trợ HR xem xét, không khẳng định nhân viên sẽ nghỉ việc. Ngưỡng thử nghiệm 9,9/100; model demo chưa đạt tiêu chí đánh giá và chưa có thời hạn dự báo.';
 class AiService {
   constructor({repository,client,clock=()=>new Date(),exchangeRates=new ExchangeRateService()}){Object.assign(this,{repository,client,clock,exchangeRates});}
   async exchangeRate(actorId){await this.repository.assertHr(actorId);return this.exchangeRates.latest();}
@@ -24,7 +25,8 @@ class AiService {
     if(body.snapshotId===undefined)throw new AppError(400,'Chọn snapshotId từ ai_input trước khi chạy model.');
     const preview={...await this.repository.readSnapshot(actorId,id(employeeId),id(body.snapshotId)),warning:WARNING};
     if(!preview.ready){const error=new AppError(422,'Snapshot thiếu hoặc có feature không hợp lệ.');error.details=preview;throw error;}
-    const model=await this.client.explain(preview.employee.id,preview.features,{allowOutOfRangeDemo:preview.outOfDomainFeatures.length>0});
+    const startedAt=this.clock().toISOString();
+    const model=assess({...await this.client.explain(preview.employee.id,preview.features,{allowOutOfRangeDemo:preview.outOfDomainFeatures.length>0}),startedAt,completedAt:this.clock().toISOString()});
     // Recheck authorization after a potentially slow network call, even for non-persistent requests.
     await this.repository.assertHr(actorId);
     const stored=body.save===true?await this.repository.save(actorId,preview,model):null;
