@@ -6,6 +6,7 @@ function createAiRouter({service,repository,authenticate,policyRepository=new Ai
   const router=express.Router();
   router.use(authenticate,(_req,res,next)=>{res.set('Cache-Control','no-store, private');res.vary('Authorization');next();});
   const route=fn=>async(req,res,next)=>{try{res.json({data:await fn(req)});}catch(error){if(error instanceof AppError&&error.details)return res.status(error.statusCode).json({message:error.message,details:error.details});next(error);}};
+  router.get('/exchange-rate',route(req=>service.exchangeRate(req.auth.userId)));
   router.get('/model',route(req=>service.info(req.auth.userId)));
   router.get('/employees',route(req=>repository.employees(req.auth.userId)));
   router.get('/employees/:employeeId/snapshots',route(req=>repository.snapshots(req.auth.userId,id(req.params.employeeId))));

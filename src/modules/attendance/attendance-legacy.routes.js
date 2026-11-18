@@ -14,10 +14,6 @@ function createAttendanceLegacyRouter({service,authenticate,databasePool}) {
   const h=fn=>async(req,res,next)=>{try{res.json(await fn(req));}catch(e){next(e);}};
   router.get('/company-location',h(r=>service.companyLocation(r.attendanceUser)));
   router.put('/company-location',h(r=>service.updateCompanyLocation(r.attendanceUser,r.body)));
-  router.get('/holidays',h(r=>service.holidays(r.attendanceUser)));
-  router.post('/holidays',h(r=>service.createHoliday(r.attendanceUser,r.body)));
-  router.put('/holidays/:id',h(r=>service.updateHoliday(r.attendanceUser,r.params.id,r.body)));
-  router.delete('/holidays/:id',h(r=>service.deleteHoliday(r.attendanceUser,r.params.id)));
   router.post('/leave-requests',h(r=>service.requestLeave(r.attendanceUser,r.body)));
   router.get('/leave-requests/me',h(r=>service.myLeaveRequests(r.attendanceUser)));
   router.get('/leave-requests',h(r=>service.leaveRequests(r.attendanceUser)));

@@ -16,7 +16,9 @@ test('repository assembles current schedule and YTD sources in one consistent tr
  const row=await repository.read(7,{periodStart:'2025-01-01',periodEnd:'2025-01-31'},'2026-11-10','2026-11-10T05:00:00Z');
  assert.equal(queries[0].sql,'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
  assert.equal(queries.at(-1).sql,'COMMIT');assert.equal(released,true);
- assert.deepEqual(queries.find(q=>q.sql.includes('AS satisfaction')).values,[7,'2026-11-10','2026-11-10T05:00:00Z']);
+ assert.deepEqual(queries.find(q=>q.sql.includes('q.question_type=')).values,[7,'2026-11-10T05:00:00Z']);
+ const statsSql=queries.find(q=>q.sql.includes('AS ytd_incomplete_days')).sql;
+ assert.match(statsSql,/att.attendance_status='ON_LEAVE'/);assert(!statsSql.includes('holidays'));assert(!statsSql.includes("'ON_LEAVE','ABSENT'"));
  assert.deepEqual(queries.find(q=>q.sql.includes('AS ytd_incomplete_days')).values,[7,'2026-11-10','2026-03-01','2026-11-10T05:00:00Z']);
  const f=build(row,{supplementalFeatures:{}},'2026-11-10').features;
  assert.equal(f.Work_Hours_Per_Week,40);assert.equal(f.Overtime_Hours,0);assert.equal(f.Sick_Days,0);

@@ -179,6 +179,7 @@ class LeaveRequestsRepository {
         await this.lockEmployee(client,employee.id);
         const schedule=await resolveSchedule(client,employee.id,date);
         if(!isScheduledDay(date,schedule))continue;
+        if((await client.query("SELECT id FROM holidays WHERE status='ACTIVE' AND $1::date BETWEEN start_date AND end_date LIMIT 1",[date])).rows.length)continue;
         const {rows}=await client.query(`SELECT ${columns} FROM leave_requests WHERE employee_id=$1
           AND start_date<=$2::date AND end_date>=$2::date
           AND status IN ('APPROVED','CANCEL_REQUESTED','CANCEL_REJECTED') ORDER BY id FOR SHARE`,[employee.id,date]);

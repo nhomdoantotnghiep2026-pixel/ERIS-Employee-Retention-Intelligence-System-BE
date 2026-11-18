@@ -138,6 +138,8 @@ const attendanceService = new AttendanceImportService(new AttendanceImportReposi
 const companyDemoPath = require('node:path').join(__dirname, '../demo/company-location');
 app.get('/company-location-demo', (_req, res) => { res.set('Cache-Control', 'no-store'); res.sendFile(require('node:path').join(companyDemoPath, 'index.html')); });
 app.use('/company-location-demo/assets', express.static(companyDemoPath, { index: false, etag: false, setHeaders: res => res.set('Cache-Control', 'no-store') }));
+const {createHolidayRouter}=require('./modules/holidays/holidays');
+for(const prefix of ['/api/holidays','/api/attendance/holidays','/api/v1/attendance/holidays']) app.use(prefix,createHolidayRouter({pool:databasePool,authenticate}));
 for (const prefix of ['/api/v1/attendance','/api/attendance']) {
   app.use(prefix, require('./modules/attendance/attendance-legacy.routes').createAttendanceLegacyRouter({service:legacyAttendanceService,authenticate,databasePool}));
   app.use(prefix, require('./modules/attendance/attendance.routes').createAttendanceRouter({service:attendanceService,authenticate,databasePool}));

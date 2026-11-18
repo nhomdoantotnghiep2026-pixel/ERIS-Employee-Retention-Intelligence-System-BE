@@ -38,8 +38,7 @@ class AiRepository {
         COALESCE(sum(att.overtime_minutes) FILTER(WHERE att.check_in IS NOT NULL AND att.check_out IS NOT NULL
           AND att.check_out <= ($4::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND att.attendance_status IN ('PRESENT','LATE','EARLY_LEAVE','LATE_EARLY_LEAVE')),0) AS ytd_overtime_minutes,
-        count(DISTINCT att.work_date) FILTER(WHERE att.attendance_status IN ('ON_LEAVE','ABSENT')
-          AND NOT EXISTS(SELECT 1 FROM holidays h WHERE h.status='ACTIVE' AND att.work_date BETWEEN h.start_date AND h.end_date)) AS absence_days
+        count(DISTINCT att.work_date) FILTER(WHERE att.attendance_status='ON_LEAVE') AS absence_days
         FROM attendance att
         WHERE att.employee_id=$1 AND att.record_status='ACTIVE' AND att.work_date BETWEEN greatest(date_trunc('year',$2::date)::date,$3::date) AND $2::date`,
         [employeeId,today,rows[0].hire_date,capturedAt])).rows[0];

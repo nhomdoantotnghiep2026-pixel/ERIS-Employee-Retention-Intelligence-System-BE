@@ -48,8 +48,9 @@ class EmployeesRepository {
         EXISTS (SELECT 1 FROM departments WHERE id = $3 AND status = 'ACTIVE') AS "activeDepartment",
         EXISTS (SELECT 1 FROM positions WHERE id = $4 AND status = 'ACTIVE') AS "activePosition",
         (SELECT department_id FROM positions WHERE id=$4) AS "positionDepartmentId",
-        EXISTS (SELECT 1 FROM employees WHERE ${phoneKeySql}=$5) AS "phoneExists"`,
-      [actorId, employee.email, employee.departmentId, employee.positionId, phoneKey(employee.phone)]);
+        EXISTS (SELECT 1 FROM employees WHERE ${phoneKeySql}=$5) AS "phoneExists",
+        EXISTS (SELECT 1 FROM employees WHERE upper(employee_code)=upper($6::text)) AS "employeeCodeExists"`,
+      [actorId, employee.email, employee.departmentId, employee.positionId, phoneKey(employee.phone), employee.employeeCode || null]);
     return rows[0];
   }
   async assertPositionDepartment(positionId, departmentId) {
@@ -240,11 +241,24 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
   async create(employee, employmentStatus = 'ACTIVE') {
     const phone = normalizePhone(employee.phone);
     await this.assertPhoneAvailable(phone);
+    // Serialize code allocation inside the employee creation transaction, including auto codes.
+    await this.databasePool.query("SELECT pg_advisory_xact_lock(hashtextextended('employees.code-allocation', 0))");
+    let employeeCode = employee.employeeCode || null;
+    if (employeeCode) {
+      const { rows: existingCodes } = await this.databasePool.query('SELECT id FROM employees WHERE upper(employee_code)=upper($1) LIMIT 1', [employeeCode]);
+      if (existingCodes.length) throw new AppError(409, 'employee_code already exists.');
+    }
+    let employeeId;
+    while (true) {
+      const { rows: ids } = await this.databasePool.query("SELECT nextval(pg_get_serial_sequence('employees', 'id')) AS id");
+      employeeId = ids[0].id;
+      if (employeeCode) break;
+      const candidate = 'EMP' + String(employeeId).padStart(3, '0');
+      const { rows: matches } = await this.databasePool.query('SELECT id FROM employees WHERE upper(employee_code)=upper($1) LIMIT 1', [candidate]);
+      if (!matches.length) { employeeCode = candidate; break; }
+    }
     const { rows } = await this.databasePool.query(
-      `WITH new_employee_id AS (
-         SELECT nextval(pg_get_serial_sequence('employees', 'id')) AS id
-       )
-       INSERT INTO employees (
+      `INSERT INTO employees (
          id,
          employee_code,
          full_name,
@@ -261,11 +275,7 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
          current_salary,
          employment_status
        )
-       SELECT
-         id,
-         'EMP' || LPAD(id::text, 3, '0'),
-         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
-       FROM new_employee_id
+       VALUES ($15, $14, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING
          id,
          employee_code AS "employeeCode",
@@ -297,7 +307,9 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
         employee.hireDate,
         employee.employmentType,
         employee.currentSalary,
-        employmentStatus
+        employmentStatus,
+        employeeCode,
+        employeeId
       ]
     );
 

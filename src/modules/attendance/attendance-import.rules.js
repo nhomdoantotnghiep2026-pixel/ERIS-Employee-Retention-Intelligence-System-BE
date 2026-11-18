@@ -59,7 +59,7 @@ function calculate(d, checkIn, checkOut, s) {
   const outside = Math.max(0, Math.min(b,t.start)-a) + Math.max(0,b-Math.max(a,t.end));
   return { working_minutes: Math.floor((b-a-overlap(a,b,t.breakStart,t.breakEnd))/MINUTE),
     late_mins: Math.floor(Math.max(0,a-t.start)/MINUTE), early_mins: Math.floor(Math.max(0,t.end-b)/MINUTE),
-    outside_shift_minutes: Math.floor(outside/MINUTE), overtime_minutes: 0, attendance_status: 'PRESENT' };
+    outside_shift_minutes: Math.floor(outside/MINUTE), overtime_minutes: Math.floor((Math.max(0,b-Math.max(a,t.end))-overlap(Math.max(a,t.end),b,t.breakStart,t.breakEnd))/MINUTE), attendance_status: 'PRESENT' };
 }
 function candidates(checkIn, checkOut, s) {
   const a = Date.parse(checkIn), b = Date.parse(checkOut), p = policy(s.attendance_policy);

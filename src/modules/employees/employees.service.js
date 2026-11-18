@@ -83,6 +83,7 @@ class EmployeesService {
   async createEmployee({ actorId, employee, distanceCache, auditContext }) {
     const checks = await this.employeesRepository.preflightCreate(actorId, employee);
     if (checks.actorRole !== 'HR') throw new AppError(403, 'Only HR can create employees.');
+    if (checks.employeeCodeExists) throw new AppError(409, 'employee_code already exists.');
     if (checks.emailExists) throw new AppError(409, 'Email already has an employee profile.');
     if (checks.phoneExists) throw new AppError(409, 'Số điện thoại đã được sử dụng trong hồ sơ nhân viên khác.');
     const accounts = checks.accounts || [];
