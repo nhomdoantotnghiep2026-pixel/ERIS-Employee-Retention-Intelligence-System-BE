@@ -46,7 +46,7 @@ function build(row,opts,today=todayVN()) {
   if(iso(row.hire_date)&&row.hire_date<=today) add('Years_At_Company',Number(today.slice(0,4))-Number(row.hire_date.slice(0,4))-(today.slice(5)<row.hire_date.slice(5)?1:0),'employees.hire_date; completed years at snapshot');
   add('Education_Level',row.education_level,'employee_educations ACTIVE; bằng cao nhất');
   const salary=finite(row.current_salary);
-  if(salary!==null&&opts.vndPerUsd) add('Monthly_Salary',Number((salary/opts.vndPerUsd).toFixed(4)),'employees.current_salary VND / vndPerUsd do HR nhập');
+  if(salary!==null&&opts.vndPerUsd) add('Monthly_Salary',Number((salary/opts.vndPerUsd).toFixed(4)),opts.exchangeRate ? 'employees.current_salary VND / latest USD/VND reference rate; see exchangeRate metadata' : 'employees.current_salary VND / vndPerUsd do HR nhập');
   add('Promotions',finite(row.promotions),'employee_job_histories PROMOTION đến snapshot');
   add('Employee_Satisfaction_Score',finite(row.satisfaction)===null?null:Number(Number(row.satisfaction).toFixed(2)),'Latest submitted survey with configured core questions; core-only mean rounded to 2 decimals');
   add('Work_Hours_Per_Week',finite(row.scheduled_weekly_hours),'Current ACTIVE schedule: weekly hours excluding breaks and overtime');
@@ -54,7 +54,7 @@ function build(row,opts,today=todayVN()) {
     const overtime=finite(row.ytd_overtime_minutes);
     if(overtime!==null) add('Overtime_Hours',Number((overtime/60).toFixed(2)),'Completed attendance overtime; January 1 through snapshot');
   } else if(row.ytd_incomplete_days!==undefined) issues.push('Year-to-date attendance has unfinished checkouts; overtime is not ready.');
-  add('Sick_Days',finite(row.absence_days),'Year-to-date scheduled ON_LEAVE + ABSENT dates; excludes holidays and business travel; broader than dataset sick days');
+  add('Sick_Days',finite(row.absence_days),'Year-to-date ACTIVE attendance: distinct ON_LEAVE dates only; excludes ABSENT and HOLIDAY; does not establish illness');
   for(const [key,value] of Object.entries(opts.supplementalFeatures)) {
     if(Object.hasOwn(features,key)) throw new AppError(400,`Không ghi đè ${key} đã lấy từ database.`);
     features[key]=value;provenance[key]='MANUAL_DEMO: HR bổ sung, không cập nhật hồ sơ gốc';
@@ -63,6 +63,7 @@ function build(row,opts,today=todayVN()) {
   if(features.Age!==undefined&&features.Years_At_Company!==undefined&&features.Years_At_Company>features.Age) throw new AppError(422,'Thâm niên không thể lớn hơn tuổi.');
   return {features,provenance,missingFeatures:FEATURES.filter(k=>!Object.hasOwn(features,k)),issues,
     period:opts.periodStart?{start:opts.periodStart,end:opts.periodEnd}:null,
+    exchangeRate:opts.exchangeRate??null,
     vndPerUsd:opts.vndPerUsd??null,dataSource:Object.values(provenance).some(v=>v.startsWith('MANUAL_DEMO'))?'MIXED_DEMO':'DATABASE'};
 }
 module.exports={FEATURES,DEPARTMENTS,EDUCATIONS,valid,iso,todayVN,options,id,build};

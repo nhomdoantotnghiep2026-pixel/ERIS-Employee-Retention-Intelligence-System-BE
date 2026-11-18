@@ -18,7 +18,7 @@ function snapshotData(row,metadata=null){
   capturedAt,snapshotDate:todayVN(new Date(capturedAt)),features,missingFeatures,invalidFeatures,outOfDomainFeatures,
   ready:!missingFeatures.length&&!invalidFeatures.length,
   provenance:metadata?.provenance??Object.fromEntries(FEATURES.map((key,i)=>[key,'ai_input.'+COLUMNS[i]+'; chưa ghi nhận nguồn trước snapshot'])),
-  period:metadata?.period??null,vndPerUsd:metadata?.vndPerUsd??null,
+  period:metadata?.period??null,vndPerUsd:metadata?.vndPerUsd??null,exchangeRate:metadata?.exchangeRate??null,
   dataSource:outOfDomainFeatures.length?'STORED_SNAPSHOT_OUT_OF_DOMAIN_DEMO':metadata?.dataSource??'STORED_SNAPSHOT',
   issues:outOfDomainFeatures.length?['Employee_Satisfaction_Score ngoài thang khảo sát 1–5; giữ nguyên giá trị snapshot để test model demo, không quy đổi.']:[]};
 }

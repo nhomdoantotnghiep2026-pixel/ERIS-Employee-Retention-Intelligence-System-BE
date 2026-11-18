@@ -5,7 +5,21 @@ const { AppError } = require('../../common/errors/app-error');
 const { validateCreateEmployeeInput, requiredEmployeeFields } = require('./employees.validation');
 const { phoneKey } = require('./employee-phone');
 
-const fields = [...requiredEmployeeFields, 'educations'];
+const fields = [...requiredEmployeeFields, 'employee_code', 'educations'];
+function validateImportEmployee(input) {
+  const { employee_code, ...profile } = input;
+  const employee = validateCreateEmployeeInput(profile);
+  if (employee_code === undefined || employee_code === null || employee_code === '') return employee;
+  if (typeof employee_code !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,49}$/.test(employee_code.trim())) {
+    throw new AppError(400, 'employee_code must be 1-50 letters, digits, underscores or hyphens; start with a letter or digit. Use a Text cell.');
+  }
+  return { ...employee, employeeCode: employee_code.trim().toUpperCase() };
+}
+function checkImportCode(employee, seen) {
+  if (!employee.employeeCode) return;
+  if (seen.has(employee.employeeCode)) throw new AppError(409, 'Duplicate employee_code within workbook.');
+  seen.add(employee.employeeCode);
+}
 const required = [...requiredEmployeeFields, 'educations'];
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -28,6 +42,7 @@ async function parseWorkbook(buffer) {
   const rows = [];
   const emails = new Set();
   const phones = new Set();
+  const codes = new Set();
   sheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return;
     if (!row.values.slice(1).some(v => v !== null && v !== undefined && v !== '')) return;
@@ -51,9 +66,10 @@ async function parseWorkbook(buffer) {
         }
         input[field] = value;
       });
-      input = validateCreateEmployeeInput(input);
+      input = validateImportEmployee(input);
       if (emails.has(input.email)) throw new AppError(409, 'Duplicate email within workbook.');
       if (phones.has(phoneKey(input.phone))) throw new AppError(409, 'Số điện thoại bị trùng trong cùng file Excel.');
+      checkImportCode(input, codes);
       emails.add(input.email);
       phones.add(phoneKey(input.phone));
       rows.push({ row: rowNumber, input });
@@ -99,7 +115,7 @@ function parseRelatedSheets(sheets) {
     throw new AppError(400, 'Dùng một sheet có cột educations dạng JSON, hoặc đúng 2 sheet Employees, Educations.');
   }
   const sheet = name => sheets.find(s => s.name === name);
-  const employees = readRelatedSheet(sheet('Employees'), requiredEmployeeFields, requiredEmployeeFields, 200);
+  const employees = readRelatedSheet(sheet('Employees'), [...requiredEmployeeFields, 'employee_code'], requiredEmployeeFields, 200);
   if (!employees.length) throw new AppError(400, 'Employees phải có từ 1 đến 200 nhân viên.');
   const educationFields = ['email', 'educationLevel', 'fieldOfStudy', 'institution', 'institutionRefId', 'graduationYear'];
   const educations = readRelatedSheet(sheet('Educations'), educationFields, ['email', 'educationLevel', 'institution', 'institutionRefId'], 4000);
@@ -120,15 +136,17 @@ function parseRelatedSheets(sheets) {
   }
   const seen = new Set();
   const seenPhones = new Set();
+  const seenCodes = new Set();
   return employees.map(row => {
     try {
       if (row.error) throw row.error;
       const email = emailKey(row.input.email);
       const background = backgrounds.get(email) || { educations: [], errors: [] };
       if (background.errors.length) throw new AppError(400, background.errors.join('; '));
-      const input = validateCreateEmployeeInput({ ...row.input, educations: background.educations });
+      const input = validateImportEmployee({ ...row.input, educations: background.educations });
       if (seen.has(input.email)) throw new AppError(409, 'Duplicate email within workbook.');
       if (seenPhones.has(phoneKey(input.phone))) throw new AppError(409, 'Số điện thoại bị trùng trong cùng file Excel.');
+      checkImportCode(input, seenCodes);
       seen.add(input.email);
       seenPhones.add(phoneKey(input.phone));
       return { row: row.row, input };

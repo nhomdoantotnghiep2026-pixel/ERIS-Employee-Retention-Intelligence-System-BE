@@ -32,14 +32,14 @@ function validateHoliday(body, now = new Date()) {
     || Object.keys(body).some(key => !['start_date', 'end_date', 'name'].includes(key))) throw new AppError(400, 'Chỉ nhận start_date, end_date và name.');
   const start_date = validDate(body.start_date, 'start_date');
   const end_date = validDate(body.end_date, 'end_date');
-  if (start_date < todayInVietnam(now)) throw new AppError(400, 'Không thể tạo ngày lễ trong quá khứ.');
+  if (start_date <= todayInVietnam(now)) throw new AppError(400, 'Chỉ được tạo ngày lễ trong tương lai, sau ngày hôm nay theo giờ Việt Nam.');
   if (end_date < start_date) throw new AppError(400, 'end_date phải lớn hơn hoặc bằng start_date.');
   if (typeof body.name !== 'string' || !body.name.trim() || Array.from(body.name.trim()).length > 150) throw new AppError(400, 'Tên ngày lễ bắt buộc, tối đa 150 ký tự.');
   return { start_date, end_date, name: body.name.trim() };
 }
 const { transaction } = require('../audit_logs/audit.repository');
 const { AttendanceRepository } = require('./attendance.repository');
-const columns = 'id, name, start_date::text, end_date::text, status, created_by, created_at, updated_at';
+const columns = 'id, name, start_date::text, end_date::text, status, user_id, description';
 class AttendanceCalendarStore {
   constructor({ databasePool, materializeAttendance = true }) { this.pool = databasePool; this.materializeAttendance = materializeAttendance; }
   async holiday(date) {
@@ -62,7 +62,7 @@ class AttendanceCalendarStore {
           throw error;
         }
         const updated = await client.query(
-          `UPDATE holidays SET name = $2, start_date = $3, end_date = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING ${columns}`,
+          `UPDATE holidays SET name = $2, start_date = $3, end_date = $4 WHERE id = $1 RETURNING ${columns}`,
           [id, input.name, input.start_date, input.end_date]);
         const affectedEmployees = this.materializeAttendance && input.start_date <= today && today <= input.end_date
           ? await new AttendanceRepository(client).markHoliday(today, client) : 0;
@@ -88,14 +88,14 @@ class AttendanceCalendarStore {
         error.code = 'HOLIDAY_ALREADY_STARTED';
         throw error;
       }
-      await client.query("UPDATE holidays SET status = 'INACTIVE', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'ACTIVE'", [id]);
+      await client.query("UPDATE holidays SET status = 'INACTIVE' WHERE id = $1 AND status = 'ACTIVE'", [id]);
     });
   }
   async createHoliday(input, actorId, today) {
     try {
       return await transaction(this.pool, async client => {
         const { rows } = await client.query(
-          `INSERT INTO holidays (name, start_date, end_date, created_by, status) VALUES ($1, $2, $3, $4, 'ACTIVE') RETURNING ${columns}`,
+          `INSERT INTO holidays (name, start_date, end_date, user_id, status) VALUES ($1, $2, $3, $4, 'ACTIVE') RETURNING ${columns}`,
           [input.name, input.start_date, input.end_date, actorId]);
         const affectedEmployees = this.materializeAttendance && input.start_date <= today && today <= input.end_date
           ? await new AttendanceRepository(client).markHoliday(today, client) : 0;

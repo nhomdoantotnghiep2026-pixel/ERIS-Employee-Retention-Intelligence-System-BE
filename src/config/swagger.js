@@ -1,3 +1,4 @@
+const {holidaysPaths}=require('../modules/holidays/holidays.swagger');
 const { leaveRecordsPaths } = require('../modules/leave-records/leave-records.swagger');
 const { careerProfilePaths } = require('../modules/career-profile/career-profile.swagger');
 const { aiPaths } = require('../modules/ai/ai.swagger');
@@ -22,7 +23,7 @@ const swaggerSpec = swaggerJsdoc({
     info: { title: 'ERIS Backend API', version: '1.0.0', description: 'Employee Retention Intelligence System API documentation.' },
     servers: [{ url: 'http://localhost:3000', description: 'Local development server' }],
     tags: [{ name: 'Auth', description: 'Xác thực và quản lý phiên đăng nhập.' }],
-    paths: { ...leaveRecordsPaths, ...careerProfilePaths, ...aiPaths, ...workSchedulesPaths, ...auditReadPaths, ...educationPaths, ...jobHistoriesPaths, ...attendancePaths, ...authPaths, ...departmentsPaths, ...employeesPaths, ...positionsPaths, ...usersPaths, ...distancePaths, ...surveysPaths, ...policyDemoPaths },
+    paths: { ...holidaysPaths, ...leaveRecordsPaths, ...careerProfilePaths, ...aiPaths, ...workSchedulesPaths, ...auditReadPaths, ...educationPaths, ...jobHistoriesPaths, ...attendancePaths, ...authPaths, ...departmentsPaths, ...employeesPaths, ...positionsPaths, ...usersPaths, ...distancePaths, ...surveysPaths, ...policyDemoPaths },
     components: {
       securitySchemes: {
         bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }

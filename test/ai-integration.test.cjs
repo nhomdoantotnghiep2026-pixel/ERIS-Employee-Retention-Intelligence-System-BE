@@ -47,7 +47,7 @@ test('Preview creates a snapshot only when complete; predict reads exact stored 
  let calls=0,writes=0,snapshots=0;
  const stored={snapshotId:3,employee:{id:7},features:sample,missingFeatures:[],invalidFeatures:[],outOfDomainFeatures:[],ready:true};
  const repository={assertHr:async()=>{},read:async()=>row,createSnapshot:async()=>{snapshots++;return 3;},readSnapshot:async(_actor,employeeId,snapshotId)=>{assert.equal(employeeId,7);assert.equal(snapshotId,3);return stored;},save:async()=>{writes++;return {predictionId:9,snapshotId:3};}};
- const service=new AiService({repository,client:{explain:async(_id,features)=>{calls++;assert.deepEqual(features,sample);return response();}},clock:()=>new Date('2026-11-08T12:00:00Z')});
+ const service=new AiService({repository,exchangeRates:{latest:async()=>({vndPerUsd:25000,source:'TEST_REFERENCE'})},client:{explain:async(_id,features)=>{calls++;assert.deepEqual(features,sample);return response();}},clock:()=>new Date('2026-11-08T12:00:00Z')});
  const missing=await service.preview(1,7,{});assert.equal(missing.snapshotCreated,false);assert.equal(snapshots,0);assert.equal(calls,0);
  const body={vndPerUsd:25000,supplementalFeatures:{Work_Hours_Per_Week:40,Overtime_Hours:5,Sick_Days:2}};
  assert.equal((await service.preview(1,7,body)).snapshotId,3);assert.equal(snapshots,1);

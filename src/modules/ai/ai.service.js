@@ -1,13 +1,18 @@
+const {ExchangeRateService}=require('./ai.exchange-rate');
 const { AppError } = require('../../common/errors/app-error');
 const { build,options,id,todayVN } = require('./ai.features');
 const WARNING='Model demo chưa đạt tiêu chí đánh giá; không dùng để kết luận nhân viên sẽ nghỉ việc. Chưa có ngưỡng rủi ro hoặc thời hạn dự báo.';
 class AiService {
-  constructor({repository,client,clock=()=>new Date()}){Object.assign(this,{repository,client,clock});}
+  constructor({repository,client,clock=()=>new Date(),exchangeRates=new ExchangeRateService()}){Object.assign(this,{repository,client,clock,exchangeRates});}
+  async exchangeRate(actorId){await this.repository.assertHr(actorId);return this.exchangeRates.latest();}
   async info(actorId){await this.repository.assertHr(actorId);return {...await this.client.info(),warning:WARNING};}
   async preview(actorId,employeeId,body={},allowSave=false) {
     await this.repository.assertHr(actorId);
     const now=this.clock(),today=todayVN(now),opts=options(body,allowSave,today);
     const row=await this.repository.read(id(employeeId),opts,today,now.toISOString());
+    if(opts.vndPerUsd===undefined && !Object.hasOwn(opts.supplementalFeatures,'Monthly_Salary') && row.current_salary!=null){
+      opts.exchangeRate=await this.exchangeRates.latest();opts.vndPerUsd=opts.exchangeRate.vndPerUsd;
+    }
     const preview={employee:{id:row.id,employeeCode:row.employeeCode,fullName:row.fullName},capturedAt:now.toISOString(),snapshotDate:today,...build(row,opts,today),warning:WARNING};
     if(preview.missingFeatures.length)return {...preview,snapshotCreated:false,snapshotId:null,ready:false};
     const snapshotId=await this.repository.createSnapshot(actorId,preview);

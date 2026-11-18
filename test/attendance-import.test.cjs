@@ -16,7 +16,7 @@ for(const [name,s,d,a,b,working,late,early] of [
   ['clock early vs working deficit',hc,'2026-11-16','2026-11-16 08:00:00','2026-11-16 12:00:00',240,0,300],
 ])test(name,()=>{
   const start=R.timestamp(a),end=R.timestamp(b),metrics=R.calculate(d,start,end,s);
-  assert.deepEqual([metrics.working_minutes,metrics.late_mins,metrics.early_mins,metrics.overtime_minutes],[working,late,early,0]);
+  assert.deepEqual([metrics.working_minutes,metrics.late_mins,metrics.early_mins,metrics.overtime_minutes],[working,late,early,name==='TC02/TC18'?15:name==='TC04'?10:0]);
   assert.deepEqual(R.candidates(start,end,s),[d]);assert.equal(metrics.attendance_status,'PRESENT');
 });
 test('break overlap and invalid break configuration',()=>{

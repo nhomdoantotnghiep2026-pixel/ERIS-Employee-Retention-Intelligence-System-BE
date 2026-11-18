@@ -13,7 +13,9 @@ class LeaveRecordsRepository {
  }
  async find(db,id){const row=(await db.query(`SELECT ${projection} FROM employee_leave_records l WHERE id=$1`,[id])).rows[0];if(!row)fail('NOT_FOUND','Leave Record not found.',404);return row;}
  async validate(db,row,exclude=null,duplicate=false){
- if(!(await db.query('SELECT id FROM employees WHERE id=$1 FOR SHARE',[row.employee_id])).rows.length)fail('EMPLOYEE_NOT_FOUND','Employee not found.');
+ const employee=(await db.query('SELECT id,hire_date::text FROM employees WHERE id=$1 FOR SHARE',[row.employee_id])).rows[0];
+ if(!employee)fail('EMPLOYEE_NOT_FOUND','Employee not found.');
+ if(!employee.hire_date||row.start_date<employee.hire_date)fail('BEFORE_HIRE_DATE','Leave must start on or after the employee hire date.');
  if(!(await db.query('SELECT id FROM leave_types WHERE id=$1 FOR SHARE',[row.leave_type_id])).rows.length)fail('LEAVE_TYPE_NOT_FOUND','Leave Type not found.');
  const overlaps=(await db.query(`SELECT ${projection} FROM employee_leave_records l WHERE employee_id=$1 AND record_status='ACTIVE' AND ($4::int IS NULL OR id<>$4) AND start_date<=$3::date AND end_date>=$2::date`,[row.employee_id,row.start_date,row.end_date,exclude])).rows;
  if(duplicate&&overlaps.some(l=>l.leave_type_id===row.leave_type_id&&l.start_date===row.start_date&&l.end_date===row.end_date&&(l.reason||null)===(row.reason||null)))return 'DUPLICATE';

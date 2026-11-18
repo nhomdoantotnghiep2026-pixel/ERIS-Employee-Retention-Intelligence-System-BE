@@ -92,7 +92,7 @@ function createAttendanceService(config, repository, clock=()=>new Date(), locat
       let hasWorkingDay=false;
       for(const date of input.dates) {
         const schedule=await repository.getSchedule(user.employeeId,date);
-        if(isScheduledDay(date,schedule)){hasWorkingDay=true;break;}
+        if(isScheduledDay(date,schedule)&&!(calendarStore&&await calendarStore.holiday(date))){hasWorkingDay=true;break;}
       }
       if(!hasWorkingDay) error('VALIDATION_ERROR','The leave range has no working day in your schedule.',400);
       return {data:await leaveRepository.create(user,input)};
