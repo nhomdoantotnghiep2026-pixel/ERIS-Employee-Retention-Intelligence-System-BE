@@ -8,6 +8,7 @@ function createAiRouter({service,repository,authenticate,policyRepository=new Ai
   const route=fn=>async(req,res,next)=>{try{res.json({data:await fn(req)});}catch(error){if(error instanceof AppError&&error.details)return res.status(error.statusCode).json({message:error.message,details:error.details});next(error);}};
   router.get('/model',route(req=>service.info(req.auth.userId)));
   router.get('/employees',route(req=>repository.employees(req.auth.userId)));
+  router.get('/employees/:employeeId/results',route(req=>repository.results(req.auth.userId,id(req.params.employeeId))));
   router.get('/employees/:employeeId/snapshots',route(req=>repository.snapshots(req.auth.userId,id(req.params.employeeId))));
   router.get('/employees/:employeeId/snapshots/:snapshotId',route(req=>repository.readSnapshot(req.auth.userId,id(req.params.employeeId),id(req.params.snapshotId))));
   router.post('/employees/:employeeId/preview',route(req=>service.preview(req.auth.userId,req.params.employeeId,req.body)));

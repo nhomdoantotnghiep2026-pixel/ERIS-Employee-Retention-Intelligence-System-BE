@@ -77,10 +77,22 @@ test('Batch: duplicate rejected before inference, 2 workers maximum, per-person 
 test('HTTP routes require authentication and HR for model/preview',async()=>{
  const express=require('express');const {createAiRouter}=require('../src/modules/ai/ai.routes');const {errorHandler}=require('../src/common/middleware/error-handler');
  const service=new AiService({repository:{assertHr:async actor=>{if(actor!==1)throw new AppError(403,'Forbidden');},read:async()=>row},client:{info:async()=>({model_id:MODEL_ID})}});
+ service.repository.results=async(actor,employeeId)=>{
+  await service.repository.assertHr(actor);
+  assert.equal(employeeId,7);
+  return [{predictionId:12,snapshotId:3,createdAt:'2026-11-08T12:00:00.000Z'}];
+ };
  const app=express();app.use(express.json());app.use('/api/ai',createAiRouter({service,repository:service.repository,authenticate:(req,_res,next)=>{if(!req.headers.authorization)return next(new AppError(401,'Unauthorized'));req.auth={userId:Number(req.headers.authorization)};next();}}));app.use(errorHandler);
  const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
  try{const url='http://127.0.0.1:'+server.address().port;
   assert.equal((await fetch(url+'/api/ai/model')).status,401);assert.equal((await fetch(url+'/api/ai/model',{headers:{authorization:'2'}})).status,403);
+  const resultsUrl=url+'/api/ai/employees/7/results';
+  assert.equal((await fetch(resultsUrl)).status,401);
+  assert.equal((await fetch(resultsUrl,{headers:{authorization:'2'}})).status,403);
+  assert.equal((await fetch(url+'/api/ai/employees/0/results',{headers:{authorization:'1'}})).status,400);
+  const results=await fetch(resultsUrl,{headers:{authorization:'1'}});
+  assert.equal(results.status,200);
+  assert.deepEqual(await results.json(),{data:[{predictionId:12,snapshotId:3,createdAt:'2026-11-08T12:00:00.000Z'}]});
   const r=await fetch(url+'/api/ai/employees/7/predict',{method:'POST',headers:{authorization:'1','Content-Type':'application/json'},body:'{}'});assert.equal(r.status,400);assert.match((await r.json()).message,/snapshotId/);
  }finally{await new Promise(r=>server.close(r));}
 });
@@ -105,6 +117,10 @@ test('Real PostgreSQL TEMP tables: save snapshot/result/12 SHAP/audit atomically
   const counts=(await client.query('SELECT (SELECT count(*) FROM explainable)::int AS explanations,(SELECT count(*) FROM audit_logs)::int AS audits')).rows[0];assert.equal(counts.explanations,12);assert.equal(counts.audits,2);
   const stored=(await client.query('SELECT risk_level,prediction_label FROM prediction_results')).rows[0];assert.equal(stored.risk_level,'REVIEW_REQUIRED');assert.equal(stored.prediction_label,true);
   const reread=await repo.result(1,saved.predictionId);assert.equal(reread.model.model_id,MODEL_ID);assert.equal(reread.preview.provenance.Sick_Days,'MANUAL_DEMO');
+  const results=await repo.results(1,7);
+  assert.deepEqual(results,[{predictionId:saved.predictionId,snapshotId,createdAt:reread.createdAt}]);
+  assert.deepEqual(await repo.results(1,8),[]);
+  await assert.rejects(()=>repo.results(2,7),e=>e.statusCode===403);
   await client.query("ALTER TABLE audit_logs ADD CONSTRAINT reject_audit CHECK(action<>'CREATE') NOT VALID");
   await assert.rejects(()=>repo.save(1,preview,response()));
   const after=(await client.query('SELECT (SELECT count(*) FROM model_run)::int AS runs,(SELECT count(*) FROM prediction_results)::int AS predictions,(SELECT count(*) FROM ai_input)::int AS snapshots')).rows[0];assert.deepEqual(after,{runs:1,predictions:1,snapshots:1});

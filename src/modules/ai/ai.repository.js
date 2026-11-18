@@ -79,6 +79,17 @@ class AiRepository {
       return {predictionId:prediction.id,runId:run.id,snapshotId:snapshot.id};
     }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
   }
+  async results(actorId,employeeId) {
+    await this.assertHr(actorId);
+    const {rows}=await this.pool.query(`SELECT p.id AS "predictionId",p.snapshot_id AS "snapshotId",p.created_at AS "createdAt"
+      FROM prediction_results p
+      WHERE p.employee_id=$1 AND EXISTS (
+        SELECT 1 FROM audit_logs a
+        WHERE a.entity_type='AI_PREDICTION' AND a.entity_id=p.id AND a.action='CREATE'
+      )
+      ORDER BY p.created_at DESC,p.id DESC`,[employeeId]);
+    return rows;
+  }
   async result(actorId,resultId) {
     await this.assertHr(actorId);
     const {rows}=await this.pool.query(`SELECT p.id,p.prediction_run_id AS "runId",p.snapshot_id AS "snapshotId",p.created_at AS "createdAt",a.new_value AS metadata
