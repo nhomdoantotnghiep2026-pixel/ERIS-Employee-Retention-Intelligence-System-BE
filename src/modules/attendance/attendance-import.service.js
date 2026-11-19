@@ -1,3 +1,4 @@
+const {shiftTypeKey}=require('../../common/validation/shift-type');
 const {workWarnings,calendarLock}=require('../holidays/holidays');
 const { assertNoLeave, lockEmployee } = require('../leave-records/leave-records.repository');
 const jwt=require('jsonwebtoken');
@@ -25,7 +26,7 @@ class AttendanceImportService {
       const row={...source,issues:[...(source.parse_issues||[])],action:'BLOCKED',validation_status:'VALID'}, choice=choices[source.excel_row]||{};
       const employee=employees.get(row.employee_code), schedule=refs.schedules.find(s=>s.id===employee?.work_schedule_id);
       if(employee&&!schedule) row.issues.push(issue('ATT-016','Employee has no assigned work schedule. Configure employees.work_schedule_id first.'));
-      if(schedule&&schedule.shift_type!==row.shift_type) row.issues.push(issue('ATT-017','File shift_type does not match the employee assigned schedule.'));
+      if(schedule&&shiftTypeKey(schedule.shift_type)!==shiftTypeKey(row.shift_type)) row.issues.push(issue('ATT-017','File shift_type does not match the employee assigned schedule.'));
       if(!employee) row.issues.push(issue('ATT-003','Employee code does not exist.'));
       if(!schedule || schedule.status!=='ACTIVE') row.issues.push(issue('ATT-004','Shift type does not identify an active schedule.'));
       if(employee) { row.employee_id=employee.id; row.full_name=employee.full_name; if(row.employee_name && row.employee_name.normalize('NFC')!==employee.full_name.normalize('NFC'))row.issues.push(issue('ATT-009','Employee name differs from the employee profile.','WARNING')); }

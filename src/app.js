@@ -172,6 +172,9 @@ const leaveRecordsService = new LeaveRecordsService(new LeaveRecordsRepository(d
 app.use('/api', createLeaveRecordsRouter({ service: leaveRecordsService, authenticate }));
 app.get('/career-goals-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/career-goals/index.html'));});
 app.use('/career-goals-demo/assets', express.static(require('node:path').join(__dirname,'../demo/career-goals'),{index:false,etag:false,setHeaders:res=>res.set('Cache-Control','no-store')}));
+app.use('/api/policy-agent',require('./modules/policy-agent/policy-agent').router({pool:databasePool,authenticate}));
+app.get('/policy-agent-demo',(_req,res)=>{res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/policy-agent/index.html'));});
+app.use('/policy-agent-demo/assets',express.static(require('node:path').join(__dirname,'../demo/policy-agent'),{index:false,etag:false}));
 app.use(errorHandler);
 
 module.exports = { app, attendanceService, workSchedulesService };
