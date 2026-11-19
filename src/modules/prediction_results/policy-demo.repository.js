@@ -1,6 +1,8 @@
 const { AppError } = require('../../common/errors/app-error');
+const {validatePolicyCreate}=require('./policy-create.validation');
+const {writeAudit}=require('../audit_logs/audit.repository');
 const { DEMO_VERSION, DEMO_POLICIES, DEMO_EXPLANATIONS } = require('./policy-demo.data');
-const policyColumns=`id,code,name,description,target_factor AS "targetFactor",status,created_at AS "createdAt",updated_at AS "updatedAt"`;
+const policyColumns=`id,code,name,description,status,created_at AS "createdAt",updated_at AS "updatedAt"`;
 const source = version => version===DEMO_VERSION?'DEMO_FIXED':'STORED';
 const predictionMetadata = alias => `LEFT JOIN LATERAL (
   SELECT COALESCE(a.new_value->>'modelVersion',a.new_value#>>'{model,model_id}') AS model_version
@@ -13,8 +15,31 @@ class PolicyDemoRepository {
   constructor(pool) {this.pool=pool;}
   async assertHr(client,actorId,lock=false) {
     const {rows}=await client.query(`SELECT u.id FROM users u JOIN role r ON r.id=u.role_id
-      WHERE u.id=$1 AND u.status='ACTIVE' AND r.name='HR' ${lock?'FOR SHARE OF u':''}`,[actorId]);
+      WHERE u.id=$1 AND u.status='ACTIVE' AND r.name='HR' ${lock?'FOR SHARE OF u,r':''}`,[actorId]);
     if (!rows[0]) throw new AppError(403,'Chỉ HR ACTIVE được xem kết quả dự đoán và chính sách.');
+  }
+  async createPolicy(actorId,body) {
+    const client=await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await this.assertHr(client,actorId,true);
+      const input=validatePolicyCreate(body);
+      // Serialise this API's code checks, including legacy lower-case codes.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('retention-policy-code:' || $1::text))",[input.code]);
+      const duplicate=await client.query('SELECT id FROM retention_policies WHERE upper(btrim(code))=$1 LIMIT 1',[input.code]);
+      if(duplicate.rows.length)throw new AppError(409,'Mã policy đã tồn tại, kể cả policy INACTIVE. Vui lòng chọn mã khác.');
+      const {rows}=await client.query(`INSERT INTO retention_policies(code,name,description,status)
+        VALUES($1,$2,$3,$4) RETURNING ${policyColumns}`,
+        [input.code,input.name,input.description,input.status]);
+      const policy=rows[0];
+      await writeAudit(client,{actorId,entityType:'retention_policies',entityId:policy.id,action:'CREATE',newValue:policy});
+      await client.query('COMMIT');
+      return {data:policy};
+    } catch(error) {
+      await client.query('ROLLBACK');
+      if(error.code==='23505'&&error.constraint==='retention_policies_code_key')throw new AppError(409,'Mã policy đã tồn tại. Vui lòng chọn mã khác.');
+      throw error;
+    } finally {client.release();}
   }
   async createDemo(actorId,employeeIds) {
     const client=await this.pool.connect();
