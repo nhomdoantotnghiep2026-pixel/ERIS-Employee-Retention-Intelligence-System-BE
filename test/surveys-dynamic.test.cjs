@@ -60,7 +60,9 @@ const detail=await s.detail(1,id);assert.equal(detail.participantCount,1);assert
 await assert.rejects(s.participants(1,id,11),e=>e.statusCode===404);await assert.rejects(s.participants(1,other.id,10),e=>e.statusCode===404);await assert.rejects(s.participants(2,id),e=>e.statusCode===403);await assert.rejects(s.participants(1,99999),e=>e.statusCode===404);
 assert.equal((await s.responses(1,id,result.responseId)).answers.length,qs.length);
 await assert.rejects(s.submit(2,id,{answers}),e=>e.statusCode===409);
-const {latestSatisfaction}=mod('src/modules/surveys/surveys.satisfaction'),cutoff=(await c.query('SELECT clock_timestamp() AS now')).rows[0].now;assert.equal(await latestSatisfaction(c,10,cutoff),3);
+const {periodSatisfaction}=mod('src/modules/surveys/surveys.satisfaction'),cutoff=(await c.query('SELECT clock_timestamp() AS now')).rows[0].now;
+assert.equal(await periodSatisfaction(c,10,cutoff,'2000-01-01'),3);
+assert.equal(await periodSatisfaction(c,11,cutoff,'2000-01-01'),null);
 const report=await s.results(1,id);assert.equal(report.categoryScores.length,3);assert.equal(report.categoryScores.find(c=>c.categoryId===9).satisfactionScore,3);assert.equal(report.questions.find(q=>q.id===custom.id).averageScore,5);assert.equal(report.completionRate,50);
 await s.transition(1,id,true);await assert.rejects(s.submit(3,id,{answers}),e=>e.statusCode===409);assert.equal((await s.responses(2,id,null,true)).satisfactionScore,3);
 // Previously stored V1 snapshots remain publishable when the current catalog is V2.

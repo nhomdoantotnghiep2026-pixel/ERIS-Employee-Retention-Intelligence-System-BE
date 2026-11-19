@@ -1,6 +1,8 @@
 const {FEATURES,valid,todayVN}=require('./ai.features');
 const {AppError}=require('../../common/errors/app-error');
-const COLUMNS=['department','gender','age','hire_date','years_at_company','education_level','monthly_salary','work_hours_per_week','overtime_hours','sick_days','promotions','employee_satisfaction_score'];
+const COLUMNS=['department','gender','age','hire_date','years_at_company','education_level','monthly_salary_usd','work_hours_per_week','overtime_hours','leave_days','promotions','employee_satisfaction_score'];
+const INSERT_COLUMNS=[...COLUMNS,'monthly_salary_vnd','fx_vnd_per_usd','fx_rate_date'];
+const nullableNumber=value=>value==null?null:Number(value);
 function snapshotData(row,metadata=null){
  const features={},missingFeatures=[],invalidFeatures=[],outOfDomainFeatures=[];
  for(const [i,key] of FEATURES.entries()){
@@ -18,7 +20,9 @@ function snapshotData(row,metadata=null){
   capturedAt,snapshotDate:todayVN(new Date(capturedAt)),features,missingFeatures,invalidFeatures,outOfDomainFeatures,
   ready:!missingFeatures.length&&!invalidFeatures.length,
   provenance:metadata?.provenance??Object.fromEntries(FEATURES.map((key,i)=>[key,'ai_input.'+COLUMNS[i]+'; chưa ghi nhận nguồn trước snapshot'])),
-  period:metadata?.period??null,vndPerUsd:metadata?.vndPerUsd??null,exchangeRate:metadata?.exchangeRate??null,
+  period:metadata?.period??null,monthlySalaryVnd:nullableNumber(row.monthly_salary_vnd),
+  vndPerUsd:nullableNumber(row.fx_vnd_per_usd??metadata?.vndPerUsd),
+  fxRateDate:row.fx_rate_date??metadata?.exchangeRate?.rateDate??null,exchangeRate:metadata?.exchangeRate??null,
   dataSource:outOfDomainFeatures.length?'STORED_SNAPSHOT_OUT_OF_DOMAIN_DEMO':metadata?.dataSource??'STORED_SNAPSHOT',
   issues:outOfDomainFeatures.length?['Employee_Satisfaction_Score ngoài thang khảo sát 1–5; giữ nguyên giá trị snapshot để test model demo, không quy đổi.']:[]};
 }
@@ -32,15 +36,15 @@ function installSnapshots(AiRepository){
   try{
    await client.query('BEGIN');await this.assertHr(actorId,client,true);await assertEmployee(client,preview.employee.id,true);
    if(FEATURES.some(key=>!valid(key,preview.features[key])))throw new AppError(422,'Chưa đủ 12 feature hợp lệ; không tạo snapshot.');
-   const values=FEATURES.map(key=>preview.features[key]);
-   const row=(await client.query(`INSERT INTO ai_input(employee_id,snapshot_date,${COLUMNS.join(',')}) VALUES($1,$2,${values.map((_,i)=>'$'+(i+3)).join(',')}) RETURNING id`,[preview.employee.id,preview.capturedAt,...values])).rows[0];
+   const values=[...FEATURES.map(key=>preview.features[key]),preview.monthlySalaryVnd,preview.vndPerUsd,preview.fxRateDate];
+   const row=(await client.query(`INSERT INTO ai_input(employee_id,snapshot_date,${INSERT_COLUMNS.join(',')}) VALUES($1,$2,${values.map((_,i)=>'$'+(i+3)).join(',')}) RETURNING id`,[preview.employee.id,preview.capturedAt,...values])).rows[0];
    await client.query(`INSERT INTO audit_logs(user_id,entity_type,entity_id,action,new_value) VALUES($1,'AI_INPUT',$2,'CREATE',$3::jsonb)`,[actorId,row.id,JSON.stringify({...preview,snapshotId:row.id})]);
    await client.query('COMMIT');return row.id;
   }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
  };
  AiRepository.prototype.readSnapshot=async function(actorId,employeeId,snapshotId,client=this.pool,lock=false){
   await this.assertHr(actorId,client);await assertEmployee(client,employeeId,lock);
-  const {rows}=await client.query(`SELECT i.*,i.hire_date::text AS hire_date,e.employee_code AS "employeeCode",e.full_name AS "fullName"
+  const {rows}=await client.query(`SELECT i.*,i.hire_date::text AS hire_date,i.fx_rate_date::text AS fx_rate_date,e.employee_code AS "employeeCode",e.full_name AS "fullName"
    FROM ai_input i JOIN employees e ON e.id=i.employee_id WHERE i.id=$1 AND i.employee_id=$2 ${lock?'FOR SHARE OF i':''}`,[snapshotId,employeeId]);
   if(!rows[0])throw new AppError(404,'Snapshot không tồn tại hoặc không thuộc nhân viên này.');
   const audit=(await client.query(`SELECT new_value FROM audit_logs WHERE entity_type='AI_INPUT' AND entity_id=$1 AND action='CREATE' ORDER BY id DESC LIMIT 1`,[snapshotId])).rows[0];
@@ -48,7 +52,7 @@ function installSnapshots(AiRepository){
  };
  AiRepository.prototype.snapshots=async function(actorId,employeeId){
   await this.assertHr(actorId);await assertEmployee(this.pool,employeeId);
-  const {rows}=await this.pool.query(`SELECT i.*,i.hire_date::text AS hire_date,e.employee_code AS "employeeCode",e.full_name AS "fullName"
+  const {rows}=await this.pool.query(`SELECT i.*,i.hire_date::text AS hire_date,i.fx_rate_date::text AS fx_rate_date,e.employee_code AS "employeeCode",e.full_name AS "fullName"
     FROM ai_input i JOIN employees e ON e.id=i.employee_id WHERE i.employee_id=$1 ORDER BY i.snapshot_date DESC,i.id DESC`,[employeeId]);
   return rows.map(row=>snapshotData(row));
  };

@@ -34,7 +34,6 @@
     $('supplemental').value=JSON.stringify(supplementalFeatures,null,2);
     const body={supplementalFeatures};
     if($('periodStart').value)body.periodStart=$('periodStart').value;
-    if($('periodEnd').value)body.periodEnd=$('periodEnd').value;
     if($('rate').value)body.vndPerUsd=Number($('rate').value);
     return body;
   }
@@ -85,11 +84,11 @@
   $('reloadSnapshots').onclick=()=>busy(async()=>loadSnapshots(Number($('snapshot').value)));
   $('snapshot').onchange=()=>busy(async()=>showSnapshot(await request(path('snapshots')+'/'+$('snapshot').value)));
   $('modelInfo').onclick=()=>busy(async(version)=>{const data=await request('/api/ai/model');if(version===generation)notify('Model sẵn sàng: '+data.model_id+'\n'+data.warning);});
-  $('preview').onclick=()=>busy(async(version)=>{const data=await request(path('preview'),input());if(version!==generation)return;lastPreview=data;$('previewOutput').textContent=JSON.stringify(data,null,2);if(data.snapshotCreated){await loadSnapshots(data.snapshotId);notify('Đã tạo snapshot #'+data.snapshotId+' trong ai_input.');}else{notify('Chưa tạo snapshot. Còn thiếu: '+data.missingFeatures.join(', '));}});
+  $('preview').onclick=()=>busy(async(version)=>{const data=await request(path('preview'),input());if(version!==generation)return;lastPreview=data;$('previewOutput').textContent=JSON.stringify(data,null,2);if(data.snapshotCreated){await loadSnapshots(data.snapshotId);notify('Đã tạo snapshot #'+data.snapshotId+' trong ai_input.');}else{selectedSnapshot=null;notify(data.issues.join(' ')||'Chưa tạo snapshot. Còn thiếu: '+data.missingFeatures.join(', '));}});
   $('suggest').onclick=()=>{
     if(!lastPreview){notify('Hãy kiểm tra dữ liệu trước.');return;}
-    const examples={Department:'IT',Gender:'Male',Age:30,Hire_Date:'2020-10-20',Years_At_Company:6,Education_Level:'Bachelor',Monthly_Salary:1000,Work_Hours_Per_Week:40,Overtime_Hours:5,Sick_Days:2,Promotions:0,Employee_Satisfaction_Score:4};
-    $('supplemental').value=JSON.stringify(Object.fromEntries(lastPreview.missingFeatures.map(k=>[k,examples[k]])),null,2);
+    const examples={Department:'IT',Gender:'Male',Age:30,Hire_Date:'2020-10-20',Years_At_Company:6,Education_Level:'Bachelor',Monthly_Salary:1000,Promotions:0};
+    $('supplemental').value=JSON.stringify(Object.fromEntries(lastPreview.missingFeatures.filter(k=>Object.hasOwn(examples,k)).map(k=>[k,examples[k]])),null,2);
     notify('Đã điền GIÁ TRỊ VÍ DỤ cho field còn thiếu. Hãy sửa theo dữ liệu muốn demo trước khi chạy.');
   };
   $('predict').onclick=()=>busy(async(version)=>{
