@@ -2,7 +2,7 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {recommend,DRAFTS}=require('../src/modules/ai/ai-policy.rules');
 const {MODEL_ID,SCHEMA,STATUS}=require('../src/modules/ai/ai.client');
 const {AiPolicyRepository}=require('../src/modules/ai/ai-policy.repository');
-const {FEATURES}=require('../src/modules/ai/ai.features');
+const {FEATURES}=require('../src/modules/ai_input/ai-input.features');
 const {AppError}=require('../src/common/errors/app-error');
 function fixture(changes={}){
  const contributions=Object.fromEntries(FEATURES.map(k=>[k,0]));Object.assign(contributions,{Age:0.01,Gender:0.01,Hire_Date:0.04,Overtime_Hours:0.02,Work_Hours_Per_Week:0.015,Employee_Satisfaction_Score:0.03,Monthly_Salary:0.02,Sick_Days:0.01,Promotions:0.005},changes.contributions);

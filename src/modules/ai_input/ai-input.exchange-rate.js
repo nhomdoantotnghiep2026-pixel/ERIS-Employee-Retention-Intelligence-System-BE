@@ -1,5 +1,5 @@
 const {AppError}=require('../../common/errors/app-error');
-const {iso,todayVN}=require('./ai.features');
+const {iso,todayVN}=require('./ai-input.features');
 const URL='https://api.frankfurter.dev/v2/rate/USD/VND';
 class ExchangeRateService {
  constructor({fetchImpl=fetch,clock=()=>new Date(),cacheMs=60000,timeoutMs=5000}={}) {

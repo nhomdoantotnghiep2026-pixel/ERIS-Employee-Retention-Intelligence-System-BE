@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {ExchangeRateService}=require('../src/modules/ai/ai.exchange-rate');
+const {ExchangeRateService}=require('../src/modules/ai_input/ai-input.exchange-rate');
 const {AiService}=require('../src/modules/ai/ai.service');
 const {score}=require('../src/modules/surveys/surveys.dynamic.validation');
 const {periodSatisfaction}=require('../src/modules/surveys/surveys.satisfaction');

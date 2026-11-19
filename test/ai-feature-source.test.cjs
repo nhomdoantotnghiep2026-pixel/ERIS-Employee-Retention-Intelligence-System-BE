@@ -1,7 +1,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {AiRepository}=require('../src/modules/ai/ai.repository');
-const {build}=require('../src/modules/ai/ai.features');
+const {AiInputRepository}=require('../src/modules/ai_input/ai-input.repository');
+const {build}=require('../src/modules/ai_input/ai-input.features');
 
 test('repository assembles period attendance and YTD sources in one consistent transaction',async()=>{
  const queries=[];let released=false;
@@ -12,7 +12,7 @@ test('repository assembles period attendance and YTD sources in one consistent t
   if(sql.includes('AS ytd_overtime_minutes')) return {rows:[{ytd_overtime_minutes:'0',absence_days:'0'}]};
   return {rows:[]};
  }};
- const repository=new AiRepository({connect:async()=>client});
+ const repository=new AiInputRepository({connect:async()=>client});
  const period={periodStart:'2026-11-04',periodEnd:'2026-11-10'};
  const row=await repository.read(7,period,'2026-11-10','2026-11-10T05:00:00Z');
  assert.equal(queries[0].sql,'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
@@ -40,6 +40,6 @@ test('missing period attendance and survey remain missing rather than becoming z
 test('source read failure rolls back and releases client',async()=>{
  const queries=[];let released=false;
  const client={release(){released=true;},async query(sql){queries.push(sql);if(sql.startsWith('SELECT'))throw new Error('source unavailable');return {rows:[]};}};
- await assert.rejects(new AiRepository({connect:async()=>client}).read(1,{},'2026-11-10'),/source unavailable/);
+ await assert.rejects(new AiInputRepository({connect:async()=>client}).read(1,{},'2026-11-10'),/source unavailable/);
  assert.equal(queries.at(-1),'ROLLBACK');assert.equal(released,true);
 });
