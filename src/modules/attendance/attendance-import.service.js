@@ -6,15 +6,21 @@ const R = require('./attendance-import.rules');
 const { parseWorkbook, errorsWorkbook } = require('./attendance-import.excel');
 const issue=(code,message,severity='ERROR',requires_resolution=false)=>({code,message,severity,requires_resolution});
 const same=(row,current)=>!!current && current.record_status==='ACTIVE' &&
-  current.check_in===row.check_in && current.check_out===row.check_out && current.work_schedule_id===row.work_schedule_id &&
+  current.attendance_status===row.attendance_status && current.check_in===row.check_in && current.check_out===row.check_out && current.work_schedule_id===row.work_schedule_id &&
   ['working_minutes','overtime_minutes','late_mins','early_mins'].every(k=>Number(current[k])===Number(row[k]));
 const existingToken=current=>current ? {id:current.id,fingerprint:R.hash(current)} : null;
 class AttendanceImportService {
   constructor(repository,{previewSecret=process.env.JWT_SECRET,clock=()=>new Date()}={}) { this.repo=repository;this.previewSecret=previewSecret;this.clock=clock; }
-  async build(db, input, choices={}) {
+  async build(db, input, choices={}, complete=false) {
     await calendarLock(db,true);
     const refs=await this.repo.references(db), employees=new Map(refs.employees.map(e=>[e.employee_code,e]));
     const rows=[],now=this.clock().getTime();
+    const incompleteDays=new Set(input.filter(row=>row.work_date&&Boolean(row.check_in)!==Boolean(row.check_out))
+      .map(row=>`${row.employee_code}:${row.work_date}`));
+    const emptyRows=input.filter(row=>row.work_date&&!row.check_in&&!row.check_out);
+    const dates=emptyRows.map(row=>row.work_date).sort();
+    const calendar=dates.length ? await this.repo.calendarSources(db,dates[0],dates.at(-1),
+      [...new Set(emptyRows.map(row=>employees.get(row.employee_code)?.id).filter(Boolean))]) : {holidays:[],leaves:[]};
     for(const source of input) {
       const row={...source,issues:[...(source.parse_issues||[])],action:'BLOCKED',validation_status:'VALID'}, choice=choices[source.excel_row]||{};
       const employee=employees.get(row.employee_code), schedule=refs.schedules.find(s=>s.id===employee?.work_schedule_id);
@@ -24,7 +30,23 @@ class AttendanceImportService {
       if(!schedule || schedule.status!=='ACTIVE') row.issues.push(issue('ATT-004','Shift type does not identify an active schedule.'));
       if(employee) { row.employee_id=employee.id; row.full_name=employee.full_name; if(row.employee_name && row.employee_name.normalize('NFC')!==employee.full_name.normalize('NFC'))row.issues.push(issue('ATT-009','Employee name differs from the employee profile.','WARNING')); }
       if(schedule) { row.work_schedule_id=schedule.id; row.schedule_snapshot=R.scheduleSnapshot(schedule); }
-      if(!row.check_in&&!row.check_out) { row.validation_status='NO_DATA';row.issues.push(issue('ATT-015','Both timestamps are empty.','INFO')); }
+      if(!row.check_in&&!row.check_out) {
+        row.validation_status='NO_DATA';
+        if(row.work_date&&!row.issues.some(i=>i.severity==='ERROR')) {
+          try {
+            if(!employee.hire_date||row.work_date<employee.hire_date)R.fail('ATT-019','Attendance must be on or after the employee hire date.');
+            const covers=source=>source.start_date<=row.work_date&&source.end_date>=row.work_date;
+            const holidays=calendar.holidays.filter(covers);
+            const leaves=calendar.leaves.filter(l=>l.employee_id===employee.id&&covers(l));
+            const status=R.classifyNoPunch(row.work_date,schedule,now,{holiday:holidays.length,leave:leaves.length,
+              complete:complete&&!incompleteDays.has(`${row.employee_code}:${row.work_date}`)});
+            if(status) Object.assign(row,{attendance_status:status,check_in:null,check_out:null,working_minutes:0,
+              late_mins:0,early_mins:0,overtime_minutes:0,derived_source:{
+                holiday_ids:holidays.map(h=>h.id),leave_record_ids:status==='ON_LEAVE'?leaves.map(l=>l.id):[]}});
+          } catch(e) { if(!e.code)throw e;row.issues.push(issue(e.code,e.message)); }
+        }
+        if(!row.attendance_status) row.issues.push(issue('ATT-015','No punches. A work date, completed shift and source or completeness confirmation are needed.','INFO'));
+      }
       else if(!row.check_in||!row.check_out) { row.validation_status='INCOMPLETE';row.issues.push(issue('ATT-014','Both check_in and check_out are required.','INFO')); }
       else if(Date.parse(row.check_out)<=Date.parse(row.check_in))row.issues.push(issue('ATT-006','check_out must be after check_in.'));
       if(row.check_in&&row.check_out&&(Date.parse(row.check_in)>now||Date.parse(row.check_out)>now))row.issues.push(issue('ATT-018','Future check-in/check-out is not allowed.'));
@@ -35,9 +57,9 @@ class AttendanceImportService {
         try {
           row.candidates=R.candidates(row.check_in,row.check_out,schedule);
           if(!row.candidates.length)row.issues.push(issue('ATT-007','No shift candidate matches the configured time windows.'));
-          else if(row.candidates.length>1&&!choice.work_date)row.issues.push(issue('ATT-008','Select one shift date before confirming.','WARNING',true));
+          else if(row.candidates.length>1&&!row.work_date&&!choice.work_date)row.issues.push(issue('ATT-008','Select one shift date before confirming.','WARNING',true));
           else {
-            row.work_date=choice.work_date || row.candidates[0];
+            row.work_date=row.work_date || choice.work_date || row.candidates[0];
             if(!row.candidates.includes(row.work_date))R.fail('ATT-007','Selected shift date is not a matching candidate.');
             if(!employee.hire_date||row.work_date<employee.hire_date||row.check_in.slice(0,10)<employee.hire_date)R.fail('ATT-019','Attendance must be on or after the employee hire date.');
             Object.assign(row,R.calculate(row.work_date,row.check_in,row.check_out,schedule));
@@ -49,24 +71,30 @@ class AttendanceImportService {
             row.issues.push(...await workWarnings(db,employee.id,row.check_in,row.check_out));
             await assertNoLeave(db,employee.id,row.work_date);
             const current=await this.repo.current(db,employee.id,row.work_date);
-            row.existing=existingToken(current);row.previous=current;
-            row.action=!current?'INSERT':same(row,current)?'SKIP':'CHANGED';
-            if(current&&row.action==='CHANGED'){row.issues.push(issue('ATT-012','An active record exists. Cancel it before importing a replacement.'));row.action='BLOCKED';}
-            else if(current)row.issues.push(issue('ATT-012','Identical active record already exists; this row will be skipped.','INFO'));
+            row.previous=current;
             const overlaps=await this.repo.overlapping(db,employee.id,row.check_in,row.check_out);
             if(overlaps.some(a=>String(a.id)!==String(current?.id)))row.issues.push(issue('ATT-021','Time interval overlaps another active attendance record.'));
           }
         }catch(e){ if(!e.code)throw e;row.issues.push(issue(e.code,e.message)); }
       }
-      if(row.issues.some(i=>i.severity==='ERROR')) { row.validation_status='ERROR';row.action='BLOCKED'; }
-      else if(row.check_in&&row.check_out) row.validation_status=row.issues.some(i=>i.severity==='WARNING')?'WARNING':row.existing?'DUPLICATE':'VALID';
+      if(row.attendance_status&&!row.issues.some(i=>i.severity==='ERROR')) {
+        const current=Object.hasOwn(row,'previous')?row.previous:await this.repo.current(db,row.employee_id,row.work_date);
+        row.existing=existingToken(current);row.previous=current;
+        row.action=!current?'INSERT':same(row,current)?'SKIP':'CONFLICT';
+        if(row.action==='CONFLICT')row.issues.push(issue('ATT-012','Cancel the existing ACTIVE attendance before importing a replacement.'));
+        if(row.action==='SKIP')row.issues.push(issue('ATT-012','Identical active record already exists; this row will be skipped.','INFO'));
+        if(current&&!row.check_in&&(current.check_in||current.check_out||Number(current.working_minutes)>0||Number(current.overtime_minutes)>0))
+          row.issues.push(issue('ATT-025','An empty row cannot replace actual attendance.'));
+      }
+      if(row.issues.some(i=>i.severity==='ERROR')) { row.validation_status='ERROR';if(row.action!=='CONFLICT')row.action='BLOCKED'; }
+      else if(row.attendance_status) row.validation_status=row.issues.some(i=>i.severity==='WARNING')?'WARNING':row.action==='SKIP'?'DUPLICATE':'VALID';
       if(choice.exclude) {row.excluded=true;row.action='SKIP';}
       rows.push(row);
     }
     const groups=new Map();
-    for(const row of rows.filter(r=>r.work_date&&!r.excluded&&r.validation_status!=='ERROR')) { const key=`${row.employee_id}:${row.work_date}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(row); }
+    for(const row of rows.filter(r=>r.attendance_status&&!r.excluded&&r.validation_status!=='ERROR')) { const key=`${row.employee_id}:${row.work_date}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(row); }
     for(const group of groups.values()) if(group.length>1) {
-      const first=group[0], identical=group.every(r=>r.check_in===first.check_in&&r.check_out===first.check_out&&R.hash(r.schedule_snapshot)===R.hash(first.schedule_snapshot));
+      const first=group[0], identical=group.every(r=>r.check_in===first.check_in&&r.check_out===first.check_out&&r.attendance_status===first.attendance_status&&R.hash(r.schedule_snapshot)===R.hash(first.schedule_snapshot));
       for(const row of group.slice(identical?1:0)) {
         row.issues.push(issue('ATT-013',identical?'Identical row repeated in this file.':'Different rows target the same employee/date; exclude all but one.','INFO',!identical));
         row.validation_status='DUPLICATE';row.action=identical?'SKIP':'BLOCKED';row.file_duplicate=identical;
@@ -99,43 +127,50 @@ class AttendanceImportService {
   }
   async preview(user,file,body={}) {
     await this.repo.actor(this.repo.pool,user.id,true);
-    R.object(body,['choices']);const input=await parseWorkbook(file),choices=this.choices(body.choices,input);
+    R.object(body,['choices','confirm_complete']);const complete=this.completeness(body);
+    const input=await parseWorkbook(file),choices=this.choices(body.choices,input);
     return this.repo.transaction(async db=>{
       await this.repo.actor(db,user.id,true,true);
-      const rows=await this.build(db,input,choices);
+      const rows=await this.build(db,input,choices,complete);
       for(const row of rows)row.selected_work_date=choices[row.excel_row]?.work_date;
-      return {status:this.state(rows),rows,preview_token:this.proof(user,file,rows,choices),expires_in_seconds:1800};
+      return {status:this.state(rows),rows,preview_token:this.proof(user,file,rows,{choices,complete}),expires_in_seconds:1800};
     });
   }
   async confirm(user,file,body={}) {
     await this.repo.actor(this.repo.pool,user.id,true);
-    R.object(body,['preview_token','choices','confirm_warnings','duplicate_strategy']);
+    R.object(body,['preview_token','choices','confirm_warnings','duplicate_strategy','confirm_complete']);
+    const complete=this.completeness(body);
     if(body.duplicate_strategy!==undefined&&body.duplicate_strategy!=='SKIP')R.fail('VALIDATION_ERROR','Only SKIP duplicate strategy is supported.');
     if(body.confirm_warnings!==undefined&&typeof body.confirm_warnings!=='boolean')R.fail('VALIDATION_ERROR','confirm_warnings must be boolean.');
-    const input=await parseWorkbook(file),choices=this.choices(body.choices,input),proof=this.verify(user,file,body.preview_token,choices);
+    const input=await parseWorkbook(file),choices=this.choices(body.choices,input),proof=this.verify(user,file,body.preview_token,{choices,complete});
     return this.repo.transaction(async db=>{
       await this.repo.actor(db,user.id,true,true);await calendarLock(db,true);
       const refs=await this.repo.references(db),codes=new Set(input.map(r=>r.employee_code));
       const ids=[...new Set(refs.employees.filter(e=>codes.has(e.employee_code)).map(e=>e.id))].sort((a,b)=>a-b);
       for(const id of ids){await lockEmployee(db,id);await db.query('SELECT id FROM employees WHERE id=$1 FOR SHARE',[id]);}
       await db.query('SELECT id FROM work_schedules ORDER BY id FOR SHARE');
-      const rows=await this.build(db,input,choices);
+      const rows=await this.build(db,input,choices,complete);
       for(const row of rows)row.selected_work_date=choices[row.excel_row]?.work_date;
       if(R.hash(rows)!==proof.viewHash)R.fail('STALE_PREVIEW','Attendance, employee, schedule, leave or holiday data changed; preview again.',409);
       const included=rows.filter(r=>!r.excluded&&!['NO_DATA','INCOMPLETE'].includes(r.validation_status));
       if(included.some(r=>r.validation_status==='ERROR'||r.issues.some(i=>i.requires_resolution)))R.fail('UNRESOLVED_ROWS','Resolve or exclude invalid rows before confirming.',409);
       if(included.some(r=>r.issues.some(i=>i.severity==='WARNING'))&&!body.confirm_warnings)R.fail('WARNINGS_UNCONFIRMED','HR must acknowledge preview warnings.',409);
-      const result={status:'CONFIRMED',inserted:0,updated:0,skipped:0,excluded:rows.length-included.length,rows:[]};
+      const result={status:'CONFIRMED',inserted:0,skipped:0,excluded:rows.length-included.length,rows:[]};
       for(const row of [...included].sort((a,b)=>a.employee_id-b.employee_id||a.work_date.localeCompare(b.work_date)||a.excel_row-b.excel_row)){
         if(row.file_duplicate){result.skipped++;result.rows.push({excel_row:row.excel_row,action:'SKIP'});continue;}
         await this.repo.lockKey(db,row.employee_id,row.work_date);
         const current=await this.repo.current(db,row.employee_id,row.work_date,true);
         if(R.hash(existingToken(current))!==R.hash(row.existing||null))R.fail('STALE_PREVIEW','Attendance changed; preview again.',409);
         if(row.action==='SKIP'){result.skipped++;result.rows.push({excel_row:row.excel_row,action:'SKIP'});continue;}
-        const saved=await this.repo.write(db,{...row,...R.calculate(row.work_date,row.check_in,row.check_out,row.schedule_snapshot)},current,user.id);
-        result[current?'updated':'inserted']++;result.rows.push({excel_row:row.excel_row,action:current?'UPDATE':'INSERT',attendance_id:saved.id,warnings:row.issues.filter(i=>i.severity==='WARNING')});
+        if(current)R.fail('ATTENDANCE_CONFLICT','Cancel the existing ACTIVE attendance first.',409);
+        const saved=await this.repo.write(db,row,null,user.id);
+        result.inserted++;result.rows.push({excel_row:row.excel_row,action:'INSERT',attendance_id:saved.id,warnings:row.issues.filter(i=>i.severity==='WARNING')});
       }return result;
     });
+  }
+  completeness(body) {
+    if(body.confirm_complete!==undefined&&typeof body.confirm_complete!=='boolean')R.fail('VALIDATION_ERROR','confirm_complete must be boolean.');
+    return body.confirm_complete===true;
   }
   async errors(user,file,body={}){return errorsWorkbook((await this.preview(user,file,body)).rows);}
 
@@ -144,44 +179,59 @@ class AttendanceImportService {
     if(!Number.isInteger(limit)||limit<1||limit>200||!Number.isInteger(offset)||offset<0||offset>10000000)R.fail('VALIDATION_ERROR','Invalid pagination.');
     const from=query.from?R.date(query.from):null,to=query.to?R.date(query.to):null;
     if(from&&to&&from>to)R.fail('VALIDATION_ERROR','from must be on or before to.');
-    if(query.record_status&&!['ACTIVE','CANCEL','ALL'].includes(query.record_status))R.fail('VALIDATION_ERROR','Invalid record_status.');
     const employeeId=query.employee_id?R.id(query.employee_id):null;
     if(employeeId&&BigInt(employeeId)>2147483647n)R.fail('VALIDATION_ERROR','employee_id is out of range.');
-    return {limit,offset,from,to,status:query.record_status||'ACTIVE',employeeId};
+    return {limit,offset,from,to,employeeId};
   }
   async list(user,query={},own=false,summary=false) {
     const actor=await this.repo.actor(this.repo.pool,user.id),f=this.filters(query);
     if(own||actor.role_name!=='HR') {if(!actor.employeeId)R.fail('FORBIDDEN','A linked employee profile is required.',403);f.employeeId=actor.employeeId;}
     if(!own&&!summary&&actor.role_name!=='HR')R.fail('FORBIDDEN','Use /attendance/me to view your records.',403);
     const where=`($1::integer IS NULL OR a.employee_id=$1) AND ($2::date IS NULL OR a.work_date>=$2) AND ($3::date IS NULL OR a.work_date<=$3)
-      AND ($4='ALL' OR a.record_status=$4)`;
-    const values=[f.employeeId,f.from,f.to,summary?'ACTIVE':f.status];
-    if(summary)return {data:(await this.repo.pool.query(`SELECT count(*)::integer AS recorded_days,COALESCE(sum(working_minutes),0)::bigint AS working_minutes,
+      AND a.record_status='ACTIVE'`;
+    const values=[f.employeeId,f.from,f.to];
+    if(summary)return {data:(await this.repo.pool.query(`SELECT count(*)::integer AS recorded_days,
+      count(*) FILTER (WHERE attendance_status IN ('PRESENT','LATE','EARLY_LEAVE','LATE_EARLY_LEAVE'))::integer AS worked_days,
+      count(DISTINCT employee_id) FILTER (WHERE attendance_status IN ('PRESENT','LATE','EARLY_LEAVE','LATE_EARLY_LEAVE'))::integer AS worked_employees,
+      COALESCE(sum(working_minutes),0)::bigint AS working_minutes,
       COALESCE(sum(late_mins),0)::bigint AS late_mins,COALESCE(sum(early_mins),0)::bigint AS early_mins,
       COALESCE(sum(overtime_minutes),0)::bigint AS overtime_minutes
       FROM attendance a WHERE ${where}`,values)).rows[0]};
     const {projection}=require('./attendance-import.repository');
-    const data=(await this.repo.pool.query(`SELECT ${projection},e.employee_code,e.full_name FROM attendance a JOIN employees e ON e.id=a.employee_id
-      WHERE ${where} ORDER BY a.work_date DESC,a.id DESC LIMIT $5 OFFSET $6`,[...values,f.limit,f.offset])).rows;
+    const data=(await this.repo.pool.query(`SELECT ${projection},e.employee_code,e.full_name,
+      (a.check_in IS NOT NULL AND a.check_out IS NOT NULL AND
+        NOT (EXTRACT(ISODOW FROM a.work_date)::int = ANY(s.working_days))) IS TRUE AS worked_on_day_off
+      FROM attendance a JOIN employees e ON e.id=a.employee_id LEFT JOIN work_schedules s ON s.id=a.work_schedule_id
+      WHERE ${where} ORDER BY a.work_date DESC,a.id DESC LIMIT $4 OFFSET $5`,[...values,f.limit,f.offset])).rows;
     if(actor.role_name==='HR')for(const row of data)row.holiday_warnings=row.record_status==='ACTIVE'?await workWarnings(this.repo.pool,row.employee_id,row.check_in,row.check_out):[];
     return {data,limit:f.limit,offset:f.offset};
   }
-  async detail(user,id) {const actor=await this.repo.actor(this.repo.pool,user.id),row=await this.repo.find(this.repo.pool,R.id(id));if(!row)R.fail('NOT_FOUND','Attendance not found.',404);if(actor.role_name!=='HR'&&String(actor.employeeId)!==String(row.employee_id))R.fail('NOT_FOUND','Attendance not found.',404);row.record_fingerprint=R.hash(row);if(actor.role_name==='HR')row.holiday_warnings=row.record_status==='ACTIVE'?await workWarnings(this.repo.pool,row.employee_id,row.check_in,row.check_out):[];return {data:row};}
+  async detail(user,id) {const actor=await this.repo.actor(this.repo.pool,user.id),row=await this.repo.find(this.repo.pool,R.id(id));if(!row||row.record_status!=='ACTIVE')R.fail('NOT_FOUND','Attendance not found.',404);if(actor.role_name!=='HR'&&String(actor.employeeId)!==String(row.employee_id))R.fail('NOT_FOUND','Attendance not found.',404);if(actor.role_name==='HR')row.holiday_warnings=await workWarnings(this.repo.pool,row.employee_id,row.check_in,row.check_out);return {data:row};}
+  async cancellations(user,query={},id=null) {
+    await this.repo.actor(this.repo.pool,user.id,true);
+    const filters=this.filters(query);
+    const rows=await this.repo.cancellations(this.repo.pool,filters,id===null?null:R.id(id));
+    if(id===null)return {data:rows,limit:filters.limit,offset:filters.offset};
+    if(!rows.length)R.fail('NOT_FOUND','Cancelled attendance not found.',404);
+    return {data:rows[0]};
+  }
   async logs(user,id,query) {await this.repo.actor(this.repo.pool,user.id,true);await this.detail(user,id);const f=this.filters(query);return {data:(await this.repo.pool.query("SELECT id,user_id AS actor_id,action,new_value->>'audit_reason' AS reason,old_value AS old_values,new_value AS new_values,created_at AS occurred_at FROM audit_logs WHERE entity_type='attendance' AND entity_id=$1 ORDER BY id DESC LIMIT $2 OFFSET $3",[id,f.limit,f.offset])).rows};}
-  async mutate(user,id,body,action) {
-    if(action!=='CANCEL')R.fail('CORRECTION_FLOW_CHANGED','Only cancellation is supported. Cancel, then import a new record.',410);
-    R.object(body,['expected_fingerprint','reason']);const reason=R.reason(body.reason);
-    if(typeof body.expected_fingerprint!=='string'||!/^[a-f0-9]{64}$/.test(body.expected_fingerprint))R.fail('VALIDATION_ERROR','Reload the record and supply its expected_fingerprint.');
+  async cancel(user,id,body) {
+    R.object(body,['reason']);
+    const reason=R.reason(body.reason),attendanceId=R.id(id);
     return this.repo.transaction(async db=>{
       await this.repo.actor(db,user.id,true,true);
-      const initial=await this.repo.find(db,R.id(id));if(!initial)R.fail('NOT_FOUND','Attendance not found.',404);
+      const initial=await this.repo.find(db,attendanceId);
+      if(!initial)R.fail('NOT_FOUND','Attendance not found.',404);
       await this.repo.lockKey(db,initial.employee_id,initial.work_date);
-      const row=await this.repo.find(db,id,true);
-      if(R.hash(row)!==body.expected_fingerprint)R.fail('ATTENDANCE_CONFLICT','Record changed; reload before cancelling.',409);
+      const row=await this.repo.find(db,attendanceId,true);
+      if(!row)R.fail('NOT_FOUND','Attendance not found.',404);
       if(row.record_status!=='ACTIVE')R.fail('INVALID_TRANSITION','Only ACTIVE attendance can be cancelled.',409);
       await db.query(`UPDATE attendance SET record_status='CANCEL',cancellation_reason=$2,cancelled_by=$3,
-        updated_at=CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh' WHERE id=$1`,[id,reason,user.id]);
-      const after=await this.repo.find(db,id);await this.repo.audit(db,user.id,'CANCEL',row,after,reason);return {data:{...after,record_fingerprint:R.hash(after)}};
+        updated_at=CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh' WHERE id=$1`,[attendanceId,reason,user.id]);
+      const after=await this.repo.find(db,attendanceId);
+      await this.repo.audit(db,user.id,'CANCEL',row,after,reason);
+      return {data:after};
     });
   }
 }

@@ -9,6 +9,7 @@ for(const [name,s,d,a,b,working,late,early] of [
   ['TC01',hc,'2026-11-16','2026-11-16 08:00:00','2026-11-16 17:00:00',480,0,0],
   ['TC02/TC18',hc,'2026-11-16','2026-11-16 08:15:00','2026-11-16 17:15:00',480,15,0],
   ['TC03',hc,'2026-11-16','2026-11-16 08:00:00','2026-11-16 16:30:00',450,0,30],
+  ['late and early',hc,'2026-11-16','2026-11-16 08:15:00','2026-11-16 16:45:00',450,15,15],
   ['TC04',night,'2026-11-16','2026-11-16 22:15:00','2026-11-17 06:10:00',415,15,0],
   ['TC05',night,'2026-11-16','2026-11-17 00:15:00','2026-11-17 06:00:00',285,135,0],
   ['TC06',night,'2026-11-16','2026-11-16 22:00:00','2026-11-16 23:30:00',90,0,390],
@@ -17,7 +18,10 @@ for(const [name,s,d,a,b,working,late,early] of [
 ])test(name,()=>{
   const start=R.timestamp(a),end=R.timestamp(b),metrics=R.calculate(d,start,end,s);
   assert.deepEqual([metrics.working_minutes,metrics.late_mins,metrics.early_mins,metrics.overtime_minutes],[working,late,early,name==='TC02/TC18'?15:name==='TC04'?10:0]);
-  assert.deepEqual(R.candidates(start,end,s),[d]);assert.equal(metrics.attendance_status,'PRESENT');
+  assert.deepEqual(R.candidates(start,end,s),[d]);
+  const expected={'TC02/TC18':'LATE',TC03:'EARLY_LEAVE','late and early':'LATE_EARLY_LEAVE',
+    TC04:'LATE',TC05:'LATE',TC06:'EARLY_LEAVE','clock early vs working deficit':'EARLY_LEAVE'};
+  assert.equal(metrics.attendance_status,expected[name]||'PRESENT');
 });
 test('break overlap and invalid break configuration',()=>{
   assert.equal(R.calculate('2026-11-16',R.timestamp('2026-11-16 12:30:00'),R.timestamp('2026-11-16 14:00:00'),hc).working_minutes,60);

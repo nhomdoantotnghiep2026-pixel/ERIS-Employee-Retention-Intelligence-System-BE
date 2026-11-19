@@ -1,7 +1,8 @@
 const { createHash } = require('node:crypto');
 const { AppError } = require('../../common/errors/app-error');
 const MINUTE = 60000, DAY = 86400000;
-const CALCULATION_VERSION = 'excel-v1';
+const CALCULATION_VERSION = 'excel-v2';
+const ABSENCE_WAIT_MINUTES = 60;
 const DEFAULT_POLICY = Object.freeze({ early_arrival_minutes: 240, late_arrival_minutes: 480,
   early_departure_minutes: 480, late_departure_minutes: 480, unusual_duration_minutes: 960, max_duration_minutes: 1440 });
 function fail(code, message, status = 400) { const e = new AppError(status, message); e.code = code; throw e; }
@@ -57,9 +58,24 @@ function calculate(d, checkIn, checkOut, s) {
   if (!Number.isFinite(a) || !Number.isFinite(b)) fail('ATT-005', 'Invalid datetime.');
   if (b <= a) fail('ATT-006', 'check_out must be after check_in.');
   const outside = Math.max(0, Math.min(b,t.start)-a) + Math.max(0,b-Math.max(a,t.end));
+  const late = Math.floor(Math.max(0,a-t.start)/MINUTE);
+  const early = Math.floor(Math.max(0,t.end-b)/MINUTE);
+  const status = late ? (early ? 'LATE_EARLY_LEAVE' : 'LATE') : (early ? 'EARLY_LEAVE' : 'PRESENT');
   return { working_minutes: Math.floor((b-a-overlap(a,b,t.breakStart,t.breakEnd))/MINUTE),
-    late_mins: Math.floor(Math.max(0,a-t.start)/MINUTE), early_mins: Math.floor(Math.max(0,t.end-b)/MINUTE),
-    outside_shift_minutes: Math.floor(outside/MINUTE), overtime_minutes: Math.floor((Math.max(0,b-Math.max(a,t.end))-overlap(Math.max(a,t.end),b,t.breakStart,t.breakEnd))/MINUTE), attendance_status: 'PRESENT' };
+    late_mins: late, early_mins: early,
+    outside_shift_minutes: Math.floor(outside/MINUTE), overtime_minutes: Math.floor((Math.max(0,b-Math.max(a,t.end))-overlap(Math.max(a,t.end),b,t.breakStart,t.breakEnd))/MINUTE), attendance_status: status };
+}
+function isWorkingDay(workDate, schedule) {
+  return (schedule.working_days || []).includes(new Date(workDate + 'T00:00:00Z').getUTCDay() || 7);
+}
+function classifyNoPunch(workDate, schedule, now, { holiday, leave, complete }) {
+  const end = timeline(workDate, schedule).end;
+  if (end > now) return null;
+  if (holiday) return 'HOLIDAY';
+  if (!isWorkingDay(workDate, schedule)) return 'DAY_OFF';
+  if (leave) return 'ON_LEAVE';
+  if (complete && now >= end + ABSENCE_WAIT_MINUTES * MINUTE) return 'ABSENT';
+  return null;
 }
 function candidates(checkIn, checkOut, s) {
   const a = Date.parse(checkIn), b = Date.parse(checkOut), p = policy(s.attendance_policy);
@@ -83,4 +99,4 @@ function object(value, keys) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(k => !keys.includes(k))) fail('VALIDATION_ERROR', `Only ${keys.join(', ')} are accepted.`);
 }
 module.exports = { CALCULATION_VERSION, DEFAULT_POLICY, MINUTE, date, timestamp, policy, scheduleSnapshot,
-  hash, timeline, calculate, candidates, reason, id, object, fail };
+  hash, timeline, calculate, candidates, isWorkingDay, classifyNoPunch, reason, id, object, fail };

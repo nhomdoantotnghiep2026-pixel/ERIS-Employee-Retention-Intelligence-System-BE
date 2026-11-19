@@ -12,16 +12,34 @@ class LeaveRecordsRepository {
  return (await db.query('SELECT id,code,name,description FROM leave_types ORDER BY code')).rows;
  }
  async find(db,id){const row=(await db.query(`SELECT ${projection} FROM employee_leave_records l WHERE id=$1`,[id])).rows[0];if(!row)fail('NOT_FOUND','Leave Record not found.',404);return row;}
+ async cancel(db,id,reason,actorId){
+  const result=await db.query(`UPDATE employee_leave_records SET record_status='CANCEL',
+    cancellation_reason=$2,cancelled_by=$3,updated_at=CURRENT_TIMESTAMP
+    WHERE id=$1 AND record_status='ACTIVE' RETURNING id`,[id,reason,actorId]);
+  if(!result.rows.length)fail('INVALID_TRANSITION','Only ACTIVE Leave Records can be cancelled.',409);
+  return this.find(db,id);
+ }
+ async cancellations(db,{id,employee,cancelledBy,from,to,page,limit}){
+  const {rows}=await db.query(`SELECT ${projection},l.updated_at AS cancelled_at,e.employee_code,e.full_name,
+    t.code AS leave_type,t.name AS leave_type_name,u.full_name AS cancelled_by_name
+    FROM employee_leave_records l JOIN employees e ON e.id=l.employee_id
+    JOIN leave_types t ON t.id=l.leave_type_id LEFT JOIN users u ON u.id=l.cancelled_by
+    WHERE l.record_status='CANCEL' AND ($1::int IS NULL OR l.id=$1)
+      AND ($2::int IS NULL OR l.employee_id=$2) AND ($3::int IS NULL OR l.cancelled_by=$3)
+      AND ($4::date IS NULL OR l.end_date>=$4) AND ($5::date IS NULL OR l.start_date<=$5)
+    ORDER BY l.updated_at DESC,l.id DESC LIMIT $6 OFFSET $7`,[id,employee,cancelledBy,from,to,limit,(page-1)*limit]);
+  return rows;
+ }
  async validate(db,row,exclude=null,duplicate=false){
  const employee=(await db.query('SELECT id,hire_date::text FROM employees WHERE id=$1 FOR SHARE',[row.employee_id])).rows[0];
  if(!employee)fail('EMPLOYEE_NOT_FOUND','Employee not found.');
  if(!employee.hire_date||row.start_date<employee.hire_date)fail('BEFORE_HIRE_DATE','Leave must start on or after the employee hire date.');
  if(!(await db.query('SELECT id FROM leave_types WHERE id=$1 FOR SHARE',[row.leave_type_id])).rows.length)fail('LEAVE_TYPE_NOT_FOUND','Leave Type not found.');
  const overlaps=(await db.query(`SELECT ${projection} FROM employee_leave_records l WHERE employee_id=$1 AND record_status='ACTIVE' AND ($4::int IS NULL OR id<>$4) AND start_date<=$3::date AND end_date>=$2::date`,[row.employee_id,row.start_date,row.end_date,exclude])).rows;
- if(duplicate&&overlaps.some(l=>l.leave_type_id===row.leave_type_id&&l.start_date===row.start_date&&l.end_date===row.end_date&&(l.reason||null)===(row.reason||null)))return 'DUPLICATE';
- if(overlaps.length)fail('LEAVE_CONFLICT','Overlaps active Leave Records.',409,overlaps);
+ const identical=duplicate&&overlaps.length===1&&overlaps.some(l=>l.leave_type_id===row.leave_type_id&&l.start_date===row.start_date&&l.end_date===row.end_date&&(l.reason||null)===(row.reason||null));
+ if(overlaps.length&&!identical)fail('LEAVE_CONFLICT','Overlaps active Leave Records.',409,overlaps);
  const attendance=(await db.query(`SELECT id AS attendance_id,work_date::text,check_in,check_out FROM attendance WHERE employee_id=$1 AND work_date BETWEEN $2::date AND $3::date AND record_status='ACTIVE' AND (check_in IS NOT NULL OR check_out IS NOT NULL OR COALESCE(working_minutes,0)>0 OR COALESCE(overtime_minutes,0)>0)`,[row.employee_id,row.start_date,row.end_date])).rows;
- if(attendance.length)fail('ATTENDANCE_CONFLICT','Leave Record overlaps existing Attendance.',409,attendance);return 'VALID';}
+ if(attendance.length)fail('ATTENDANCE_CONFLICT','Leave Record overlaps existing Attendance.',409,attendance);return identical?'DUPLICATE':'VALID';}
  async insert(db,row,actor){const {rows}=await db.query(`INSERT INTO employee_leave_records(employee_id,leave_type_id,start_date,end_date,reason,record_status,recorded_by) VALUES($1,$2,$3,$4,$5,'ACTIVE',$6) RETURNING id`,[row.employee_id,row.leave_type_id,row.start_date,row.end_date,row.reason||null,actor.id]);return this.find(db,rows[0].id);}
 }
 module.exports={LeaveRecordsRepository,lockEmployee,assertNoLeave,projection};

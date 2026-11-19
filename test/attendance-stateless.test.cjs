@@ -8,7 +8,7 @@ function fixture(){
  const state={stored:null,writes:0,holiday:false,queries:[],employee:{id:1,employee_code:'EMP001',full_name:'Test Employee',hire_date:'2026-01-01',work_schedule_id:1},schedule:{id:1,shift_type:'DAY',start_time:'08:00:00',end_time:'17:00:00',break_start:'12:00:00',break_end:'13:00:00',working_days:[1,2,3,4,5],status:'ACTIVE',attendance_policy:{}}};
  const db={async query(sql){state.queries.push(sql);assert(!/attendance_import_batches|source_batch_id|attendance_audit_logs|CREATE TEMP|ALTER TABLE/.test(sql),'no persistence of import metadata or schema changes');return {rows:sql.includes('FROM holidays')&&state.holiday?[{id:1,name:'Company holiday',start_date:'2026-11-16',end_date:'2026-11-16',employment_type:'PART_TIME'}]:[]};}};
  const repo={pool:db,actor:async(_db,id)=>{if(![1,2].includes(id))throw new AppError(403,'Only HR');return {id,role_name:'HR'};},references:async()=>({employees:[state.employee],schedules:[state.schedule]}),transaction:async work=>work(db),current:async()=>state.stored,overlapping:async()=>[],lockKey:async()=>{},write:async(_db,row)=>{state.writes++;state.stored={...row,id:99,version:1,record_status:'ACTIVE',check_in:row.check_in,check_out:row.check_out,work_schedule_id:row.work_schedule_id,schedule_snapshot:row.schedule_snapshot,calculation_version:'excel-v1'};return {id:99};}};
- return {state,repo,service:new AttendanceImportService(repo,{previewSecret:secret})};
+ return {state,repo,service:new AttendanceImportService(repo,{previewSecret:secret,clock:()=>new Date('2026-11-19T12:00:00+07:00')})};
 }
 test('preview is stateless; confirm resubmits file and no import metadata is persisted',async()=>{
  const {state,service}=fixture(),f=await file(),p=await service.preview({id:1},f);assert.equal(p.status,'READY');assert.equal(state.writes,0);assert.equal(p.batch_id,undefined);assert.equal(typeof p.preview_token,'string');
@@ -23,6 +23,30 @@ test('wrong HR, changed file, changed choices, forged/expired tokens and missing
  await assert.rejects(service.confirm({id:1},f,{preview_token:p.preview_token,choices:[{excel_row:2,exclude:true}]}),e=>e.code==='STALE_PREVIEW');
  const old=jwt.sign({purpose:'ATTENDANCE_PREVIEW'},secret,{algorithm:'HS256',issuer:'eris-attendance',subject:'1',expiresIn:-1});
  for(const token of [undefined,'forged',old])await assert.rejects(service.confirm({id:1},f,{preview_token:token}),e=>e.code==='INVALID_PREVIEW');assert.equal(state.writes,0);
+});
+test('six-column import requires explicit completeness and cancellation before replacing an absence',async()=>{
+ const {state,service}=fixture(),actor={id:1};
+ const workbook=async times=>{
+  const w=new ExcelJS.Workbook(),s=w.addWorksheet('Attendance');
+  s.addRow(['employee_code','employee_name','shift_type','work_date','check_in','check_out']);
+  s.addRow(['EMP001','Test Employee','DAY','2026-11-16',...times]);
+  return {originalname:'attendance.xlsx',buffer:Buffer.from(await w.xlsx.writeBuffer())};
+ };
+ const blank=await workbook([]);
+ service.repo.calendarSources=async()=>({holidays:[],leaves:[]});
+ assert.equal((await service.preview(actor,blank)).rows[0].validation_status,'NO_DATA');
+ const absence=await service.preview(actor,blank,{confirm_complete:true});
+ assert.equal(absence.rows[0].attendance_status,'ABSENT');
+ await assert.rejects(service.confirm(actor,blank,{preview_token:absence.preview_token}),{code:'STALE_PREVIEW'});
+ await service.confirm(actor,blank,{preview_token:absence.preview_token,confirm_complete:true});
+ const corrected=await workbook(['2026-11-16 08:15:00','2026-11-16 16:45:00']);
+ const conflict=await service.preview(actor,corrected);
+ assert.equal(conflict.rows[0].action,'CONFLICT');
+ await assert.rejects(service.confirm(actor,corrected,{preview_token:conflict.preview_token}),{code:'UNRESOLVED_ROWS'});
+ state.stored=null;
+ const replacement=await service.preview(actor,corrected);
+ assert.equal((await service.confirm(actor,corrected,{preview_token:replacement.preview_token,confirm_warnings:true})).inserted,1);
+ assert.equal(state.stored.attendance_status,'LATE_EARLY_LEAVE');
 });
 test('schedule, employee and holiday changes invalidate preview',async()=>{
  for(const kind of ['schedule','employee','holiday']){const {state,service}=fixture(),f=await file(),p=await service.preview({id:1},f);if(kind==='schedule')state.schedule.end_time='18:00:00';else if(kind==='employee')state.employee.full_name='New Name';else state.holiday=true;await assert.rejects(service.confirm({id:1},f,{preview_token:p.preview_token,confirm_warnings:true}),e=>e.code==='STALE_PREVIEW');assert.equal(state.writes,0);}
@@ -48,5 +72,44 @@ test('HTTP multipart preview/confirm uses new paths and old history returns 410'
  const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
  try{const base=`http://127.0.0.1:${server.address().port}/api/attendance`,f=await file(),call=async(endpoint,opts)=>{const body=new FormData();body.append('file',new Blob([f.buffer]),f.originalname);if(opts)body.append('options',JSON.stringify(opts));return fetch(base+endpoint,{method:'POST',headers:{Authorization:'1'},body});};
  assert.equal((await fetch(base+'/import/history',{headers:{Authorization:'1'}})).status,410);const p=await (await call('/import/preview')).json();assert(p.preview_token);const confirmed=await call('/import/confirm',{preview_token:p.preview_token});assert.equal(confirmed.status,200);assert.equal((await confirmed.json()).inserted,1);
+ }finally{await new Promise(r=>server.close(r));}
+});
+test('HTTP cancellation is HR-only and separate from active records',async()=>{
+ const express=require('express'),{createAttendanceRouter}=require('../src/modules/attendance/attendance.routes');
+ const {service,repo}=fixture(),app=express();
+ const actor=repo.actor;
+ repo.actor=async(db,id,hr)=>id===3?{id,role_name:'EMPLOYEE',employeeId:1}:actor(db,id,hr);
+ let row={id:99,employee_id:1,work_date:'2026-11-16',record_status:'ACTIVE',attendance_status:'LATE',late_mins:15};
+ let audit;
+ repo.find=async()=>({...row});
+ repo.audit=async(_db,userId,action,before,after,reason)=>{audit={userId,action,before,after,reason};};
+ repo.cancellations=async(_db,_filters,id)=>row.record_status==='CANCEL'&&(id===null||id==='99')?[row]:[];
+ const query=repo.pool.query;
+ repo.pool.query=async(sql,args)=>{
+  if(sql.startsWith('UPDATE attendance'))row={...row,record_status:'CANCEL',cancellation_reason:args[1],cancelled_by:args[2]};
+  return query(sql,args);
+ };
+ app.use(express.json());
+ app.use('/api/attendance',createAttendanceRouter({service,databasePool:repo.pool,authenticate:(req,_res,next)=>{
+  req.auth={userId:Number(req.headers.authorization)};next();
+ }}));
+ const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
+ try{
+  const call=(path,{user=1,method='GET',body}={})=>fetch(`http://127.0.0.1:${server.address().port}/api/attendance${path}`,
+   {method,headers:{Authorization:String(user),'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
+  assert.equal((await call('/cancellations',{user:3})).status,403);
+  assert.equal((await call('/cancellations/99')).status,404);
+  assert.equal((await call('/99/cancel',{method:'PATCH',user:3,body:{reason:'Fix'}})).status,403);
+  assert.equal((await call('/99/cancel',{method:'PATCH',body:{reason:' '}})).status,400);
+  assert.equal((await call('/99/cancel',{method:'PATCH',body:{reason:'Fix'}})).status,200);
+  assert.equal(audit.action,'CANCEL');assert.equal(audit.userId,1);assert.equal(audit.before.record_status,'ACTIVE');
+  assert.equal(audit.after.attendance_status,'LATE');assert.equal(audit.after.late_mins,15);
+  assert.equal((await call('/99/cancel',{method:'PATCH',body:{reason:'Again'}})).status,409);
+  assert.equal((await call('/99',{user:3})).status,404);
+  assert.equal((await call('/99',{method:'PATCH',body:{reason:'Fix'}})).status,404);
+  assert.equal((await call('/99/restore',{method:'PATCH',body:{reason:'Fix'}})).status,404);
+  const history=await (await call('/cancellations')).json();
+  assert.equal(history.data.length,1);
+  assert.equal((await (await call('/cancellations/99')).json()).data.cancellation_reason,'Fix');
  }finally{await new Promise(r=>server.close(r));}
 });

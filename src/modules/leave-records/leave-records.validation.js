@@ -9,4 +9,12 @@ function input(body,partial=false) {
  if(k==='reason'){if(body[k]!==null&&typeof body[k]!=='string')fail('VALIDATION_ERROR','reason must be text or null.');out[k]=body[k]===null?null:body[k].trim()||null;}else out[k]=k.endsWith('_id')?id(body[k]):date(body[k]);}
  if(out.start_date&&out.end_date&&out.end_date<out.start_date)fail('VALIDATION_ERROR','end_date must be on or after start_date.');return out;
 }
-module.exports={fail,id,date,input};
+function cancellationReason(body){
+ const value=body?.reason;
+ if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(k=>k!=='reason')||
+   typeof value!=='string'||!value.trim()||value.includes('\0')){
+  fail('VALIDATION_ERROR','A non-empty cancellation reason is required.');
+ }
+ return value.trim();
+}
+module.exports={fail,id,date,input,cancellationReason};

@@ -22,10 +22,10 @@ function createAttendanceRouter({service,authenticate,databasePool}) {
   router.get('/summary',json(req=>service.list(req.attendanceUser,req.query,false,true)));
   router.get('/me',json(req=>service.list(req.attendanceUser,req.query,true)));
   router.get('/',hr,json(req=>service.list(req.attendanceUser,req.query)));
+  router.get('/cancellations',hr,json(req=>service.cancellations(req.attendanceUser,req.query)));
+  router.get('/cancellations/:id',hr,json(req=>service.cancellations(req.attendanceUser,{},req.params.id)));
   router.get('/:id/audit-logs',hr,json(req=>service.logs(req.attendanceUser,req.params.id,req.query)));
-  router.patch('/:id/cancel',hr,json(req=>service.mutate(req.attendanceUser,req.params.id,req.body,'CANCEL')));
-  router.patch('/:id/restore',hr,json(req=>service.mutate(req.attendanceUser,req.params.id,req.body,'RESTORE')));
-  router.patch('/:id',hr,json(req=>service.mutate(req.attendanceUser,req.params.id,req.body,'UPDATE')));
+  router.patch('/:id/cancel',hr,json(req=>service.cancel(req.attendanceUser,req.params.id,req.body)));
   router.get('/:id',json(req=>service.detail(req.attendanceUser,req.params.id)));
   router.use((error,_req,res,next)=>{
     if(error instanceof multer.MulterError)return res.status(400).json({code:'ATT-001',message:error.message});

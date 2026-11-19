@@ -8,7 +8,7 @@ const secret='business-tests-stateless-preview-secret-12345';
 function fixture(){
  const state={holidays:[],leaves:[],attendance:[],overlaps:[],queries:[],writes:[],employee:{id:1,employee_code:'EMP001',full_name:'Employee',hire_date:'2026-11-01',work_schedule_id:1},schedule:{id:1,shift_type:'MID',status:'ACTIVE',start_time:'11:00:00',end_time:'20:00:00',break_start:'15:00:00',break_end:'16:00:00',working_days:[1,2,3,4,5]}};
  const db={query:async(sql,args)=>{state.queries.push({sql,args});if(sql.includes('FROM holidays'))return {rows:state.holidays};if(sql.includes('FROM employee_leave_records'))return {rows:state.leaves};if(sql.includes('FROM attendance'))return {rows:state.attendance};return {rows:[]};}};
- const repo={pool:db,references:async()=>({employees:[state.employee],schedules:[state.schedule]}),transaction:async fn=>fn(db),actor:async()=>({id:7,role_name:'HR'}),overlapping:async()=>state.overlaps,current:async(_db,_id,date)=>state.attendance.find(a=>a.work_date===date&&a.record_status==='ACTIVE')||null,lockKey:async()=>{},write:async(_db,row,before)=>{assert.equal(before,null);state.writes.push(row);return {id:99};}};
+ const repo={pool:db,references:async()=>({employees:[state.employee],schedules:[state.schedule]}),transaction:async fn=>fn(db),actor:async()=>({id:7,role_name:'HR'}),overlapping:async()=>state.overlaps,current:async(_db,_id,date)=>state.attendance.find(a=>a.work_date===date&&a.record_status==='ACTIVE')||null,calendarSources:async()=>({holidays:state.holidays,leaves:state.leaves}),lockKey:async()=>{},write:async(_db,row,before,_user,reason)=>{state.writes.push({...row,before,reason});return {id:before?.id||99};}};
  const service=new AttendanceImportService(repo,{previewSecret:secret,clock:()=>new Date('2026-11-18T21:00:00+07:00')});
  return {state,repo,db,service};
 }
@@ -23,10 +23,22 @@ test('MID mismatched punches alert HR; overtime starts at 20:00, early arrival n
 test('zero net working time during the entire break is rejected',async()=>{const f=fixture();const r=(await f.service.build(f.db,[row('2026-11-16 15:00:00','2026-11-16 16:00:00')]))[0];assert(r.issues.some(i=>i.code==='ATT-022'));});
 test('overlap is checked against stored records even on a different work date',async()=>{const f=fixture();f.state.overlaps=[{id:3,work_date:'2026-11-15'}];const result=await f.service.build(f.db,[row()]);assert(result[0].issues.some(i=>i.code==='ATT-021'));});
 test('overlapping intervals in a file block both rows including overlap within breaks',async()=>{const f=fixture();const rows=await f.service.build(f.db,[row(),row('2026-11-16 14:00:00','2026-11-16 21:00:00',3)]);assert(rows.every(r=>r.issues.some(i=>i.code==='ATT-021')));});
-test('ACTIVE duplicate with different times cannot update; cancelled rows are excluded by repository lookup',async()=>{
- const f=fixture();f.state.attendance=[{id:10,work_date:'2026-11-16',record_status:'ACTIVE',check_in:'different'}];const rows=await f.service.build(f.db,[row()]);assert(rows[0].issues.some(i=>i.code==='ATT-012'&&i.severity==='ERROR'));
+test('ACTIVE duplicate with different times requires cancellation; cancelled rows are excluded by repository lookup',async()=>{
+ const f=fixture();f.state.attendance=[{id:10,work_date:'2026-11-16',record_status:'ACTIVE',check_in:'different'}];const rows=await f.service.build(f.db,[row()]);assert.equal(rows[0].action,'CONFLICT');assert(rows[0].issues.some(i=>i.code==='ATT-012'&&i.severity==='ERROR'));
  const repo=new AttendanceImportRepository(f.db);await repo.current(f.db,1,'2026-11-16');assert(f.state.queries.some(q=>q.sql.includes("record_status='ACTIVE'")));
- await assert.rejects(f.service.mutate({id:7},10,{},'UPDATE'),{code:'CORRECTION_FLOW_CHANGED'});await assert.rejects(f.service.mutate({id:7},10,{},'RESTORE'),{code:'CORRECTION_FLOW_CHANGED'});
+});
+test('empty rows classify by sources, schedule and explicit completeness; partial rows remain incomplete',async()=>{
+ const f=fixture();
+ f.state.holidays=[{id:1,start_date:'2026-11-16',end_date:'2026-11-16'}];
+ f.state.leaves=[{id:2,employee_id:1,start_date:'2026-11-16',end_date:'2026-11-17'}];
+ const rows=['2026-11-16','2026-11-17','2026-11-15','2026-11-18','2026-11-19'].map((work_date,i)=>({
+   excel_row:i+2,employee_code:'EMP001',shift_type:'MID',work_date,check_in:null,check_out:null
+ }));
+ assert.deepEqual((await f.service.build(f.db,rows)).map(r=>r.attendance_status),['HOLIDAY','ON_LEAVE','DAY_OFF',undefined,undefined]);
+ assert.deepEqual((await f.service.build(f.db,rows,{},true)).map(r=>r.attendance_status),['HOLIDAY','ON_LEAVE','DAY_OFF','ABSENT',undefined]);
+ const partial={...rows[3],excel_row:10,check_in:'2026-11-18T11:00:00+07:00'};
+ const result=await f.service.build(f.db,[rows[3],partial],{},true);
+ assert.deepEqual(result.map(r=>r.validation_status),['NO_DATA','INCOMPLETE']);
 });
 const selection={from:'2026-11-16',to:'2026-11-18',employee_ids:[1]};
 test('explicit reconciliation: holiday has priority over leave, missing days are not inferred ABSENT',async()=>{
@@ -39,6 +51,16 @@ test('actual holiday work is preserved, warning acknowledged, no leave row added
  const p=await Sources.reconcile(f.service,{id:7},{scope:selection});assert.equal(p.rows[0].action,'KEEP');assert(p.rows[0].warning);
  await assert.rejects(Sources.reconcile(f.service,{id:7},{scope:selection,preview_token:p.preview_token},true),{code:'WARNINGS_UNCONFIRMED'});
  const c=await Sources.reconcile(f.service,{id:7},{scope:selection,preview_token:p.preview_token,confirm_warnings:true},true);assert.equal(c.inserted,0);assert.equal(c.kept,1);
+});
+test('explicit reconciliation keeps existing absence until it is cancelled',async()=>{
+ const f=fixture();
+ f.state.leaves=[{id:2,employee_id:1,start_date:'2026-11-16',end_date:'2026-11-16'}];
+ f.state.attendance=[{id:10,employee_id:1,work_date:'2026-11-16',attendance_status:'ABSENT',record_status:'ACTIVE'}];
+ const p=await Sources.reconcile(f.service,{id:7},{scope:selection});
+ assert.equal(p.rows[0].action,'KEEP');
+ const options={scope:selection,preview_token:p.preview_token,confirm_warnings:true};
+ const result=await Sources.reconcile(f.service,{id:7},options,true);
+ assert.equal(result.kept,1);assert.equal(f.state.writes.length,0);
 });
 test('changed source, changed scope or wrong actor cannot confirm old reconciliation preview',async()=>{
  const f=fixture(),p=await Sources.reconcile(f.service,{id:7},{scope:selection});
@@ -55,9 +77,9 @@ test('leave before hire is rejected and full period conflicts with worked holida
  await assert.rejects(repo.validate(db,{employee_id:1,leave_type_id:1,start_date:'2026-11-16',end_date:'2026-11-18'}),{code:'BEFORE_HIRE_DATE'});
  attendanceConflict=true;await assert.rejects(repo.validate(db,{employee_id:1,leave_type_id:1,start_date:'2026-11-17',end_date:'2026-11-18'}),{code:'ATTENDANCE_CONFLICT'});
 });
-test('cancellation uses fingerprint, existing audit, no version/cancelled_at columns, and preserves cancelled record',async()=>{
+test('cancellation requires reason, uses existing audit, no version/cancelled_at columns, and preserves cancelled record',async()=>{
  const f=fixture();let stored={id:12,employee_id:1,work_date:'2026-11-16',record_status:'ACTIVE',updated_at:'2026-11-18T10:00:00+07:00'};f.repo.find=async()=>({...stored});f.repo.audit=async(_db,_actor,action,before,after,reason)=>{assert.equal(action,'CANCEL');assert.equal(before.record_status,'ACTIVE');assert.equal(after.record_status,'CANCEL');assert.equal(reason,'Correct imported source');};
  const query=f.db.query;f.db.query=async(sql,args)=>{if(sql.startsWith('UPDATE attendance')){assert(!/version|cancelled_at/.test(sql));stored={...stored,record_status:'CANCEL',cancellation_reason:args[1],cancelled_by:args[2]};}return query(sql,args);};
- await assert.rejects(f.service.mutate({id:7},12,{reason:'Correction',expected_fingerprint:'0'.repeat(64)},'CANCEL'),{code:'ATTENDANCE_CONFLICT'});
- const result=await f.service.mutate({id:7},12,{reason:'Correct imported source',expected_fingerprint:R.hash(stored)},'CANCEL');assert.equal(result.data.record_status,'CANCEL');assert.equal(result.data.cancelled_by,7);
+ await assert.rejects(f.service.cancel({id:7},12,{reason:' '}),{code:'VALIDATION_ERROR'});
+ const result=await f.service.cancel({id:7},12,{reason:'Correct imported source'});assert.equal(result.data.record_status,'CANCEL');assert.equal(result.data.cancelled_by,7);await assert.rejects(f.service.cancel({id:7},12,{reason:'Again'}),{code:'INVALID_TRANSITION'});
 });

@@ -3,7 +3,7 @@ const test = require('node:test');
 const express = require('express');
 const { CompanyLocationStore, validateCompanyLocation } = require('../src/modules/attendance/company-location.store');
 const { createAttendanceService } = require('../src/modules/attendance/attendance.service');
-const { createAttendanceRouter } = require('../src/modules/attendance/attendance.routes');
+const { createAttendanceLegacyRouter } = require('../src/modules/attendance/attendance-legacy.routes');
 const hr = { id: 1, status: 'ACTIVE', role_name: 'HR', employeeId: 10, employmentStatus: 'ACTIVE' };
 const location = { address: 'Công ty thử nghiệm', latitude: 10.845106259, longitude: 106.838943078 };
 const fallback = { address: 'Cấu hình ban đầu', latitude: 10, longitude: 106 };
@@ -13,7 +13,8 @@ function fixture() {
   const store = new CompanyLocationStore({ redisClient, ensureRedisConnection: async () => {}, fallback });
   let writes = 0;
   const service = createAttendanceService({ attendance: { ...fallback, radiusMeters: 100, maxAccuracyMeters: 100 } },
-    { record: async () => { writes++; return { id: 9 }; } }, () => new Date('2026-10-29T09:00:00+07:00'), store);
+    { getSchedule: async () => ({workingDays:[1,2,3,4,5]}),
+      record: async () => { writes++; return { id: 9 }; } }, () => new Date('2026-10-29T09:00:00+07:00'), store);
   return { store, service, redisClient, writes: () => writes };
 }
 test('validate đủ trường, chuẩn hóa địa chỉ và chặn tọa độ sai', () => {
@@ -32,7 +33,7 @@ test('Redis lưu không TTL, đọc qua store khác, cấu hình và check-in/ou
   assert.equal(saved.allowedRadiusMeters, 100);
   const second = new CompanyLocationStore({ redisClient: f.redisClient, ensureRedisConnection: async () => {}, fallback });
   assert.equal((await second.get()).source, 'redis');
-  assert.equal((await f.service.configuration()).companyLocation.latitude, location.latitude);
+  assert.equal((await f.service.configuration(hr)).companyLocation.latitude, location.latitude);
   assert.equal((await f.service.checkIn(hr, gps)).persisted, true);
   assert.equal((await f.service.checkOut(hr, gps)).persisted, true);
   assert.equal(f.writes(), 2);
@@ -52,7 +53,7 @@ test('HTTP: HR có hồ sơ ACTIVE được cập nhật; HR thiếu ID, nhân v
   const f = fixture();
   const app = express(); app.use(express.json());
   let actor = hr;
-  app.use('/api/v1/attendance', createAttendanceRouter({ service: f.service,
+  app.use('/api/v1/attendance', createAttendanceLegacyRouter({ service: f.service,
     authenticate: (req, _res, next) => { req.auth = { userId: actor.id }; next(); },
     databasePool: { query: async () => ({ rows: [actor] }) } }));
   const server = app.listen(0, '127.0.0.1');

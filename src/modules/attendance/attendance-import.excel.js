@@ -1,7 +1,7 @@
 const ExcelJS = require('exceljs');
-const { timestamp, fail } = require('./attendance-import.rules');
-const HEADERS = ['employee_code','employee_name','shift_type','check_in','check_out'];
-const REQUIRED = HEADERS.filter(h => h !== 'employee_name');
+const { date, timestamp, fail } = require('./attendance-import.rules');
+const HEADERS = ['employee_code','employee_name','shift_type','work_date','check_in','check_out'];
+const REQUIRED = HEADERS.filter(h => !['employee_name','work_date'].includes(h));
 function text(cell) {
   const v = cell.value;
   if (v == null) return '';
@@ -17,6 +17,10 @@ function datetime(cell) {
   }
   if (typeof cell.value !== 'string') throw new Error('Use a Date/Time cell or YYYY-MM-DD HH:mm:ss text; formulas are not accepted.');
   return timestamp(cell.value.trim());
+}
+function workDate(cell) {
+  if (cell.value == null || cell.value === '') return null;
+  return date(cell.value instanceof Date ? cell.value.toISOString().slice(0,10) : text(cell));
 }
 async function parseWorkbook(file) {
   if (!file || !/\.xlsx$/i.test(file.originalname) || !Buffer.isBuffer(file.buffer) || file.buffer.length > 10*1024*1024) fail('ATT-001','A valid .xlsx file of at most 10 MiB is required.');
@@ -39,7 +43,10 @@ async function parseWorkbook(file) {
     const output = { excel_row:n, employee_code:'', employee_name:'', shift_type:'', check_in:null, check_out:null, parse_issues:[] };
     for (const name of HEADERS) {
       if (!columns[name]) continue;
-      try { output[name] = name.startsWith('check_') ? datetime(row.getCell(columns[name])) : text(row.getCell(columns[name])); }
+      try {
+        const cell = row.getCell(columns[name]);
+        output[name] = name.startsWith('check_') ? datetime(cell) : name === 'work_date' ? workDate(cell) : text(cell);
+      }
       catch (e) { output.parse_issues.push({ code:name.startsWith('check_')?'ATT-005':'ATT-002', severity:'ERROR', field:name, message:e.message }); }
     }
     rows.push(output);

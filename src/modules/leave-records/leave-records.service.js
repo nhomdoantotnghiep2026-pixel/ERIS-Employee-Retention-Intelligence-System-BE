@@ -5,12 +5,35 @@ const {parse}=require('./leave-records.import');
 class LeaveRecordsService {
  constructor(repo){this.repo=repo;}
  async create(user,body){const row=V.input(body);return this.repo.transaction(async db=>{const a=await this.repo.actor(db,user);await lockEmployee(db,row.employee_id);await this.repo.validate(db,row);const saved=await this.repo.insert(db,row,a);return {...saved,calendar:await leaveCalendar(db,row.employee_id,row.start_date,row.end_date)};});}
- async mutate(user,id,body,action='UPDATE'){id=V.id(id);const changes=action==='UPDATE'?V.input(body,true):{};return this.repo.transaction(async db=>{await this.repo.actor(db,user);let row=await this.repo.find(db,id);await lockEmployee(db,row.employee_id);row=await this.repo.find(db,id);
- if(action!=='RESTORE'&&(await db.query(`SELECT id FROM attendance WHERE employee_id=$1 AND work_date BETWEEN $2::date AND $3::date AND record_status='ACTIVE' AND attendance_status='ON_LEAVE'`,[row.employee_id,row.start_date,row.end_date])).rows.length)V.fail('DERIVED_ATTENDANCE_EXISTS','Cancel the related ON_LEAVE attendance records before changing or cancelling their leave source.',409);
- if(action==='UPDATE'&&row.record_status!=='ACTIVE'||action==='RESTORE'&&row.record_status!=='CANCEL'||action==='CANCEL'&&row.record_status!=='ACTIVE')V.fail('INVALID_TRANSITION','Invalid record status.',409);
- const merged=V.input({employee_id:row.employee_id,leave_type_id:row.leave_type_id,start_date:row.start_date,end_date:row.end_date,reason:row.reason,...changes});
- if(action!=='CANCEL')await this.repo.validate(db,merged,id);
- await db.query(`UPDATE employee_leave_records SET leave_type_id=$2,start_date=$3,end_date=$4,reason=$5,record_status=$6,updated_at=CURRENT_TIMESTAMP WHERE id=$1`,[id,merged.leave_type_id,merged.start_date,merged.end_date,merged.reason,action==='CANCEL'?'CANCEL':'ACTIVE']);const saved=await this.repo.find(db,id);return {...saved,calendar:await leaveCalendar(db,saved.employee_id,saved.start_date,saved.end_date)};});}
+ async cancel(user,id,body){
+  id=V.id(id);
+  const reason=V.cancellationReason(body);
+  return this.repo.transaction(async db=>{
+   const actor=await this.repo.actor(db,user);
+   const initial=await this.repo.find(db,id);
+   await lockEmployee(db,initial.employee_id);
+   const row=await this.repo.find(db,id);
+   if(row.record_status!=='ACTIVE')V.fail('INVALID_TRANSITION','Only ACTIVE Leave Records can be cancelled.',409);
+   const {rows}=await db.query(`SELECT id FROM attendance WHERE employee_id=$1 AND work_date BETWEEN $2::date AND $3::date
+     AND record_status='ACTIVE' AND attendance_status='ON_LEAVE'`,[row.employee_id,row.start_date,row.end_date]);
+   if(rows.length)V.fail('DERIVED_ATTENDANCE_EXISTS','Cancel related ON_LEAVE attendance before cancelling the Leave Record.',409,rows);
+   return this.repo.cancel(db,id,reason,actor.id);
+  });
+ }
+ async cancellations(user,q={},id=null){
+  const employee=q.employee_id===undefined?null:V.id(q.employee_id);
+  const cancelledBy=q.cancelled_by===undefined?null:V.id(q.cancelled_by);
+  const from=q.from===undefined?null:V.date(q.from),to=q.to===undefined?null:V.date(q.to);
+  const page=q.page===undefined?1:V.id(q.page),limit=q.limit===undefined?50:V.id(q.limit);
+  if((from&&to&&from>to)||limit>200||((page-1)*limit)>2147483647)V.fail('VALIDATION_ERROR','Invalid cancellation history filters.');
+  return this.repo.transaction(async db=>{
+   await this.repo.actor(db,user);
+   const rows=await this.repo.cancellations(db,{id:id===null?null:V.id(id),employee,cancelledBy,from,to,page,limit});
+   if(id===null)return {data:rows,page,limit};
+   if(!rows.length)V.fail('NOT_FOUND','Cancelled Leave Record not found.',404);
+   return rows[0];
+  });
+ }
  async types(user){return this.repo.transaction(async db=>{await this.repo.actor(db,user,false);return {data:await this.repo.types(db)};});}
  async detail(user,id){return this.repo.transaction(async db=>{await this.repo.actor(db,user);const row=await this.repo.find(db,V.id(id));return {...row,calendar:await leaveCalendar(db,row.employee_id,row.start_date,row.end_date)};});}
  async list(user,q={},own=false,summary=false){
@@ -37,9 +60,10 @@ class LeaveRecordsService {
  if(!employee)V.fail('EMPLOYEE_NOT_FOUND','Employee not found.');if(!type)V.fail('LEAVE_TYPE_NOT_FOUND','Leave Type not found.');
  const row=V.input({employee_id:employee.id,leave_type_id:type.id,start_date:raw.start_date,end_date:raw.end_date,reason:raw.reason});const key=JSON.stringify(row);out.calendar=await leaveCalendar(db,employee.id,row.start_date,row.end_date);
  if(seen.has(key)){out.status='DUPLICATE';out.action='SKIP';}else{
- seen.add(key);out.status=await this.repo.validate(db,row,null,true);
+ out.status=await this.repo.validate(db,row,null,true);
  if(out.status==='VALID'&&accepted.some(r=>r.employee_id===row.employee_id&&r.start_date<=row.end_date&&r.end_date>=row.start_date))V.fail('LEAVE_CONFLICT','Overlaps an earlier valid file row.',409);
- if(out.status==='VALID'){accepted.push(row);if(confirm)out.id=(await this.repo.insert(db,row,actor)).id;}else out.action='SKIP';}
+ seen.add(key);
+ if(out.status==='VALID'){accepted.push(row);out.action='INSERT';if(confirm)out.id=(await this.repo.insert(db,row,actor)).id;}else out.action='SKIP';}
  }catch(e){if(!e.statusCode)throw e;out.status=e.statusCode===409?'CONFLICT':'ERROR';out.code=e.code;out.message=e.message;if(e.conflicts)out.conflicts=e.conflicts;}rows.push(out);}
  const count=s=>rows.filter(r=>r.status===s).length;return confirm?{total_rows:rows.length,inserted:count('VALID'),skipped:count('DUPLICATE'),conflicted:count('CONFLICT'),failed:count('ERROR'),rows}:{fingerprint:parsed.fingerprint,summary:{total_rows:rows.length,valid:count('VALID'),duplicate:count('DUPLICATE'),conflict:count('CONFLICT'),error:count('ERROR')},rows};});}
 }

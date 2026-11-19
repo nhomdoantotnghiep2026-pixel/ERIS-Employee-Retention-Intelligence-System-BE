@@ -15,9 +15,8 @@ function scope(input){
 async function build(service,db,s){
  const refs=await service.repo.references(db),employees=new Map(refs.employees.map(e=>[e.id,e]));
  if(s.employee_ids.some(id=>!employees.has(id)))R.fail('EMPLOYEE_NOT_FOUND','A selected employee no longer exists.');
- const [holidays,leaves,attendance]=await Promise.all([
-  db.query("SELECT id,start_date::text,end_date::text FROM holidays WHERE status='ACTIVE' AND start_date<=$2::date AND end_date>=$1::date ORDER BY id",[s.from,s.to]),
-  db.query("SELECT id,employee_id,start_date::text,end_date::text FROM employee_leave_records WHERE record_status='ACTIVE' AND employee_id=ANY($1::int[]) AND start_date<=$3::date AND end_date>=$2::date ORDER BY id",[s.employee_ids,s.from,s.to]),
+ const [{holidays,leaves},attendance]=await Promise.all([
+  service.repo.calendarSources(db,s.from,s.to,s.employee_ids),
   db.query("SELECT id,employee_id,work_date::text,attendance_status,check_in,check_out,working_minutes,overtime_minutes FROM attendance WHERE record_status='ACTIVE' AND employee_id=ANY($1::int[]) AND work_date BETWEEN $2::date AND $3::date ORDER BY id",[s.employee_ids,s.from,s.to])
  ]);
  const existing=new Map(attendance.rows.map(a=>[`${a.employee_id}:${a.work_date}`,a])),rows=[],now=service.clock().getTime();
@@ -26,15 +25,16 @@ async function build(service,db,s){
   if(!e.hire_date||!w){rows.push({employee_id:id,employee_code:e.employee_code,action:'ERROR',message:'Employee needs a hire date and an assigned ACTIVE work schedule.'});continue;}
   for(let day=Date.parse(s.from);day<=Date.parse(s.to);day+=86400000){
    const d=new Date(day).toISOString().slice(0,10);
-   if(d<e.hire_date||!(w.working_days||[]).includes(new Date(day).getUTCDay()||7)||R.timeline(d,w).end>now)continue;
-   const h=holidays.rows.filter(h=>h.start_date<=d&&h.end_date>=d),l=leaves.rows.filter(l=>l.employee_id===id&&l.start_date<=d&&l.end_date>=d);
-   const current=existing.get(`${id}:${d}`),status=h.length?'HOLIDAY':l.length?'ON_LEAVE':null;
+   if(d<e.hire_date)continue;
+   const h=holidays.filter(h=>h.start_date<=d&&h.end_date>=d),l=leaves.filter(l=>l.employee_id===id&&l.start_date<=d&&l.end_date>=d);
+   const current=existing.get(`${id}:${d}`);
+   const status=R.classifyNoPunch(d,w,now,{holiday:h.length,leave:l.length,complete:false});
    if(!status)continue; // Missing punches alone never establish absence or leave.
    const worked=current&&(current.check_in||current.check_out||Number(current.working_minutes)>0||Number(current.overtime_minutes)>0);
    rows.push({employee_id:id,employee_code:e.employee_code,full_name:e.full_name,work_date:d,work_schedule_id:w.id,
     check_in:null,check_out:null,working_minutes:0,overtime_minutes:0,late_mins:0,early_mins:0,attendance_status:status,
-    action:current?'KEEP':'INSERT',existing_id:current?.id||null,
-    warning:worked?'Existing work record is preserved; this day is not counted as leave.':current&&current.attendance_status!==status?'Stored status differs from source priority. Cancel the old attendance, then preview again.':null,
+    action:current?'KEEP':'INSERT',existing_id:current?.id||null,existing_fingerprint:current?R.hash(current):null,
+    warning:worked?'Existing work record is preserved.':current&&current.attendance_status!==status?'Cancel the existing attendance before creating a replacement.':null,
     derived_source:{holiday_ids:h.map(x=>x.id),leave_record_ids:status==='ON_LEAVE'?l.map(x=>x.id):[]},
     schedule_snapshot:R.scheduleSnapshot(w)});
   }
@@ -58,7 +58,14 @@ async function reconcile(service,user,body,confirm=false){
   if(hash!==proof.viewHash)R.fail('STALE_PREVIEW','Employee, schedule, attendance, leave or holidays changed; preview again.',409);
   if(summary.errors)R.fail('UNRESOLVED_ROWS','Resolve employee/schedule errors before confirming.',409);
   if(rows.some(r=>r.warning)&&!body.confirm_warnings)R.fail('WARNINGS_UNCONFIRMED','HR must acknowledge source reconciliation warnings.',409);
-  let inserted=0;for(const row of rows.filter(r=>r.action==='INSERT')){await service.repo.lockKey(db,row.employee_id,row.work_date);if(await service.repo.current(db,row.employee_id,row.work_date,true))R.fail('STALE_PREVIEW','Attendance changed; preview again.',409);await service.repo.write(db,row,null,user.id,'HR confirmed holiday/leave reconciliation');inserted++;}
+  let inserted=0;
+  for(const row of rows.filter(r=>r.action==='INSERT')){
+   await service.repo.lockKey(db,row.employee_id,row.work_date);
+   const current=await service.repo.current(db,row.employee_id,row.work_date,true);
+   if(current)R.fail('STALE_PREVIEW','Attendance changed; preview again.',409);
+   await service.repo.write(db,row,null,user.id,'HR confirmed calendar reconciliation');
+   inserted++;
+  }
   return {status:'CONFIRMED',scope:s,inserted,kept:summary.kept};
  });
 }

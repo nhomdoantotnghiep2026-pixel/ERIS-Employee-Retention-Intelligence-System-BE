@@ -13,10 +13,11 @@ function createLeaveRecordsRouter({service,authenticate}){
  router.post('/leave-records',hr,handle(r=>service.create(r.auth.userId,r.body),201));
  router.post('/leave-records/import/preview',hr,upload.single('file'),handle(r=>service.import(r.auth.userId,r.file)));
  router.post('/leave-records/import/confirm',hr,upload.single('file'),handle(r=>service.import(r.auth.userId,r.file,true,r.body.fingerprint)));
+ router.get('/leave-records/cancellations',hr,handle(r=>service.cancellations(r.auth.userId,r.query)));
+ router.get('/leave-records/cancellations/:id',hr,handle(r=>service.cancellations(r.auth.userId,{},r.params.id)));
  router.get('/leave-records/:id',hr,handle(r=>service.detail(r.auth.userId,r.params.id)));
- router.patch('/leave-records/:id',hr,handle(r=>service.mutate(r.auth.userId,r.params.id,r.body)));
- for(const action of ['cancel','restore'])router.patch('/leave-records/:id/'+action,hr,handle(r=>service.mutate(r.auth.userId,r.params.id,r.body,action.toUpperCase())));
- router.use((e,_req,res,next)=>{if(e instanceof multer.MulterError)return res.status(400).json({code:'INVALID_FILE',message:e.message});if(e instanceof AppError)return res.status(e.statusCode).json({statusCode:e.statusCode,code:e.code,message:e.message,...(e.conflicts?{conflicts:e.conflicts}:{})});next(e);});
+ router.patch('/leave-records/:id/cancel',hr,handle(r=>service.cancel(r.auth.userId,r.params.id,r.body)));
+ router.use((e,_req,res,next)=>{if(e instanceof multer.MulterError)return res.status(400).json({code:'INVALID_FILE',message:e.message});if(e instanceof AppError)return res.status(e.statusCode).json({statusCode:e.statusCode,code:e.code,message:e.message,...(e.conflicts?{conflicts:e.conflicts}:{})});if(e.code==='23P01')return res.status(409).json({statusCode:409,code:'LEAVE_CONFLICT',message:'Overlaps active Leave Records.'});next(e);});
  return router;
 }
 module.exports={createLeaveRecordsRouter};

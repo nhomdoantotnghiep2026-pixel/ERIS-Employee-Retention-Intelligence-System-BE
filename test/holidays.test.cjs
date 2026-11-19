@@ -14,7 +14,7 @@ test('TEMP PostgreSQL: HR API, preview/confirm/idempotency, calendar and part-ti
  try{
  await c.query(`CREATE TEMP TABLE role(id int PRIMARY KEY,name text);CREATE TEMP TABLE users(id int PRIMARY KEY,role_id int,status text);INSERT INTO role VALUES(1,'HR'),(2,'EMPLOYEE');INSERT INTO users VALUES(1,1,'ACTIVE'),(2,2,'ACTIVE');
  CREATE TEMP TABLE holidays(id int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,user_id int NOT NULL REFERENCES users(id),name varchar(150) NOT NULL,start_date date NOT NULL,end_date date NOT NULL,description text,status varchar(20) NOT NULL DEFAULT 'ACTIVE',CHECK(end_date>=start_date));
- CREATE TEMP TABLE employees(id int PRIMARY KEY,employee_code text,full_name text,employment_type text,work_schedule_id int);
+ CREATE TEMP TABLE employees(id int PRIMARY KEY,employee_code text,full_name text,employment_type text,work_schedule_id int,hire_date text DEFAULT '2026-01-01');
  CREATE TEMP TABLE work_schedules(id int PRIMARY KEY,working_days int[],status text,shift_type text,start_time time,end_time time,break_start time,break_end time,attendance_policy jsonb);
  INSERT INTO work_schedules VALUES(1,ARRAY[1,2,3,4,5],'ACTIVE','DAY','08:00','17:00','12:00','13:00','{}');
  INSERT INTO employees VALUES(10,'PT010','Part Time','PART_TIME',1),(11,'FT011','Full Time','FULL_TIME',1),(12,'NO012','No Schedule','PART_TIME',NULL);
@@ -44,7 +44,8 @@ test('TEMP PostgreSQL: HR API, preview/confirm/idempotency, calendar and part-ti
  // Existing import preview renders warnings and uses the normal warning acknowledgment flow.
  const {AttendanceImportService}=require('../src/modules/attendance/attendance-import.service');
  const refs={employees:(await c.query('SELECT * FROM employees')).rows,schedules:(await c.query('SELECT * FROM work_schedules')).rows};
- const attendance=new AttendanceImportService({references:async()=>refs,current:async()=>null});
+ const attendance=new AttendanceImportService({references:async()=>refs,current:async()=>null,overlapping:async()=>[]},
+   {clock:()=>new Date('2026-11-19T12:00:00+07:00')});
  const rows=await attendance.build(db,[{excel_row:2,employee_code:'PT010',shift_type:'DAY',check_in:'2026-11-18T08:00:00+07:00',check_out:'2026-11-18T17:00:00+07:00'}]);assert.equal(rows[0].validation_status,'WARNING');assert(rows[0].issues.some(i=>i.code==='PART_TIME_HOLIDAY_WORK'));assert.equal(rows[0].working_minutes,480);
  const express=require('express'),app=express();app.use(express.json());app.use('/api/holidays',createHolidayRouter({pool,service,authenticate:(req,res,next)=>{if(!req.headers.authorization)return res.sendStatus(401);req.auth={userId:Number(req.headers.authorization)};next();}}));
  server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const url=`http://127.0.0.1:${server.address().port}/api/holidays`;
