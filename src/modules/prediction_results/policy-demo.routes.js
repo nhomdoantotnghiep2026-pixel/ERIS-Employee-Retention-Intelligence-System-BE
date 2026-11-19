@@ -10,6 +10,10 @@ function createPolicyDemoRouter({repository,authenticate}) {
     catch(error){next(error);}
   });
   router.get('/prediction-results/:id',read(req=>repository.prediction(req.auth.userId,validatePolicyId(req.params.id,true))));
+  router.post('/retention-policies',async(req,res,next)=>{
+    try{const result=await repository.createPolicy(req.auth.userId,req.body);res.location('/api/retention-policies/'+result.data.id).status(201).json(result);}
+    catch(error){next(error);}
+  });
   router.get('/retention-policies',read(req=>repository.policies(req.auth.userId)));
   router.get('/retention-policies/:id',read(req=>repository.policies(req.auth.userId,validatePolicyId(req.params.id))));
   router.get('/policy-recommendations',read(req=>repository.recommendations(req.auth.userId)));
