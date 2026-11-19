@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const $=id=>document.getElementById(id);
-  let token='',generation=0,lastPreview=null,selectedSnapshot=null,policyPredictionId=null;
+  let token='',generation=0,lastPreview=null,selectedSnapshot=null,policyPredictionId=null,policyPreviewToken=null;
   const notify=(message,isError=false)=>{
     $('notice').textContent=message;
     $('notice').style.background=isError?'#fff0ed':'';
@@ -53,7 +53,7 @@
   }
   function path(action){const employee=$('employee').value;if(!employee)throw new Error('Chọn nhân viên trước.');return '/api/ai/employees/'+encodeURIComponent(employee)+'/'+action;}
   function render(data){
-    policyPredictionId=data.saved?data.predictionId:null;$('policyPanel').hidden=!policyPredictionId;$('policyOutput').replaceChildren();
+    policyPredictionId=data.saved?data.predictionId:null;policyPreviewToken=null;$('savePolicies').disabled=true;$('policyPanel').hidden=!policyPredictionId;$('policyOutput').replaceChildren();
     const model=data.model,preview=data.preview;
     $('result').hidden=false;$('score').textContent=(model.score*100).toLocaleString('vi-VN',{maximumFractionDigits:2})+'%';
     $('source').textContent=(preview.employee.fullName||preview.employee.employeeCode)+' · '+preview.dataSource+' · '+(data.saved?'Đã lưu kết quả #'+data.predictionId:'Chưa lưu database');
@@ -100,13 +100,15 @@
   });
   async function generatePolicies(save){
     if(!policyPredictionId)throw new Error('Lưu kết quả model trước khi đề xuất policy.');
-    if(save&&!window.confirm('Lưu các đề xuất SUGGESTED cho policy đang có? Không tự thêm policy mới hoặc áp dụng cho nhân viên.'))return;
-    const data=await request('/api/ai/results/'+policyPredictionId+'/policy-recommendations',{save,limit:12});
+    if(save&&!policyPreviewToken)throw new Error('Hãy xem đề xuất trước khi lưu.');
+    const data=await request('/api/ai/results/'+policyPredictionId+'/policy-recommendations',save?{save,previewToken:policyPreviewToken}:{save});
+    policyPreviewToken=data.previewToken??null;
+    $('savePolicies').disabled=!policyPreviewToken;
     $('policyOutput').replaceChildren();
     const notice=document.createElement('p');notice.textContent=data.warning;$('policyOutput').append(notice);
-    if(!data.recommendations.length){const empty=document.createElement('p');empty.textContent='Chưa có yếu tố phù hợp để đề xuất policy theo quy tắc hiện tại.';$('policyOutput').append(empty);}
+    if(!data.recommendations.length){const empty=document.createElement('p');empty.textContent='Chưa có chính sách phù hợp cho kết quả này.';$('policyOutput').append(empty);}
     for(const r of data.recommendations){const item=document.createElement('section');item.className='card';const title=document.createElement('h3');title.textContent=r.rank+'. '+(r.policy?.name??r.policyDraft.name);const status=document.createElement('p');status.textContent=r.policy?'Policy đã có trong danh mục · '+r.status:'Chờ duyệt thêm policy vào danh mục';const reason=document.createElement('p');reason.textContent=r.reason;item.append(title,status,reason);$('policyOutput').append(item);}
-    if(save){const note=document.createElement('p');note.textContent='Đã tạo mới '+data.savedRecommendations.filter(r=>r.created).length+' đề xuất; policy chưa có vẫn chờ duyệt.';$('policyOutput').append(note);}
+    if(save){const note=document.createElement('p');note.textContent='Đã tạo mới '+data.savedRecommendations.filter(r=>r.created).length+' đề xuất.';$('policyOutput').append(note);}
     $('policyPanel').scrollIntoView({behavior:'smooth'});
   }
   $('previewPolicies').onclick=()=>busy(async()=>generatePolicies(false));

@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {build,options,FEATURES}=require('../src/modules/ai/ai.features');
+const {build,options,FEATURES}=require('../src/modules/ai_input/ai-input.features');
 const {AiClient,MODEL_ID,SCHEMA,STATUS}=require('../src/modules/ai/ai.client');
 const {AiService}=require('../src/modules/ai/ai.service');
 const {AppError}=require('../src/common/errors/app-error');
@@ -63,7 +63,7 @@ test('Preview creates a snapshot only when complete; predict reads exact stored 
  repository.assertHr=async()=>{throw new AppError(403,'Forbidden');};await assert.rejects(()=>service.predict(1,7,{snapshotId:3}),e=>e.statusCode===403);
 });
 test('Stored snapshot converts pg numbers without replacing deliberate demo score 0.1',async()=>{
- const {snapshotData}=require('../src/modules/ai/ai.snapshot');
+ const {snapshotData}=require('../src/modules/ai_input/ai-input.snapshot');
  const values={id:3,employee_id:2,snapshot_date:'2026-11-08T12:00:00Z',department:'IT',gender:'Female',age:50,hire_date:'2026-06-01',years_at_company:'1.00',education_level:'PhD',monthly_salary_usd:'10.00',work_hours_per_week:'100.00',overtime_hours:'200.00',leave_days:'1.00',promotions:0,employee_satisfaction_score:'0.1000'};
  const p=snapshotData(values);assert.equal(p.features.Employee_Satisfaction_Score,0.1);assert.equal(p.ready,true);assert.deepEqual(p.outOfDomainFeatures,['Employee_Satisfaction_Score']);
  assert.equal(snapshotData({...values,monthly_salary_usd:null}).ready,false);

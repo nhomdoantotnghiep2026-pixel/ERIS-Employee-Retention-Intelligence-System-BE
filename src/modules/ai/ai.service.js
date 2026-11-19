@@ -1,24 +1,14 @@
-const {ExchangeRateService}=require('./ai.exchange-rate');
+const {AiInputService}=require('../ai_input/ai-input.service');
 const { AppError } = require('../../common/errors/app-error');
-const { build,options,id,todayVN,MISSING_SURVEY } = require('./ai.features');
+const { id,MISSING_SURVEY } = require('../ai_input/ai-input.features');
 const {assess}=require('./ai.assessment');
 const WARNING='Cảnh báo hỗ trợ HR xem xét, không khẳng định nhân viên sẽ nghỉ việc. Ngưỡng thử nghiệm 9,9/100; model demo chưa đạt tiêu chí đánh giá và chưa có thời hạn dự báo.';
-class AiService {
-  constructor({repository,client,clock=()=>new Date(),exchangeRates=new ExchangeRateService()}){Object.assign(this,{repository,client,clock,exchangeRates});}
-  async exchangeRate(actorId){await this.repository.assertHr(actorId);return this.exchangeRates.latest();}
-  async info(actorId){await this.repository.assertHr(actorId);return {...await this.client.info(),warning:WARNING};}
-  async preview(actorId,employeeId,body={},allowSave=false) {
-    await this.repository.assertHr(actorId);
-    const now=this.clock(),today=todayVN(now),opts=options(body,allowSave,today);
-    const row=await this.repository.read(id(employeeId),opts,today,now.toISOString());
-    if(row.satisfaction!=null && opts.vndPerUsd===undefined && !Object.hasOwn(opts.supplementalFeatures,'Monthly_Salary') && row.current_salary!=null){
-      opts.exchangeRate=await this.exchangeRates.latest();opts.vndPerUsd=opts.exchangeRate.vndPerUsd;
-    }
-    const preview={employee:{id:row.id,employeeCode:row.employeeCode,fullName:row.fullName},capturedAt:now.toISOString(),snapshotDate:today,...build(row,opts,today),warning:WARNING};
-    if(preview.missingFeatures.length)return {...preview,snapshotCreated:false,snapshotId:null,ready:false};
-    const snapshotId=await this.repository.createSnapshot(actorId,preview);
-    return {...await this.repository.readSnapshot(actorId,preview.employee.id,snapshotId),snapshotCreated:true,warning:WARNING};
+class AiService extends AiInputService {
+  constructor({repository,client,clock,exchangeRates}){
+    super({repository,clock,exchangeRates,warning:WARNING});
+    this.client=client;
   }
+  async info(actorId){await this.repository.assertHr(actorId);return {...await this.client.info(),warning:WARNING};}
   async predict(actorId,employeeId,body={}) {
     await this.repository.assertHr(actorId);
     if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(key=>!['snapshotId','save'].includes(key))||body.save!==undefined&&typeof body.save!=='boolean')throw new AppError(400,'Chạy model chỉ nhận snapshotId và save (boolean).');

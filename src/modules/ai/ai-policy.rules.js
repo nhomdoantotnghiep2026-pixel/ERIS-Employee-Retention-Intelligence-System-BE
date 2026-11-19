@@ -1,6 +1,6 @@
 const {AppError}=require('../../common/errors/app-error');
 const {MODEL_ID,SCHEMA,STATUS}=require('./ai.client');
-const {FEATURES,valid}=require('./ai.features');
+const {FEATURES,valid}=require('../ai_input/ai-input.features');
 const VERSION='SHAP_FEATURE_REVIEW_V2';
 const POLICY_DEFINITIONS=[
   {
@@ -93,8 +93,7 @@ const POLICY_DEFINITIONS=[
 const DRAFTS=POLICY_DEFINITIONS.map(policy=>({...policy,description:policy.action}));
 const norm=value=>typeof value==='string'?value.toLowerCase().replace(/[^a-z0-9]/g,''):'';
 const rules=DRAFTS.map(draft=>({draft,feature:FEATURES.find(key=>norm(key)===norm(draft.targetFactor))}));
-function recommend(result,policies,{limit=3}={}){
- if(!Number.isInteger(limit)||limit<1||limit>12)throw new AppError(400,'limit phải là số nguyên 1–12.');
+function validatePolicyResult(result){
  const {model,preview}=result;
  if(!model||!preview||model.model_id!==MODEL_ID||model.schema_version!==SCHEMA||model.validation_status!==STATUS||model.demo_mode!==true)throw new AppError(409,'Chỉ hỗ trợ kết quả model Mexwell demo thật đã lưu; không dùng kết quả policy cố định.');
  const f=preview.features,c=model.contributions;
@@ -102,6 +101,11 @@ function recommend(result,policies,{limit=3}={}){
   ||FEATURES.some(key=>!Object.hasOwn(c,key))||Object.keys(c).some(key=>!FEATURES.includes(key))
   ||Object.values(c).some(value=>typeof value!=='number'||!Number.isFinite(value))
   ||Math.abs(model.base_value+Object.values(c).reduce((a,b)=>a+b,0)-model.score)>1e-8)throw new AppError(409,'Kết quả hoặc SHAP không hợp lệ.');
+ return {model,preview,f,c};
+}
+function recommend(result,policies,{limit=3}={}){
+ if(!Number.isInteger(limit)||limit<1||limit>12)throw new AppError(400,'limit phải là số nguyên 1–12.');
+ const {model,preview,f,c}=validatePolicyResult(result);
  const candidates=[],excluded=[];
  for(const {draft,feature} of rules){
   if(c[feature]<=0)continue;
@@ -126,4 +130,4 @@ function recommend(result,policies,{limit=3}={}){
   omittedCount:Math.max(0,candidates.length-limit),excludedFactors:excluded,
   warning:'Đề xuất bằng quy tắc backend từ SHAP dương của 12 feature, không phải chính sách do model tự sinh. Mức ưu tiên MEDIUM là mặc định, không phải mức rủi ro. HR xác minh nhu cầu trước khi áp dụng; không tự đổi quyền lợi, lương, chức danh hoặc lịch làm. Tuổi/giới tính không là căn cứ phân biệt đối xử. Model demo chưa đạt tiêu chí đánh giá.'};
 }
-module.exports={recommend,DRAFTS,VERSION};
+module.exports={recommend,DRAFTS,VERSION,validatePolicyResult};

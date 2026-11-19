@@ -1,5 +1,5 @@
 const { AppError } = require('../../common/errors/app-error');
-const { FEATURES, valid } = require('./ai.features');
+const { FEATURES, valid } = require('../ai_input/ai-input.features');
 const MODEL_ID='mexwell-rf12-demo-v1-20e0a090ced2';
 const SCHEMA='mexwell-12-v1';
 const STATUS='NO_QUALIFIED_MEXWELL_MODEL';
