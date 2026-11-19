@@ -42,13 +42,13 @@ Bật Docker Desktop, Redis và tunnel database. Chạy npm run ai:start rồi n
 
 ## Nguồn dữ liệu khi tạo snapshot
 
-Department/Gender/Hire_Date từ hồ sơ; Age và Years_At_Company tính năm tròn tại snapshot; Education_Level lấy bằng ACTIVE cao nhất; Promotions đếm PROMOTION đến snapshot. Satisfaction lấy trung bình các answers của response đã nộp gần nhất không sau snapshot, làm tròn 2 chữ số; chưa nộp thì thiếu feature. Lương VND chỉ đổi USD nếu HR cung cấp vndPerUsd. SupplementalFeatures chỉ bổ sung feature thiếu cho demo, không ghi đè dữ liệu database.
+HR gửi `periodStart`. Hệ thống lấy ngày và thời điểm kiểm tra theo giờ Việt Nam làm mốc chốt snapshot. Lương VND chia cho tỷ giá Frankfurter hoặc `vndPerUsd` do HR nhập.
 
-Work_Hours_Per_Week lấy lịch ACTIVE qua employees.work_schedule_id: (end_time - start_time - thời gian nghỉ giữa ca) nhân số ngày làm việc khác nhau trong tuần. Không có lịch hợp lệ thì thiếu feature. Đây là giờ theo lịch hiện tại, không gồm overtime; không có lịch sử gán ca. Tổng ngày vắng dựa trên attendance đã import, không lọc lịch quá khứ theo lịch hiện tại.
+- `Work_Hours_Per_Week` lấy tổng `working_minutes` hợp lệ từ chấm công ACTIVE, chia cho 60 rồi chia cho số ngày lịch của kỳ chia 7. Lịch ACTIVE hiện tại dùng để kiểm tra các ngày làm việc còn thiếu sau ngày vào công ty, có xét ngày lễ và phép ACTIVE.
+- `Overtime_Hours` lấy tổng số phút tăng ca hợp lệ từ 01/01 đến lúc chốt rồi chia cho 60. `Sick_Days` đếm ngày ON_LEAVE trong chấm công ACTIVE cùng năm và lưu vào `leave_days`.
+- `Employee_Satisfaction_Score` lấy trung bình điểm của từng phản hồi hợp lệ đã nộp trong kỳ. Dùng công thức chấm điểm khảo sát hiện hành cho từng phản hồi. Nếu thiếu khảo sát hoặc chấm công cần thiết, HR nhận thông báo và hệ thống không tạo snapshot. Các feature tổng hợp này không nhận giá trị nhập tay.
 
-Overtime_Hours = tổng overtime_minutes của attendance thực làm đã checkout / 60, làm tròn 2 chữ số. Sick_Days giữ tên cũ để tương thích model nhưng mang nghĩa tổng ngày nghỉ phép + không phép: đếm DISTINCT work_date có ON_LEAVE/ABSENT, đúng ngày làm theo lịch và không thuộc holiday ACTIVE. Hai chỉ số tính từ max(01/01 năm snapshot, hire_date) đến snapshot, không dùng 12 tháng lùi. Checkout chưa hoàn tất làm thiếu Overtime_Hours. Không cộng thêm leave_requests để tránh trùng ngày; chỉ tính ngày nghỉ đã được materialize vào attendance. Công tác hiện chưa có loại dữ liệu riêng: không được ghi công tác thành ON_LEAVE/ABSENT, nếu ghi như vậy thì chưa thể phân biệt khi thống kê.
-
-periodStart/periodEnd được giữ để tương thích request và metadata cũ; không thay đổi cửa sổ YTD hay lịch dùng tính các feature trên. Snapshot đã lưu không bị tính lại. Cách tính absence và overtime này khác định nghĩa dataset gốc; cần đồng bộ cách chuẩn bị dữ liệu huấn luyện trước khi dùng ngoài demo.
+Khi chạy model, hệ thống dùng dữ liệu của snapshot đã chọn. Cần đối chiếu kỳ tăng ca YTD với định nghĩa feature lúc huấn luyện trước khi dùng kết quả ngoài demo.
 
 ## Lưu kết quả
 

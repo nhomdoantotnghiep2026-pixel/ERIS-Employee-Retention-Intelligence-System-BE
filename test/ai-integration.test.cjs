@@ -20,16 +20,18 @@ test('Missing fields are explicit; supplemental values never overwrite database 
  assert.throws(()=>build(row,{supplementalFeatures:{Age:40}},'2026-11-08'),/Không ghi đè/);
 });
 test('Invalid values and future/partial period rejected, no numeric strings or NaN',()=>{
- for(const body of [null,[],{save:'true'},{unexpected:true},{periodStart:'2026-11-01'},{periodStart:'2026-11-01',periodEnd:'2026-11-09'},{vndPerUsd:0},{supplementalFeatures:{Monthly_Salary:-1}},{supplementalFeatures:{Age:'30'}},{supplementalFeatures:{Age:true}},{supplementalFeatures:{Overtime_Hours:NaN}},{supplementalFeatures:{Employee_Satisfaction_Score:6}},{supplementalFeatures:{Hire_Date:'2026-02-30'}}]) assert.throws(()=>options(body,true,'2026-11-08'),AppError);
+ for(const body of [null,[],{save:'true'},{unexpected:true},{periodStart:'2026-11-09'},{periodEnd:'2026-11-09'},{vndPerUsd:0},{supplementalFeatures:{Monthly_Salary:-1}},{supplementalFeatures:{Age:'30'}},{supplementalFeatures:{Age:true}},{supplementalFeatures:{Overtime_Hours:0}},{supplementalFeatures:{Employee_Satisfaction_Score:4}},{supplementalFeatures:{Hire_Date:'2026-02-30'}}]) assert.throws(()=>options(body&&!Array.isArray(body)?{periodStart:'2026-11-01',...body}:body,true,'2026-11-08'),AppError);
+ assert.equal(options({periodStart:'2026-11-01'},false,'2026-11-08').periodEnd,'2026-11-08');
+ assert.throws(()=>options({},false,'2026-11-08'),AppError);
 });
-test('Schedule hours exclude overtime; year-to-date totals do not depend on requested period',()=>{
- const opts={periodStart:'2026-11-01',periodEnd:'2026-11-07',supplementalFeatures:{}};
- const r=build({...row,scheduled_weekly_hours:'40',ytd_incomplete_days:'0',ytd_overtime_minutes:'601',absence_days:'3',satisfaction:'3.755'},opts,'2026-11-08');
+test('Actual hours use calendar weeks and overtime uses the YTD total',()=>{
+ const opts={periodStart:'2026-10-12',periodEnd:'2026-11-08',supplementalFeatures:{}};
+ const r=build({...row,period_working_minutes:'9600',ytd_incomplete_days:'0',ytd_overtime_minutes:'601',absence_days:'3',satisfaction:'3.75'},opts,'2026-11-08');
  assert.equal(r.features.Work_Hours_Per_Week,40);assert.equal(r.features.Overtime_Hours,10.02);
  assert.equal(r.features.Years_At_Company,6);assert.equal(r.features.Sick_Days,3);
  assert.equal(r.features.Employee_Satisfaction_Score,3.75);
  assert.equal(build({...row,hire_date:'2024-11-09'},opts,'2026-11-08').features.Years_At_Company,1);
- const incomplete=build({...row,scheduled_weekly_hours:'40',ytd_incomplete_days:'1',ytd_overtime_minutes:'600'},opts,'2026-11-08');
+ const incomplete=build({...row,period_working_minutes:'9600',ytd_overtime_minutes:null},opts,'2026-11-08');
  assert.ok(incomplete.missingFeatures.includes('Overtime_Hours'));
  assert.equal(incomplete.features.Work_Hours_Per_Week,40);
 });
@@ -48,8 +50,11 @@ test('Preview creates a snapshot only when complete; predict reads exact stored 
  const stored={snapshotId:3,employee:{id:7},features:sample,missingFeatures:[],invalidFeatures:[],outOfDomainFeatures:[],ready:true};
  const repository={assertHr:async()=>{},read:async()=>row,createSnapshot:async()=>{snapshots++;return 3;},readSnapshot:async(_actor,employeeId,snapshotId)=>{assert.equal(employeeId,7);assert.equal(snapshotId,3);return stored;},save:async()=>{writes++;return {predictionId:9,snapshotId:3};}};
  const service=new AiService({repository,exchangeRates:{latest:async()=>({vndPerUsd:25000,source:'TEST_REFERENCE'})},client:{explain:async(_id,features)=>{calls++;assert.deepEqual(features,sample);return response();}},clock:()=>new Date('2026-11-08T12:00:00Z')});
- const missing=await service.preview(1,7,{});assert.equal(missing.snapshotCreated,false);assert.equal(snapshots,0);assert.equal(calls,0);
- const body={vndPerUsd:25000,supplementalFeatures:{Work_Hours_Per_Week:40,Overtime_Hours:5,Sick_Days:2}};
+ repository.read=async()=>({...row,satisfaction:null});
+ const missing=await service.preview(1,7,{periodStart:'2026-11-02'});assert.equal(missing.snapshotCreated,false);assert.equal(snapshots,0);assert.equal(calls,0);
+ assert.ok(missing.missingFeatures.includes('Employee_Satisfaction_Score'));assert.match(missing.issues.join(' '),/khảo sát hợp lệ/);
+ repository.read=async()=>({...row,period_working_minutes:2400,ytd_incomplete_days:0,ytd_overtime_minutes:300,absence_days:2});
+ const body={periodStart:'2026-11-02',vndPerUsd:25000};
  assert.equal((await service.preview(1,7,body)).snapshotId,3);assert.equal(snapshots,1);
  assert.equal((await service.predict(1,7,{snapshotId:3})).saved,false);assert.equal(snapshots,1);assert.equal(writes,0);
  assert.equal((await service.predict(1,7,{snapshotId:3,save:true})).snapshotId,3);assert.equal(writes,1);assert.equal(snapshots,1);
@@ -59,9 +64,9 @@ test('Preview creates a snapshot only when complete; predict reads exact stored 
 });
 test('Stored snapshot converts pg numbers without replacing deliberate demo score 0.1',async()=>{
  const {snapshotData}=require('../src/modules/ai/ai.snapshot');
- const values={id:3,employee_id:2,snapshot_date:'2026-11-08T12:00:00Z',department:'IT',gender:'Female',age:50,hire_date:'2026-06-01',years_at_company:'1.00',education_level:'PhD',monthly_salary:'10.00',work_hours_per_week:'100.00',overtime_hours:'200.00',sick_days:'1.00',promotions:0,employee_satisfaction_score:'0.1000'};
+ const values={id:3,employee_id:2,snapshot_date:'2026-11-08T12:00:00Z',department:'IT',gender:'Female',age:50,hire_date:'2026-06-01',years_at_company:'1.00',education_level:'PhD',monthly_salary_usd:'10.00',work_hours_per_week:'100.00',overtime_hours:'200.00',leave_days:'1.00',promotions:0,employee_satisfaction_score:'0.1000'};
  const p=snapshotData(values);assert.equal(p.features.Employee_Satisfaction_Score,0.1);assert.equal(p.ready,true);assert.deepEqual(p.outOfDomainFeatures,['Employee_Satisfaction_Score']);
- assert.equal(snapshotData({...values,monthly_salary:null}).ready,false);
+ assert.equal(snapshotData({...values,monthly_salary_usd:null}).ready,false);
  const client=new AiClient({serviceKey:'a'.repeat(32),fetchImpl:async()=>({ok:true,json:async()=>response()})});
  await assert.rejects(()=>client.explain(7,{...sample,Employee_Satisfaction_Score:0.1}),e=>e.statusCode===422);
  assert.equal((await client.explain(7,{...sample,Employee_Satisfaction_Score:0.1},{allowOutOfRangeDemo:true})).score,0.1);
@@ -102,16 +107,22 @@ test('Real PostgreSQL TEMP tables: save snapshot/result/12 SHAP/audit atomically
  try{
   await client.query(`CREATE TEMP TABLE role(id int PRIMARY KEY,name text);CREATE TEMP TABLE users(id int PRIMARY KEY,role_id int,status text,employee_id int);
     CREATE TEMP TABLE employees(id int PRIMARY KEY,employment_status text,employee_code text,full_name text);
-    CREATE TEMP TABLE ai_input(id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,employee_id int,snapshot_date timestamptz,department text,gender text,age int,hire_date date,years_at_company numeric,education_level text,monthly_salary numeric,work_hours_per_week numeric,overtime_hours numeric,sick_days numeric,promotions int,employee_satisfaction_score numeric);
+    CREATE TEMP TABLE ai_input(id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,employee_id int,snapshot_date timestamptz,department text,gender text,age int,hire_date date,years_at_company numeric,education_level text,monthly_salary_vnd numeric(20,2),monthly_salary_usd numeric(20,2),fx_vnd_per_usd numeric(20,6),fx_rate_date date,work_hours_per_week numeric,overtime_hours numeric,leave_days numeric,promotions int,employee_satisfaction_score numeric);
     CREATE TEMP TABLE prediction_results(id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,employee_id int,snapshot_id int,attrition_probability numeric CHECK(attrition_probability BETWEEN 0 AND 1),risk_level text,prediction_label boolean,created_at timestamptz DEFAULT now());
     CREATE TEMP TABLE explainable(id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,prediction_result_id int,feature_name text,feature_value text,impact_value numeric,impact_direction text,rank_order int CHECK(rank_order>0),UNIQUE(prediction_result_id,feature_name));
     CREATE TEMP TABLE audit_logs(id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,user_id int,entity_type text,entity_id bigint,action text,new_value jsonb);
     INSERT INTO role VALUES(2,'HR');INSERT INTO users VALUES(1,2,'ACTIVE',7);INSERT INTO employees VALUES(7,'ACTIVE','EMP007','Synthetic');`);
   const pool={query:(...a)=>client.query(...a),connect:async()=>({query:(...a)=>client.query(...a),release(){}})};
-  const repo=new AiRepository(pool),preview={employee:{id:7},capturedAt:'2026-11-08T12:00:00Z',features:sample,provenance:{Sick_Days:'MANUAL_DEMO'}};
+  const repo=new AiRepository(pool),preview={employee:{id:7},capturedAt:'2026-11-08T12:00:00Z',features:sample,provenance:{Sick_Days:'MANUAL_DEMO'},monthlySalaryVnd:25771000,vndPerUsd:25771,fxRateDate:'2026-11-06'};
   const snapshotId=await repo.createSnapshot(1,preview);preview.snapshotId=snapshotId;
   const saved=await repo.save(1,preview,response());assert.ok(saved.predictionId);assert.equal(saved.snapshotId,snapshotId);
-  assert.equal((await repo.snapshots(1,7)).length,1);
+  const snapshots=await repo.snapshots(1,7);
+  assert.equal(snapshots.length,1);
+  assert.equal(snapshots[0].monthlySalaryVnd,25771000);
+  assert.equal(snapshots[0].vndPerUsd,25771);
+  assert.equal(snapshots[0].fxRateDate,'2026-11-06');
+  assert.equal(snapshots[0].features.Monthly_Salary,1000);
+  assert.equal(snapshots[0].features.Sick_Days,2);
   await assert.rejects(()=>repo.readSnapshot(1,8,snapshotId),e=>e.statusCode===404);
   const counts=(await client.query('SELECT (SELECT count(*) FROM explainable)::int AS explanations,(SELECT count(*) FROM audit_logs)::int AS audits')).rows[0];assert.equal(counts.explanations,12);assert.equal(counts.audits,2);
   const stored=(await client.query('SELECT risk_level,prediction_label FROM prediction_results')).rows[0];assert.equal(stored.risk_level,'REVIEW_REQUIRED');assert.equal(stored.prediction_label,true);

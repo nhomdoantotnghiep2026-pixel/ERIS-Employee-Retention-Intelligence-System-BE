@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const {ExchangeRateService}=require('../src/modules/ai/ai.exchange-rate');
 const {AiService}=require('../src/modules/ai/ai.service');
 const {score}=require('../src/modules/surveys/surveys.dynamic.validation');
-const {latestSatisfaction}=require('../src/modules/surveys/surveys.satisfaction');
+const {periodSatisfaction}=require('../src/modules/surveys/surveys.satisfaction');
 const now=()=>new Date('2026-11-18T05:00:00Z');
 const data={date:'2026-11-18',base:'USD',quote:'VND',rate:25771};
 const ok=async()=>({ok:true,json:async()=>data});
@@ -27,11 +27,13 @@ test('bad/stale/future/non-numeric rates and network failures never become fallb
 });
 test('preview uses fetched rate and records provenance; explicit rate remains supported',async()=>{
  let fetched=0,captured;
- const row={id:1,employeeCode:'EMP001',fullName:'Demo',department:'IT',gender:'MALE',date_of_birth:'1995-01-01',hire_date:'2020-01-01',education_level:'Bachelor',current_salary:25771000,promotions:0,satisfaction:4,scheduled_weekly_hours:40,ytd_incomplete_days:0,ytd_overtime_minutes:0,absence_days:2};
+ const row={id:1,employeeCode:'EMP001',fullName:'Demo',department:'IT',gender:'MALE',date_of_birth:'1995-01-01',hire_date:'2020-01-01',education_level:'Bachelor',current_salary:25771000,promotions:0,satisfaction:4,period_working_minutes:2400,ytd_incomplete_days:0,ytd_overtime_minutes:0,absence_days:2};
  const repository={assertHr:async()=>{},read:async()=>row,createSnapshot:async(_actor,p)=>{captured=p;return 1;},readSnapshot:async()=>captured};
  const service=new AiService({repository,client:{},clock:now,exchangeRates:{latest:async()=>{fetched++;return{...data,vndPerUsd:data.rate,rateDate:data.date,source:'Frankfurter'};}}});
- const p=await service.preview(1,1,{});assert.equal(p.features.Monthly_Salary,1000);assert.equal(p.exchangeRate.source,'Frankfurter');assert.equal(fetched,1);
- assert.equal((await service.preview(1,1,{vndPerUsd:25000})).features.Monthly_Salary,1030.84);assert.equal(fetched,1);
+ const p=await service.preview(1,1,{periodStart:'2026-11-12'});assert.equal(p.features.Monthly_Salary,1000);assert.equal(p.exchangeRate.source,'Frankfurter');assert.equal(fetched,1);
+ assert.equal(p.monthlySalaryVnd,25771000);assert.equal(p.vndPerUsd,25771);assert.equal(p.fxRateDate,data.date);
+ const manual=await service.preview(1,1,{periodStart:'2026-11-12',vndPerUsd:25000});
+ assert.equal(manual.features.Monthly_Salary,1030.84);assert.equal(manual.vndPerUsd,25000);assert.equal(manual.fxRateDate,null);assert.equal(fetched,1);
  repository.assertHr=async()=>{throw Object.assign(Error('Forbidden'),{statusCode:403});};
  await assert.rejects(service.exchangeRate(2),e=>e.statusCode===403);assert.equal(fetched,1);
 });
@@ -41,9 +43,13 @@ test('satisfaction is an unweighted mean of default answers, excluding custom ra
  const answers=[5,1,1,1,5,'text'].map((value,i)=>({questionId:i+1,answerValue:value}));
  assert.equal(score(questions,answers),2);assert.equal(score(questions,answers.slice(0,2)),null);assert.equal(score([],[]),null);
 });
-test('AI satisfaction query only uses submitted default-rating responses before snapshot',async()=>{
- const client={async query(sql,values){assert.match(sql,/q\.survey_id=r\.survey_id/);assert.match(sql,/templateCode/);assert.match(sql,/q.question_type='RATING'/);assert.match(sql,/r.submitted_at<=/);assert.deepEqual(values,[1,'2026-11-18T05:00:00Z']);return {rows:[{responseId:2,questionId:1,categoryId:1,questionType:'RATING',answerValue:5},{responseId:2,questionId:2,categoryId:2,questionType:'RATING',answerValue:1}]};}};
- assert.equal(await latestSatisfaction(client,1,'2026-11-18T05:00:00Z'),3);
+test('AI satisfaction averages valid submitted responses within the selected period',async()=>{
+ const client={async query(sql,values){
+  assert.match(sql,/templateCode/);assert.match(sql,/r.submitted_at>=/);assert.match(sql,/r.submitted_at<=/);
+  assert.deepEqual(values,[1,'2026-11-18T05:00:00Z','2026-11-12']);
+  return {rows:[[2,1,5],[2,2,1],[1,3,5],[3,4,null]].map(([responseId,questionId,answerValue])=>({responseId,questionId,answerValue,categoryId:1,questionType:'RATING'}))};
+ }};
+ assert.equal(await periodSatisfaction(client,1,'2026-11-18T05:00:00Z','2026-11-12'),4);
 });
 test('exchange-rate HTTP endpoint requires authentication and HR',async()=>{
  const express=require('express');const {createAiRouter}=require('../src/modules/ai/ai.routes');const app=express();

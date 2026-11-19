@@ -1,6 +1,6 @@
 const {ExchangeRateService}=require('./ai.exchange-rate');
 const { AppError } = require('../../common/errors/app-error');
-const { build,options,id,todayVN } = require('./ai.features');
+const { build,options,id,todayVN,MISSING_SURVEY } = require('./ai.features');
 const {assess}=require('./ai.assessment');
 const WARNING='Cảnh báo hỗ trợ HR xem xét, không khẳng định nhân viên sẽ nghỉ việc. Ngưỡng thử nghiệm 9,9/100; model demo chưa đạt tiêu chí đánh giá và chưa có thời hạn dự báo.';
 class AiService {
@@ -11,7 +11,7 @@ class AiService {
     await this.repository.assertHr(actorId);
     const now=this.clock(),today=todayVN(now),opts=options(body,allowSave,today);
     const row=await this.repository.read(id(employeeId),opts,today,now.toISOString());
-    if(opts.vndPerUsd===undefined && !Object.hasOwn(opts.supplementalFeatures,'Monthly_Salary') && row.current_salary!=null){
+    if(row.satisfaction!=null && opts.vndPerUsd===undefined && !Object.hasOwn(opts.supplementalFeatures,'Monthly_Salary') && row.current_salary!=null){
       opts.exchangeRate=await this.exchangeRates.latest();opts.vndPerUsd=opts.exchangeRate.vndPerUsd;
     }
     const preview={employee:{id:row.id,employeeCode:row.employeeCode,fullName:row.fullName},capturedAt:now.toISOString(),snapshotDate:today,...build(row,opts,today),warning:WARNING};
@@ -24,7 +24,7 @@ class AiService {
     if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(key=>!['snapshotId','save'].includes(key))||body.save!==undefined&&typeof body.save!=='boolean')throw new AppError(400,'Chạy model chỉ nhận snapshotId và save (boolean).');
     if(body.snapshotId===undefined)throw new AppError(400,'Chọn snapshotId từ ai_input trước khi chạy model.');
     const preview={...await this.repository.readSnapshot(actorId,id(employeeId),id(body.snapshotId)),warning:WARNING};
-    if(!preview.ready){const error=new AppError(422,'Snapshot thiếu hoặc có feature không hợp lệ.');error.details=preview;throw error;}
+    if(!preview.ready){const error=new AppError(422,preview.missingFeatures.includes('Employee_Satisfaction_Score')?MISSING_SURVEY:'Snapshot thiếu hoặc có feature không hợp lệ.');error.details=preview;throw error;}
     const startedAt=this.clock().toISOString();
     const model=assess({...await this.client.explain(preview.employee.id,preview.features,{allowOutOfRangeDemo:preview.outOfDomainFeatures.length>0}),startedAt,completedAt:this.clock().toISOString()});
     // Recheck authorization after a potentially slow network call, even for non-persistent requests.
