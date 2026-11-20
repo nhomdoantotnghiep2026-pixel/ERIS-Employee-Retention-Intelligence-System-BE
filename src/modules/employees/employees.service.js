@@ -80,7 +80,7 @@ class EmployeesService {
     if (!row) throw new AppError(404, 'No employee profile is linked to this user.');
     return { ...output(row), ...await this.employeesRepository.findBackground(row.id) };
   }
-  async createEmployee({ actorId, employee, distanceCache, auditContext }) {
+  async checkCreateEligibility(actorId, employee) {
     const checks = await this.employeesRepository.preflightCreate(actorId, employee);
     if (checks.actorRole !== 'HR') throw new AppError(403, 'Only HR can create employees.');
     if (checks.employeeCodeExists) throw new AppError(409, 'employee_code already exists.');
@@ -97,6 +97,10 @@ class EmployeesService {
     if (!checks.activePosition) throw new AppError(404, 'Active position not found.');
     if (Number(checks.positionDepartmentId) !== Number(employee.departmentId)) throw new AppError(400, 'Vị trí công việc không thuộc phòng ban đã chọn.');
     if (!employee.email) throw new AppError(400, 'Email is required for the employee account.');
+    return existingAccount;
+  }
+  async createEmployee({ actorId, employee, distanceCache, auditContext }) {
+    const existingAccount = await this.checkCreateEligibility(actorId, employee);
     if (!existingAccount && (typeof this.initialPassword !== 'string' || this.initialPassword.length < 8 || Buffer.byteLength(this.initialPassword) > 72)) {
       throw new AppError(503, 'INITIAL_USER_PASSWORD must contain at least 8 characters and at most 72 UTF-8 bytes.');
     }

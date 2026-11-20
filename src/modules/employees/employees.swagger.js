@@ -211,4 +211,6 @@ for (const salary of [
 }
 employeesPaths['/api/employees'].post.description += ' Nhân viên phải đủ 18 tuổi theo ngày Việt Nam; fullName bắt buộc, email đúng định dạng, lương không âm. educationLevel nhận High School, Bachelor, Master hoặc PhD.';
 
-employeesPaths['/api/employees/import'].post.description += ' Cột employee_code tùy chọn ở Employees hoặc sheet đơn: 1–50 ký tự chữ Latin, số, gạch ngang/gạch dưới; bắt đầu bằng chữ hoặc số. Chuẩn hóa chữ hoa. Để trống thì tự sinh mã. Mã trùng trong file hoặc database trả lỗi 409 cho dòng đó. Không hỗ trợ employee_code khi tạo thủ công hoặc cập nhật.';
+employeesPaths['/api/employees/import'].post.description += ' Dùng departmentName và positionName để nhập tên theo danh mục đang hoạt động. Nếu cùng chức danh có nhiều cấp, chọn tên cấp trong job_level: Entry, Junior, Intermediate, Senior hoặc Expert / Leadership. File cũ dùng positionLevel, jobLevel dạng số hoặc cặp departmentId và positionId vẫn được hỗ trợ.';
+
+employeesPaths['/api/employees/import'].post.description += ' Cột employee_code bắt buộc ở Employees hoặc sheet đơn: 1–50 ký tự chữ Latin, số, gạch ngang/gạch dưới; bắt đầu bằng chữ hoặc số. Chuẩn hóa chữ hoa. Dòng thiếu mã hoặc có mã trùng sẽ báo lỗi.';
