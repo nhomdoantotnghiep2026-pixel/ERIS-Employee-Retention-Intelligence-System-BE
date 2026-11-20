@@ -2,18 +2,19 @@ const { randomUUID } = require('node:crypto');
 const ExcelJS = require('exceljs');
 const multer = require('multer');
 const { AppError } = require('../../common/errors/app-error');
-const { validateCreateEmployeeInput, requiredEmployeeFields } = require('./employees.validation');
+const { validateCreateEmployeeInput, requiredEmployeeFields, validateEmployeeCode } = require('./employees.validation');
 const { phoneKey } = require('./employee-phone');
 
 const fields = [...requiredEmployeeFields, 'employee_code', 'educations'];
 function validateImportEmployee(input) {
   const { employee_code, ...profile } = input;
-  const employee = validateCreateEmployeeInput(profile);
+  const employee = validateCreateEmployeeInput(profile, { requireEmployeeCode: false });
   if (employee_code === undefined || employee_code === null || employee_code === '') return employee;
-  if (typeof employee_code !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,49}$/.test(employee_code.trim())) {
-    throw new AppError(400, 'employee_code must be 1-50 letters, digits, underscores or hyphens; start with a letter or digit. Use a Text cell.');
+  try {
+    return { ...employee, employeeCode: validateEmployeeCode(employee_code) };
+  } catch (error) {
+    throw new AppError(400, error.message.replace('employeeCode', 'employee_code') + ' Use a Text cell.');
   }
-  return { ...employee, employeeCode: employee_code.trim().toUpperCase() };
 }
 function checkImportCode(employee, seen) {
   if (!employee.employeeCode) return;

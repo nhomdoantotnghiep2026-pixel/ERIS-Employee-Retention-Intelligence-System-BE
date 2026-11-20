@@ -29,12 +29,12 @@ const employeesPaths = {
         }
       },
       responses: {
-        201: { description: 'Tạo nhân viên thành công; employeeCode được tự sinh theo EMP + ID.' },
+        201: { description: 'Tạo nhân viên thành công với mã nhân viên đã nhập.' },
         400: { description: 'Dữ liệu đầu vào không hợp lệ.' },
         401: { description: 'Thiếu hoặc sai token truy cập.' },
         403: { description: 'Chỉ tài khoản HR được phép truy cập.' },
         404: { description: 'Không tìm thấy phòng ban hoặc vị trí công việc đang hoạt động (ACTIVE).' },
-        409: { description: 'Email đã tồn tại.' }
+        409: { description: 'Trùng mã nhân viên, email, số điện thoại hoặc xung đột tài khoản.' }
       }
     }
   },
@@ -171,7 +171,12 @@ employeesPaths['/api/employees'].post.description += ' Tài khoản mới và h�
 employeesPaths['/api/employees/import'].post.description += ' Mỗi dòng dùng cùng luồng tạo nhân viên: tài khoản mới IN_PROCESS chưa có HIRE; bản ghi HIRE chỉ được tạo khi tài khoản được kích hoạt, hoặc ngay khi liên kết với HR đã ACTIVE.';
 const { backgroundProperties } = require('./employee-background.swagger');
 Object.assign(createSchema.properties, { educations: backgroundProperties.educations });
-createSchema.required.push('educations');
+createSchema.properties.employeeCode = {
+  type: 'string', minLength: 1, maxLength: 50, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,49}$',
+  description: 'Mã nhân viên nhập tay, được lưu dạng chữ hoa và kiểm tra trùng không phân biệt hoa thường.',
+  example: 'NV-001'
+};
+createSchema.required.push('employeeCode', 'educations');
 employeesPaths['/api/employees'].post.description += ' Bắt buộc gửi educations (1–20 bằng cấp). Không nhận workExperiences. Học vấn nhận High School/Bachelor/Master/PhD; năm tốt nghiệp tối thiểu năm sinh + 18 cho High School và + 21 cho bậc khác. Hồ sơ, tài khoản và học vấn lưu chung transaction PostgreSQL.';
 employeesPaths['/api/employees'].post.responses[400] = { description: 'Thiếu/sai trường hồ sơ hoặc educations; năm tốt nghiệp hoặc trường học không hợp lệ. Gửi workExperiences trả 400 vì không còn được hỗ trợ ở API tạo nhân viên.' };
 employeesPaths['/api/employees'].post.responses[503] = { description: 'Dịch vụ xác minh trường học hoặc cấu hình tài khoản/email chưa sẵn sàng; chưa lưu hồ sơ nếu lỗi xác minh.' };
