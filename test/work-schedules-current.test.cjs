@@ -6,7 +6,7 @@ const {WorkSchedulesRepository}=require('../src/modules/work-schedules/work-sche
 const {WorkSchedulesService}=require('../src/modules/work-schedules/work-schedules.service');
 const {createWorkSchedulesRouter,createScheduleAssignmentsRouter}=require('../src/modules/work-schedules/work-schedules.routes');
 const {errorHandler}=require('../src/common/middleware/error-handler');
-test('merged current-schedule HTTP contract: auth, overnight policy, FK assignment, snapshot-safe metadata and rollback',async()=>{
+test('merged current-schedule HTTP contract: auth, same-day policy, FK assignment, snapshot-safe metadata and rollback',async()=>{
  let c,server;
  try{
   c=await databasePool.connect();
@@ -23,20 +23,20 @@ test('merged current-schedule HTTP contract: auth, overnight policy, FK assignme
   server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
   const url=`http://127.0.0.1:${server.address().port}`;
   const call=(path,method='GET',body,actor=1)=>fetch(url+path,{method,headers:{'Content-Type':'application/json',...(actor?{actor:String(actor)}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});
-  const input={name:'Night',shift_type:'NIGHT',start_time:'22:00',end_time:'06:00',break_start:'02:00',break_end:'03:00',attendance_policy:{late_arrival_minutes:600}};
+  const input={name:'Day',shift_type:'DAY',start_time:'08:00',end_time:'17:00',break_start:'12:00',break_end:'13:00'};
   assert.equal((await call('/schedules','POST',input,null)).status,401);
   for(const actor of [2,3])assert.equal((await call('/schedules','POST',input,actor)).status,403);
   const response=await call('/schedules','POST',input);assert.equal(response.status,201);const row=(await response.json()).data;
-  assert.equal(row.attendance_policy.late_arrival_minutes,600);assert.equal(row.end_time,'06:00:00');
+  assert.equal(row.attendance_policy,undefined);assert.equal(row.end_time,'17:00:00');
   assert.equal((await call('/employees/10/work-schedule','PUT',{work_schedule_id:row.id})).status,200);
-  assert.equal((await call('/employees/10/work-schedule').then(r=>r.json())).data.shift_type,'NIGHT');
-  assert.equal((await call('/schedules/'+row.id,'PATCH',{end_time:'07:00'})).status,409);
-  const patched=await call('/schedules/'+row.id,'PATCH',{shift_type:'NIGHT_V2',attendance_policy:{late_arrival_minutes:700}});assert.equal(patched.status,200);assert.equal((await patched.json()).data.attendance_policy.late_arrival_minutes,700);
-  assert.equal((await call('/schedules/'+row.id,'PATCH',{working_days:[1,1]})).status,409);
+  assert.equal((await call('/employees/10/work-schedule').then(r=>r.json())).data.shift_type,'DAY');
+  assert.equal((await call('/schedules/'+row.id,'PATCH',{end_time:'18:00'})).status,200);
+  const patched=await call('/schedules/'+row.id,'PATCH',{shift_type:'DAY_V2'});assert.equal(patched.status,200);assert.equal((await patched.json()).data.shift_type,'DAY_V2');
+  assert.equal((await call('/schedules/'+row.id,'PATCH',{working_days:[1,1]})).status,400);
   assert.equal((await call('/schedules/default','POST',{})).status,410);
   assert.equal((await call('/employees/10/work-schedule','PUT',{schedule_id:row.id,effective_from:'2026-11-16'})).status,400);
   await c.query("ALTER TABLE audit_logs ADD CONSTRAINT fail_update CHECK(action <> 'UPDATE') NOT VALID");
   assert.equal((await call('/schedules/'+row.id,'PATCH',{name:'Must rollback'})).status,500);
-  assert.equal((await c.query('SELECT name FROM work_schedules WHERE id=$1',[row.id])).rows[0].name,'Night');
+  assert.equal((await c.query('SELECT name FROM work_schedules WHERE id=$1',[row.id])).rows[0].name,'Day');
  }finally{if(server)await new Promise(resolve=>server.close(resolve));if(c){await c.query('ROLLBACK');await c.query('DISCARD TEMP');c.release();}await databasePool.end();}
 });
