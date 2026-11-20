@@ -25,26 +25,14 @@ class WorkSchedulesService {
     const employeeId = validateScheduleId(rawEmployeeId);
     return this.repository.findAssignments(employeeId);
   }
-  async assign(actorId, rawEmployeeId, body) {
-    const actor = await this.repository.findActor(actorId);
-    if (actor?.role !== 'HR' || actor.status !== 'ACTIVE') throw new AppError(403, 'Only active HR users can assign work schedules.');
-    const employeeId = validateScheduleId(rawEmployeeId);
-    return this.repository.assign(employeeId, validateAssignmentInput(body), actorId);
-  }
-  async removeAssignment(actorId,rawEmployeeId,rawAssignmentId,body) {
+  async retiredAssignment(actorId) {
     const actor=await this.repository.findActor(actorId);
-    if(actor?.role!=='HR'||actor.status!=='ACTIVE')throw new AppError(403,'Only active HR users can remove schedule assignments.');
-    const employeeId=validateScheduleId(rawEmployeeId),assignmentId=validateScheduleId(rawAssignmentId);
-    if(body!==undefined&&(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length))throw new AppError(400,'This endpoint does not accept body fields.');
-    return this.repository.removeAssignment(employeeId,assignmentId,actorId);
+    if(actor?.role!=='HR'||actor.status!=='ACTIVE')throw new AppError(403,'Only ACTIVE HR can access this endpoint.');
+    throw new AppError(410,'Separate schedule assignment is retired. Include shift_type when importing employee profiles.');
   }
-  async createIndividual(actorId,input){
-    const actor=await this.repository.findActor(actorId);
-    if(actor?.role!=='HR'||actor.status!=='ACTIVE')throw new AppError(403,'Only active HR users can create individual schedules.');
-    const {schedule,employeeId,assignment}=validateCreateIndividual(input);
-    if(schedule.status!=='ACTIVE')throw new AppError(400,'Lịch riêng mới gán phải ACTIVE.');
-    return this.repository.createIndividual(schedule,employeeId,assignment,actorId);
-  }
+  async assign(actorId) { return this.retiredAssignment(actorId); }
+  async removeAssignment(actorId) { return this.retiredAssignment(actorId); }
+  async createIndividual(actorId) { return this.retiredAssignment(actorId); }
   async create(actorId, input) {
     const actor = await this.repository.findActor(actorId);
     if (actor?.role !== 'HR' || actor.status !== 'ACTIVE') throw new AppError(403, 'Only active HR users can create work schedules.');

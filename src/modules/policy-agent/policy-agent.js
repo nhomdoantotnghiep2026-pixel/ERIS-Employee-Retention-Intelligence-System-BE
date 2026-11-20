@@ -48,7 +48,7 @@ class PolicyAgent{
  async options(actor){await this.hr(this.pool,actor);return {configured:this.provider.configured(),modelIntegration:false,persistenceAvailable:false,
   employees:(await this.pool.query("SELECT id,employee_code,full_name FROM employees WHERE employment_status='ACTIVE' ORDER BY employee_code")).rows,
   surveys:(await this.pool.query('SELECT s.id,s.title FROM surveys s WHERE EXISTS(SELECT 1 FROM survey_responses r WHERE r.survey_id=s.id AND r.submitted_at IS NOT NULL) ORDER BY s.id DESC')).rows};}
- async context(actor,b){
+ async context(actor,b,{compactAttendance=false}={}){
   const s=selection(b),db=await this.pool.connect();try{
    await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');await this.hr(db,actor);
    const e=(await db.query("SELECT id,hire_date::text FROM employees WHERE id=$1 AND employment_status='ACTIVE'",[s.employeeId])).rows[0];if(!e)fail(404,'Active employee not found.');
@@ -71,9 +71,13 @@ class PolicyAgent{
       FROM attendance a LEFT JOIN work_schedules s ON s.id=a.work_schedule_id WHERE a.employee_id=$1 AND a.record_status='ACTIVE'
       AND a.work_date BETWEEN $2::date AND $3::date ORDER BY a.work_date,a.id LIMIT 1001`,[s.employeeId,s.from,s.to])).rows;
     if(records.length>1000)fail(409,'Attendance exceeds the supported input size.');
-    for(const r of records)evidence.push({id:`ATTENDANCE:${r.attendance_id}`,source:'ATTENDANCE',...r});
+    if(compactAttendance){
+      const months=new Map();
+      for(const r of records){const month=r.work_date.slice(0,7);let m=months.get(month);if(!m){m={id:'ATTENDANCE_MONTH:'+month,source:'ATTENDANCE',month,recordedDays:0,statusCounts:{},workingMinutes:0,overtimeMinutes:0,lateMinutes:0,earlyMinutes:0,missingMetricCounts:{}};months.set(month,m);}m.recordedDays++;m.statusCounts[r.attendance_status]=(m.statusCounts[r.attendance_status]??0)+1;for(const [dest,key] of [['workingMinutes','working_minutes'],['overtimeMinutes','overtime_minutes'],['lateMinutes','late_mins'],['earlyMinutes','early_mins']]){if(r[key]==null||!Number.isFinite(Number(r[key])))m.missingMetricCounts[key]=(m.missingMetricCounts[key]??0)+1;else m[dest]+=Number(r[key]);}}
+      evidence.push(...months.values());
+    }else for(const r of records)evidence.push({id:`ATTENDANCE:${r.attendance_id}`,source:'ATTENDANCE',...r});
    }
-   const context={selection:s,hireDate:e.hire_date,policies,evidence,model:{enabled:false},quality:{recordedAttendanceDays:evidence.filter(e=>e.source==='ATTENDANCE').length,surveyAnswers:evidence.filter(e=>e.source==='SURVEY').length,note:'Only recorded rows are supplied; completeness of attendance coverage is not established. ON_LEAVE is not proof of illness. Schedule is the linked schedule currently stored, not a historical schedule snapshot.'}};
+   const context={selection:s,hireDate:e.hire_date,policies,evidence,model:{enabled:false},quality:{recordedAttendanceDays:evidence.filter(e=>e.source==='ATTENDANCE').reduce((n,e)=>n+(e.recordedDays??1),0),surveyAnswers:evidence.filter(e=>e.source==='SURVEY').length,note:'Only recorded rows are supplied; completeness of attendance coverage is not established. ON_LEAVE is not proof of illness. Schedule is the linked schedule currently stored, not a historical schedule snapshot.'}};
    if(Buffer.byteLength(JSON.stringify(context))>80000)fail(409,'Input exceeds 80 KB; select fewer surveys or a shorter period.');
    await db.query('COMMIT');return {context,fingerprint:hash(context)};
   }catch(e){await db.query('ROLLBACK');throw e;}finally{db.release();}

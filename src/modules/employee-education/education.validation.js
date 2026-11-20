@@ -5,13 +5,13 @@ function validateId(value,name='id') {
   return Number(value);
 }
 const currentYear=()=>Number(new Intl.DateTimeFormat('en',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric'}).format(new Date()));
-function validateEducation(body,{partial=false}={}) {
+function validateEducation(body,{partial=false,allowUnverifiedInstitution=false}={}) {
   const fields=['educationLevel','fieldOfStudy','institution','graduationYear','institutionRefId'];
   if(!body||typeof body!=='object'||Array.isArray(body)||!Object.keys(body).length||Object.keys(body).some(k=>!fields.includes(k)))throw new AppError(400,'Provide supported education fields only.');
   if(!partial&&!Object.hasOwn(body,'educationLevel'))throw new AppError(400,'educationLevel is required.');
   if(!partial || Object.hasOwn(body,'institution') || Object.hasOwn(body,'institutionRefId')){
     if(typeof body.institution!=='string'||!body.institution.trim())throw new AppError(400,'Select an institution from ROR or Vietmap suggestions.');
-    if(typeof body.institutionRefId!=='string'||!(/^(?:https:\/\/ror\.org\/[a-z0-9]{9}|vietmap:(?:auto|geocode):[A-Za-z0-9_-]{1,512})$/.test(body.institutionRefId)))throw new AppError(400,'institutionRefId from ROR or Vietmap suggestions is required with institution.');
+    if(!(allowUnverifiedInstitution && body.institutionRefId==null) && (typeof body.institutionRefId!=='string'||!(/^(?:https:\/\/ror\.org\/[a-z0-9]{9}|vietmap:(?:auto|geocode):[A-Za-z0-9_-]{1,512})$/.test(body.institutionRefId))))throw new AppError(400,'institutionRefId from ROR or Vietmap suggestions is required with institution.');
   }
   const result={};
   for(const field of fields){

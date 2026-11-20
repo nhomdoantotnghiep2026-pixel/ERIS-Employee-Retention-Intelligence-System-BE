@@ -38,17 +38,6 @@ class WorkSchedulesRepository {
   const row=(await this.pool.query(`SELECT e.id AS employee_id,e.work_schedule_id,s.shift_type,s.name,s.start_time,s.end_time,s.break_start,s.break_end,s.working_days,s.status FROM employees e LEFT JOIN work_schedules s ON s.id=e.work_schedule_id WHERE e.id=$1`,[employeeId])).rows[0];
   if(!row)throw new AppError(404,'Employee not found.');return row.work_schedule_id==null?[]:[row];
  }
- async assign(employeeId,input,actorId){return transaction(this.pool,c=>this.assignUsing(c,employeeId,input.work_schedule_id,actorId));}
- async assignUsing(c,employeeId,scheduleId,actorId){
-  const s=(await c.query('SELECT id,status FROM work_schedules WHERE id=$1 FOR SHARE',[scheduleId])).rows[0];if(!s)throw new AppError(404,'Work schedule not found.');if(s.status!=='ACTIVE')throw new AppError(409,'Cannot assign an inactive schedule.');
-  const old=(await c.query('SELECT id,work_schedule_id FROM employees WHERE id=$1 FOR UPDATE',[employeeId])).rows[0];if(!old)throw new AppError(404,'Employee not found.');
-  const row=(await c.query('UPDATE employees SET work_schedule_id=$2 WHERE id=$1 RETURNING id,work_schedule_id',[employeeId,scheduleId])).rows[0];await recordChange(c,actorId,'employees',employeeId,'UPDATE',old,row);return {employee_id:row.id,work_schedule_id:row.work_schedule_id};
- }
- async createIndividual(schedule,employeeId,_dates,actorId){return transaction(this.pool,async c=>{const s=await this.insert(c,schedule,actorId);return {schedule:s,employee:await this.assignUsing(c,employeeId,s.id,actorId)};});}
- async removeAssignment(employeeId,scheduleId,actorId){return transaction(this.pool,async c=>{
-  const old=(await c.query('SELECT id,work_schedule_id FROM employees WHERE id=$1 FOR UPDATE',[employeeId])).rows[0];if(!old)throw new AppError(404,'Employee not found.');if(old.work_schedule_id!==scheduleId)throw new AppError(409,'Current schedule does not match; reload before removing.');
-  const row=(await c.query('UPDATE employees SET work_schedule_id=NULL WHERE id=$1 RETURNING id,work_schedule_id',[employeeId])).rows[0];await recordChange(c,actorId,'employees',employeeId,'UPDATE',old,row);return row;
- });}
  async checkBreakSchema(c,s){
   if(s.break_start==null&&s.break_end==null){
    const result=(await c.query("SELECT bool_or(attnotnull) AS requires_break FROM pg_attribute WHERE attrelid=to_regclass('work_schedules') AND attname IN ('break_start','break_end') AND NOT attisdropped")).rows[0];

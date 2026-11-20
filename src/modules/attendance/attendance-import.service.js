@@ -25,10 +25,10 @@ class AttendanceImportService {
     for(const source of input) {
       const row={...source,issues:[...(source.parse_issues||[])],action:'BLOCKED',validation_status:'VALID'}, choice=choices[source.excel_row]||{};
       const employee=employees.get(row.employee_code), schedule=refs.schedules.find(s=>s.id===employee?.work_schedule_id);
-      if(employee&&!schedule) row.issues.push(issue('ATT-016','Employee has no assigned work schedule. Configure employees.work_schedule_id first.'));
+      if(employee&&!schedule) row.issues.push(issue('ATT-016','Employee profile has no valid work schedule reference. Import the profile with a valid shift_type first.'));
       if(schedule&&shiftTypeKey(schedule.shift_type)!==shiftTypeKey(row.shift_type)) row.issues.push(issue('ATT-017','File shift_type does not match the employee assigned schedule.'));
       if(!employee) row.issues.push(issue('ATT-003','Employee code does not exist.'));
-      if(!schedule || schedule.status!=='ACTIVE') row.issues.push(issue('ATT-004','Shift type does not identify an active schedule.'));
+      if(schedule && schedule.status!=='ACTIVE') row.issues.push(issue('ATT-004','Shift type does not identify an active schedule.'));
       if(employee) { row.employee_id=employee.id; row.full_name=employee.full_name; if(row.employee_name && row.employee_name.normalize('NFC')!==employee.full_name.normalize('NFC'))row.issues.push(issue('ATT-009','Employee name differs from the employee profile.','WARNING')); }
       if(schedule) { row.work_schedule_id=schedule.id; row.schedule_snapshot=R.scheduleSnapshot(schedule); }
       if(!row.check_in&&!row.check_out) {

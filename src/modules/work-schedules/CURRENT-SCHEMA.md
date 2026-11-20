@@ -11,7 +11,7 @@ Work schedules are shift definitions used to validate imported attendance. Emplo
 - working_days is a unique non-empty array 1–7 (ISO weekdays), default Monday–Friday; status ACTIVE/INACTIVE, default ACTIVE.
 - Assigned shifts can be edited, including times, working days and status. Validate the complete merged definition. There is no old restriction based on assignment history or is_default.
 - Editing shifts does not rewrite existing attendance or recompute its stored metrics. New imports and source reconciliation use the current definition. Historical effective dates are not inferred.
-- Assignment is retained: PUT/GET /api/employees/:id/work-schedule. Only an ACTIVE existing shift can be assigned. Individual creation is a convenience create+assign transaction, not a separate schedule category. Legacy /schedule-assignments aliases refer to the same current FK.
+- Shift references are collected on employee profile import. Each row requires shift_type, matching exactly one ACTIVE schedule. Codes are case-insensitive. work_schedule_id is not accepted as an import column; the server resolves and stores it internally. The employee FK is written atomically with profile/account creation. Separate PUT/POST/DELETE assignment routes and POST /work-schedules/individual return 410 for ACTIVE HR. GET routes remain read-only views of imported profile data. Existing employees are not automatically changed.
 - Old default routes return 410 for HR; no pending_default property is returned by list.
 
 ## Existing database fields

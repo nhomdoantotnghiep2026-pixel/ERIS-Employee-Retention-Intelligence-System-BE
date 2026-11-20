@@ -3,7 +3,7 @@ const {assess}=require('./ai.assessment');
 const {AiInputRepository}=require('../ai_input/ai-input.repository');
 const {FEATURES}=require('../ai_input/ai-input.features');
 class AiRepository extends AiInputRepository {
-  async save(actorId,preview,result) {
+  async save(actorId,preview,result,policyAnalysis=null) {
     result=assess(result);
     const client=await this.pool.connect();
     try {
@@ -22,6 +22,18 @@ class AiRepository extends AiInputRepository {
       const ranked=Object.entries(result.contributions).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
       for(const [i,[key,value]] of ranked.entries()) await client.query(`INSERT INTO explainable(prediction_result_id,feature_name,feature_value,impact_value,impact_direction,rank_order) VALUES($1,$2,$3,$4,$5,$6)`,[prediction.id,key,String(preview.features[key]),value,value>0?'INCREASE':value<0?'DECREASE':'NEUTRAL',i+1]);
       await client.query(`INSERT INTO audit_logs(user_id,entity_type,entity_id,action,new_value) VALUES($1,'AI_PREDICTION',$2,'CREATE',$3::jsonb)`,[actorId,prediction.id,JSON.stringify({model:result,preview})]);
+      if(policyAnalysis){
+        const saved=[];
+        for(const item of policyAnalysis.recommendations){
+          const active=await client.query("SELECT id FROM retention_policies WHERE id=$1 AND status='ACTIVE' AND code=$2 AND name=$3 AND description IS NOT DISTINCT FROM $4 FOR SHARE",[item.policy.id,item.policy.code,item.policy.name,item.policy.description]);
+          if(!active.rows.length)throw new AppError(409,'Policy catalogue changed. Run analysis again.');
+          const row=(await client.query("INSERT INTO policy_recommendations(prediction_result_id,policy_id,reason,priority,status,target_factor) VALUES($1,$2,$3,'MEDIUM','SUGGESTED',$4) RETURNING id",[prediction.id,item.policy.id,item.reason,[...new Set(item.evidence.map(e=>e.source==='MODEL'?e.feature:e.source==='SURVEY'?'SURVEY:'+e.category:'ATTENDANCE'))].join(',')])).rows[0];
+          await client.query("INSERT INTO audit_logs(user_id,entity_type,entity_id,action,new_value) VALUES($1,'policy_recommendations',$2,'CREATE',$3::jsonb)",[actorId,row.id,JSON.stringify({...item,predictionId:prediction.id,provider:policyAnalysis.provider,model:policyAnalysis.model})]);
+          saved.push({id:row.id,policyId:item.policy.id,status:'SUGGESTED'});
+        }
+        policyAnalysis.savedRecommendations=saved;
+        await client.query("INSERT INTO audit_logs(user_id,entity_type,entity_id,action,new_value) VALUES($1,'AI_POLICY_ANALYSIS',$2,'CREATE',$3::jsonb)",[actorId,prediction.id,JSON.stringify(policyAnalysis)]);
+      }
       await client.query('COMMIT');
       return {predictionId:prediction.id,snapshotId:snapshot.id};
     }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
@@ -43,7 +55,7 @@ class AiRepository extends AiInputRepository {
       FROM prediction_results p JOIN audit_logs a ON a.entity_type='AI_PREDICTION' AND a.entity_id=p.id AND a.action='CREATE'
       WHERE p.id=$1 ORDER BY a.id DESC LIMIT 1`,[resultId]);
     if(!rows[0]) throw new AppError(404,'Không tìm thấy kết quả AI service đã lưu.');
-    const r=rows[0];return {saved:true,predictionId:r.id,snapshotId:r.snapshotId,createdAt:r.createdAt,...r.metadata};
+    const r=rows[0];return {saved:true,predictionId:r.id,snapshotId:r.snapshotId,createdAt:r.createdAt,...r.metadata,policyAnalysis:(await this.pool.query("SELECT new_value FROM audit_logs WHERE entity_type='AI_POLICY_ANALYSIS' AND entity_id=$1 AND action='CREATE' ORDER BY id DESC LIMIT 1",[resultId])).rows[0]?.new_value??null};
   }
 }
 module.exports={AiRepository};

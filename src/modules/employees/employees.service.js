@@ -59,9 +59,9 @@ class EmployeesService {
     const actor = await this.employeesRepository.findUserRoleById(actorId);
     if (actor?.role !== 'HR') throw new AppError(403, 'Only HR can view employees.');
   }
-  async prepareBackground(actorId, employee) {
+  async prepareBackground(actorId, employee, options) {
     if (!this.educationService) throw new AppError(503, 'Education service is not configured.');
-    const educations = await this.educationService.prepareForEmployeeCreation(actorId, employee.educations, employee.dateOfBirth);
+    const educations = await this.educationService.prepareForEmployeeCreation(actorId, employee.educations, employee.dateOfBirth, options);
     return { ...employee, educations };
   }
   async listEmployees({ actorId, query }) {
@@ -81,8 +81,10 @@ class EmployeesService {
     return { ...output(row), ...await this.employeesRepository.findBackground(row.id) };
   }
   async createEmployee({ actorId, employee, distanceCache, auditContext }) {
+    if(employee.departmentName!==undefined||employee.positionName!==undefined){await this.assertHr(actorId);employee=await this.employeesRepository.resolveImportedJob(employee);}
     const checks = await this.employeesRepository.preflightCreate(actorId, employee);
     if (checks.actorRole !== 'HR') throw new AppError(403, 'Only HR can create employees.');
+    if(employee.shiftType!==undefined||employee.workScheduleId!==undefined)employee=await this.employeesRepository.resolveImportedSchedule(employee);
     if (checks.employeeCodeExists) throw new AppError(409, 'employee_code already exists.');
     if (checks.emailExists) throw new AppError(409, 'Email already has an employee profile.');
     if (checks.phoneExists) throw new AppError(409, 'Số điện thoại đã được sử dụng trong hồ sơ nhân viên khác.');
@@ -101,7 +103,7 @@ class EmployeesService {
       throw new AppError(503, 'INITIAL_USER_PASSWORD must contain at least 8 characters and at most 72 UTF-8 bytes.');
     }
     if (!existingAccount && (!this.mailTransporter || !this.mailFrom)) throw new AppError(503, 'Account email delivery is not configured.');
-    employee = await this.prepareBackground(actorId, employee);
+    employee = await this.prepareBackground(actorId, employee, {allowUnverifiedInstitution:auditContext?.source==='IMPORT'});
     // The cache belongs to one import request; no addresses or stale results are retained globally.
     const cacheKey = JSON.stringify([employee.address.trim(), employee.addressRefId || null]);
     if (distanceCache && !distanceCache.has(cacheKey)) {
