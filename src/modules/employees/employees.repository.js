@@ -77,6 +77,16 @@ class EmployeesRepository {
     if(schedule.status!=='ACTIVE')throw new AppError(409,'Imported work schedule must be ACTIVE.');
     return {...employee,shiftType:require('../../common/validation/shift-type').shiftTypeKey(schedule.shift_type),workScheduleId:schedule.id};
   }
+  async listActiveImportAssignments() {
+    const { rows } = await this.databasePool.query(
+      `SELECT d.id AS "departmentId", d.name AS "departmentName",
+              p.id AS "positionId", p.name AS "positionName", p.job_level AS "jobLevel"
+       FROM departments d
+       LEFT JOIN positions p ON p.department_id = d.id AND p.status = 'ACTIVE'
+       WHERE d.status = 'ACTIVE'`
+    );
+    return rows;
+  }
   async assertPositionDepartment(positionId, departmentId) {
     const { rows } = await this.databasePool.query(`SELECT p.department_id AS "departmentId", p.status AS "positionStatus", d.status AS "departmentStatus"
       FROM positions p JOIN departments d ON d.id=$2 WHERE p.id=$1 FOR SHARE OF p,d`, [positionId, departmentId]);

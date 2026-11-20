@@ -50,7 +50,7 @@ async function prepareImportInstitutions(rows,educationService,choices=new Map()
  await Promise.all(Array.from({length:Math.min(rows.length,3)},worker));return output;
 }
 function institutionPreview(rows){
- const results=rows.map(r=>({row:r.row,email:r.input?.email,status:!r.input?'FAILED':r.needsSelection?'NEEDS_REVIEW':'VALID',message:r.message,institutions:r.institutions||[]}));
+ const results=rows.map(r=>({row:r.row,email:r.input?.email,status:!r.input?'FAILED':r.needsSelection?'NEEDS_REVIEW':'VALID',message:r.message,issue:r.issue,institutions:r.institutions||[]}));
  return{total:results.length,valid:results.filter(r=>r.status==='VALID').length,failed:results.filter(r=>r.status==='FAILED').length,pending:results.filter(r=>r.status==='NEEDS_REVIEW').length,results};
 }
 module.exports={prepareImportInstitutions,parseInstitutionChoices,institutionPreview};

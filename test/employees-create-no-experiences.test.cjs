@@ -14,23 +14,29 @@ test('POST employees accepts no workExperiences; rejects removed field; still va
   const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
   try {
     const post=body=>fetch(`http://127.0.0.1:${server.address().port}/api/employees`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const ok=await post(valid);assert.equal(ok.status,201);const result=await ok.json();assert(!Object.hasOwn(result.data,'workExperiences'));assert.equal(calls,1);
-    for(const value of [[],null,[{companyName:'Old company'}]]) {
-      const bad=await post({...valid,workExperiences:value});assert.equal(bad.status,400);assert.equal((await bad.json()).message,'Request body contains unsupported fields.');
+    const ok=await post({...valid,employeeCode:' nv-001 '});assert.equal(ok.status,201);const result=await ok.json();assert.equal(result.data.employeeCode,'NV-001');assert(!Object.hasOwn(result.data,'workExperiences'));assert.equal(calls,1);
+    for (const employeeCode of [undefined, '', 'NV 001', '-NV', 1, 'A'.repeat(51)]) {
+      const invalidCode = await post({...valid,employeeCode});
+      assert.equal(invalidCode.status,400);
+      assert.match((await invalidCode.json()).message,/employeeCode/);
     }
-    const missing=await post({...valid,educations:undefined});assert.equal(missing.status,400);assert.equal(calls,1,'invalid requests do not reach creation service');
+    for(const value of [[],null,[{companyName:'Old company'}]]) {
+      const bad=await post({...valid,employeeCode:'NV-001',workExperiences:value});assert.equal(bad.status,400);assert.equal((await bad.json()).message,'Request body contains unsupported fields.');
+    }
+    const missing=await post({...valid,employeeCode:'NV-001',educations:undefined});assert.equal(missing.status,400);assert.equal(calls,1,'invalid requests do not reach creation service');
   } finally {await new Promise(resolve=>server.close(resolve));}
 });
 test('Shared import validation still supports workExperiences explicitly',()=>{
-  const employee=validateCreateEmployeeInput({...valid,workExperiences:[]},{includeWorkExperiences:true});assert.deepEqual(employee.workExperiences,[]);
+  const employee=validateCreateEmployeeInput({...valid,workExperiences:[]},{includeWorkExperiences:true,requireEmployeeCode:false});assert.deepEqual(employee.workExperiences,[]);
 });
 test('Background create without experience data only inserts educations and omits experience response',async()=>{
   const queries=[];
   const client={async query(sql,args){queries.push(sql);assert(!/employee_work_experiences/i.test(sql));return{rows:[{id:1,educationLevel:args[1],institution:args[3],status:args[5]}]};}};
-  const result=await new EmployeeBackgroundRepository(client).create(1,validateCreateEmployeeInput(valid),'IN_PROCESS');
+  const result=await new EmployeeBackgroundRepository(client).create(1,validateCreateEmployeeInput({...valid,employeeCode:'NV-001'}),'IN_PROCESS');
   assert.equal(queries.length,1);assert.equal(result.educations.length,1);assert.equal(result.backgroundStatus,'PENDING_ACTIVATION');assert(!Object.hasOwn(result,'workExperiences'));
 });
 test('POST employees Swagger no longer includes workExperiences',()=>{
   const schema=employeesPaths['/api/employees'].post.requestBody.content['application/json'].schema;
+  assert(schema.required.includes('employeeCode'));
   assert(!Object.hasOwn(schema.properties,'workExperiences'));assert(!schema.required.includes('workExperiences'));assert(schema.required.includes('educations'));
 });

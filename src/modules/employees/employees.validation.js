@@ -75,13 +75,21 @@ function validateOptionalText(value, fieldName) {
   return value.trim() || null;
 }
 
-function validateCreateEmployeeInput(input, { includeWorkExperiences = false, allowUnverifiedInstitution = false } = {}) {
+function validateEmployeeCode(value) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,49}$/.test(value.trim())) {
+    throw new AppError(400, 'employeeCode must be 1-50 letters, digits, underscores or hyphens; start with a letter or digit.');
+  }
+  return value.trim().toUpperCase();
+}
+
+function validateCreateEmployeeInput(input, { includeWorkExperiences = false, requireEmployeeCode = true, allowUnverifiedInstitution = false } = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new AppError(400, 'Request body must be an object.');
   }
 
-  assertFilled(input, requiredEmployeeFields);
+  assertFilled(input, requireEmployeeCode ? ['employeeCode', ...requiredEmployeeFields] : requiredEmployeeFields);
   const allowedFields = new Set([
+    'employeeCode',
     'fullName',
     'email',
     'phone',
@@ -136,6 +144,7 @@ function validateCreateEmployeeInput(input, { includeWorkExperiences = false, al
     } catch (error) { throw new AppError(error.statusCode || 400, `educations[${index}]: ${error.message}`); }
   });
   return {
+    ...(Object.hasOwn(input, 'employeeCode') ? { employeeCode: validateEmployeeCode(input.employeeCode) } : {}),
     educations,
     ...(includeWorkExperiences ? { workExperiences: validateWorkExperiences(input.workExperiences, dateOfBirth) } : {}),
     ...(input.addressRefId ? { addressRefId: input.addressRefId.trim() } : {}),
@@ -238,4 +247,4 @@ function validateListQuery(query) {
   }
   return result;
 }
-module.exports = { validateCreateEmployeeInput, validateUpdateEmployeeInput, validateEmployeeId, validateListQuery, requiredEmployeeFields };
+module.exports = { validateCreateEmployeeInput, validateUpdateEmployeeInput, validateEmployeeId, validateListQuery, requiredEmployeeFields, validateEmployeeCode };

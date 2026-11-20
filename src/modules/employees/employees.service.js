@@ -80,11 +80,11 @@ class EmployeesService {
     if (!row) throw new AppError(404, 'No employee profile is linked to this user.');
     return { ...output(row), ...await this.employeesRepository.findBackground(row.id) };
   }
-  async createEmployee({ actorId, employee, distanceCache, auditContext }) {
+  async checkCreateEligibility(actorId, employee) {
     if(employee.departmentName!==undefined||employee.positionName!==undefined){await this.assertHr(actorId);employee=await this.employeesRepository.resolveImportedJob(employee);}
+    if(employee.shiftType!==undefined||employee.workScheduleId!==undefined)employee=await this.employeesRepository.resolveImportedSchedule(employee);
     const checks = await this.employeesRepository.preflightCreate(actorId, employee);
     if (checks.actorRole !== 'HR') throw new AppError(403, 'Only HR can create employees.');
-    if(employee.shiftType!==undefined||employee.workScheduleId!==undefined)employee=await this.employeesRepository.resolveImportedSchedule(employee);
     if (checks.employeeCodeExists) throw new AppError(409, 'employee_code already exists.');
     if (checks.emailExists) throw new AppError(409, 'Email already has an employee profile.');
     if (checks.phoneExists) throw new AppError(409, 'Số điện thoại đã được sử dụng trong hồ sơ nhân viên khác.');
@@ -99,6 +99,12 @@ class EmployeesService {
     if (!checks.activePosition) throw new AppError(404, 'Active position not found.');
     if (Number(checks.positionDepartmentId) !== Number(employee.departmentId)) throw new AppError(400, 'Vị trí công việc không thuộc phòng ban đã chọn.');
     if (!employee.email) throw new AppError(400, 'Email is required for the employee account.');
+    return existingAccount;
+  }
+  async createEmployee({ actorId, employee, distanceCache, auditContext }) {
+    if(employee.departmentName!==undefined||employee.positionName!==undefined){await this.assertHr(actorId);employee=await this.employeesRepository.resolveImportedJob(employee);}
+    if(employee.shiftType!==undefined||employee.workScheduleId!==undefined)employee=await this.employeesRepository.resolveImportedSchedule(employee);
+    const existingAccount = await this.checkCreateEligibility(actorId, employee);
     if (!existingAccount && (typeof this.initialPassword !== 'string' || this.initialPassword.length < 8 || Buffer.byteLength(this.initialPassword) > 72)) {
       throw new AppError(503, 'INITIAL_USER_PASSWORD must contain at least 8 characters and at most 72 UTF-8 bytes.');
     }

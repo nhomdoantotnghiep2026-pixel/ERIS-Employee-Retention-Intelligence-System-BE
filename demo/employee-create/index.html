@@ -26,6 +26,7 @@
         <form id="employee-form" autocomplete="off">
           <fieldset id="employee-fields">
             <section class="card"><div class="section-title"><span class="step">01</span><div><h2>Thông tin cá nhân</h2><p class="muted">Các trường có dấu * là bắt buộc.</p></div></div><div class="fields">
+              <label>Mã nhân viên *<input name="employeeCode" required maxlength="50" pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,49}" placeholder="NV-001"></label>
               <label class="full">Họ và tên *<input name="fullName" required maxlength="150" placeholder="Nguyễn Văn A"></label>
               <label>Email tài khoản *<input name="email" type="email" required maxlength="255" placeholder="nhanvien@congty.com"><small>Dùng để gửi thông tin kích hoạt tài khoản.</small></label>
               <label>Số điện thoại *<input name="phone" type="tel" required maxlength="30" placeholder="0901234567"></label>
