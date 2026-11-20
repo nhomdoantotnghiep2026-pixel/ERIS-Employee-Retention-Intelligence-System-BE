@@ -5,7 +5,7 @@ const { assessEducationLevel } = require('./education-level-advice');
 class EducationService {
   constructor(repository, searchInstitutions = createInstitutionSearch(), resolveInstitution = createInstitutionResolver()) { this.repository = repository; this.searchInstitutions = searchInstitutions; this.resolveInstitution = resolveInstitution; }
   async verifySchool(actorId,input) {
-    if(!Object.hasOwn(input,'institutionRefId'))return input;
+    if(input.institutionRefId==null){const {institutionRefId,...fields}=input;return fields;}
     await this.repository.assertHr(actorId);
     const school=await this.resolveInstitution(input.institutionRefId);
     if(school.institution!==input.institution)throw new AppError(400,'Institution name does not match the selected school. Select it again.');
@@ -13,11 +13,11 @@ class EducationService {
     return {...fields,institution:school.institution};
   }
   async activeEmployees(actorId) { await this.repository.assertHr(actorId); return {data:await this.repository.activeEmployees()}; }
-  async prepareForEmployeeCreation(actorId, educations, dateOfBirth) {
+  async prepareForEmployeeCreation(actorId, educations, dateOfBirth, {allowUnverifiedInstitution=false}={}) {
     const records = [];
     for (const [index, data] of educations.entries()) {
       try {
-        const input = await this.verifySchool(actorId, validateEducation(data));
+        const input = await this.verifySchool(actorId, validateEducation(data,{allowUnverifiedInstitution}));
         validateGraduationYear(input, dateOfBirth);
         records.push(input);
       } catch (error) { throw new AppError(error.statusCode || 503, `educations[${index}]: ${error.message}`); }

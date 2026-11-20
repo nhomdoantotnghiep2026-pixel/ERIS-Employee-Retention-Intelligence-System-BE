@@ -69,6 +69,7 @@
       item.append(label,amount,bar);$('factors').append(item);
     }
     $('json').textContent=JSON.stringify(data,null,2);if(data.predictionId)$('resultId').value=data.predictionId;
+    if(data.policyAnalysis){$('policyPanel').hidden=false;$('previewPolicies').disabled=true;$('savePolicies').disabled=true;for(const r of data.policyAnalysis.recommendations){const item=document.createElement('div'),title=document.createElement('h3'),reason=document.createElement('p'),checks=document.createElement('p');title.textContent=r.policy.name;reason.textContent=r.reason;checks.textContent='HR cần kiểm tra: '+r.hrVerification;item.append(title,reason,checks);$('policyOutput').append(item);}if(!data.policyAnalysis.recommendations.length)$('policyOutput').textContent=data.policyAnalysis.noRecommendationReason;}
     notify(data.warning||preview.warning);$('result').scrollIntoView({behavior:'smooth'});
   }
   $('login').addEventListener('submit',event=>{event.preventDefault();busy(async()=>{
@@ -94,9 +95,10 @@
   $('predict').onclick=()=>busy(async(version)=>{
     if(!selectedSnapshot)throw new Error('Chọn snapshot đã có hoặc tạo snapshot đủ dữ liệu trước.');
     if(!selectedSnapshot.ready)throw new Error('Snapshot còn thiếu hoặc sai feature. Xem danh sách phía trên.');
-    const body={snapshotId:selectedSnapshot.snapshotId,save:$('save').checked};
+    if(!window.confirm('Gửi kết quả model, khảo sát và chấm công trong kỳ đến agent Ollama đã cấu hình để gợi ý policy?'))return;
+    const body={snapshotId:selectedSnapshot.snapshotId,save:$('save').checked,confirmExternalData:true};
     if(body.save&&!window.confirm('Lưu một bộ kết quả demo model thật vào database?'))return;
-    const result=await request(path('predict'),body);if(version===generation)render(result);
+    const result=await request(path('analyze'),body);if(version===generation)render(result);
   });
   async function generatePolicies(save){
     if(!policyPredictionId)throw new Error('Lưu kết quả model trước khi đề xuất policy.');

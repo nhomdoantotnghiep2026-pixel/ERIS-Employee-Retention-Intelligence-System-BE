@@ -10,13 +10,13 @@ async function workbook(codes,{single=false,omit=false,raw=false,assignments,lev
  const headers = assignments
   ? sample.headers.map(field => ({ departmentId: 'departmentName', positionId: 'positionName' })[field] || field)
   : sample.headers;
- e.addRow([...headers,...(omit?[]:['employee_code']),...(single?['educations']:[]),...(assignments?[levelColumn]:[])]);
+ e.addRow([...headers,...(omit?[]:['employee_code']),...(single?['educations']:[]),...(assignments?[levelColumn]:[]),'shift_type']);
  if(ed)ed.addRow(sample.eduHeaders);
  codes.forEach((code,i)=>{
   const row=[...sample.employees[0]];row[1]=`worker${i}@example.com`;row[2]=`09877011${String(i).padStart(2,'0')}`;
   if (assignments) [row[6], row[7]] = assignments[i];
   const education=[...sample.education[0]];education[0]=row[1];
-  e.addRow([...row,...(omit?[]:[code]),...(single?[JSON.stringify([Object.fromEntries(sample.eduHeaders.slice(1).map((h,j)=>[h,education[j+1]]))])]:[]),...(assignments?[assignments[i][2]]:[])]);
+  e.addRow([...row,...(omit?[]:[code]),...(single?[JSON.stringify([Object.fromEntries(sample.eduHeaders.slice(1).map((h,j)=>[h,education[j+1]]))])]:[]),...(assignments?[assignments[i][2]]:[]),'General']);
   if(ed)ed.addRow(education);
  });
  const buffer=await w.xlsx.writeBuffer();
@@ -82,7 +82,7 @@ test('both workbook formats resolve department and position names with row-speci
   const rows = await parseWorkbook(file, async () => catalog);
   assert.equal(rows[0].input.departmentId, 8);
   assert.equal(rows[0].input.positionId, 42);
-  assert.equal(rows[0].input.positionName, undefined);
+  assert.equal(rows[0].input.positionName, 'Lập trình viên');
   assert.match(rows[1].message, /Entry, Junior/);
   assert.match(rows[2].message, /Position not found in department/);
   assert.match(rows[3].message, /Active department not found/);
@@ -99,6 +99,7 @@ test('preview accepts a workbook and reports Excel rows without creating employe
  const checked = [];
  let writes = 0;
  const service = {
+  educationService:{searchInstitutions:async()=>({data:[{id:"https://ror.org/012345678",institution:"Test University",source:"ROR"}]})},
   async assertHr(actorId) { assert.equal(actorId, 7); },
   async checkCreateEligibility(actorId, employee) {
    assert.equal(actorId, 7);

@@ -82,7 +82,7 @@ function validateEmployeeCode(value) {
   return value.trim().toUpperCase();
 }
 
-function validateCreateEmployeeInput(input, { includeWorkExperiences = false, requireEmployeeCode = true } = {}) {
+function validateCreateEmployeeInput(input, { includeWorkExperiences = false, requireEmployeeCode = true, allowUnverifiedInstitution = false } = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new AppError(400, 'Request body must be an object.');
   }
@@ -135,9 +135,9 @@ function validateCreateEmployeeInput(input, { includeWorkExperiences = false, re
   const educationKeys = new Set();
   const educations = input.educations.map((entry, index) => {
     try {
-      const record = validateEducation(entry);
+      const record = validateEducation(entry, {allowUnverifiedInstitution});
       validateGraduationYear(record, dateOfBirth);
-      const key = JSON.stringify([record.educationLevel, record.institutionRefId, record.fieldOfStudy?.toLowerCase(), record.graduationYear]);
+      const key = JSON.stringify([record.educationLevel, record.institution.trim().toLowerCase(), record.fieldOfStudy?.toLowerCase(), record.graduationYear]);
       if (educationKeys.has(key)) throw new AppError(400, 'Bằng cấp bị trùng trong cùng hồ sơ.');
       educationKeys.add(key);
       return record;

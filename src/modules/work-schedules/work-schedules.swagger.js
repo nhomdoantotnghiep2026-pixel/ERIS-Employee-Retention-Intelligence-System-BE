@@ -18,3 +18,6 @@ const workSchedulesPaths={
  '/api/work-schedules/{id}/default':{patch:op('Retired default schedule endpoint',{parameters:[id],responses:{410:{description:'Assign work_schedule_id directly to employees.'}}})}
 };
 module.exports={workSchedulesPaths};
+
+const retiredAssignment={description:'Schedule assignment is collected in employee profile import, not managed separately.',responses:{410:{description:'Retired. Import employee profiles with shift_type.'}}};
+for(const [path,method] of [['/api/work-schedules/individual','post'],['/api/employees/{id}/work-schedule','put'],['/api/employees/{id}/schedule-assignments','post'],['/api/employees/{id}/schedule-assignments/{assignmentId}','delete']])Object.assign(workSchedulesPaths[path][method],retiredAssignment,{summary:'Retired separate schedule assignment'});

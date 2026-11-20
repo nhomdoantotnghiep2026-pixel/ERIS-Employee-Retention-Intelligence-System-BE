@@ -53,6 +53,30 @@ class EmployeesRepository {
       [actorId, employee.email, employee.departmentId, employee.positionId, phoneKey(employee.phone), employee.employeeCode || null]);
     return rows[0];
   }
+  async resolveImportedJob(employee,lock=false) {
+    if(employee.departmentName===undefined&&employee.positionName===undefined)return employee;
+    const dept=(await this.databasePool.query(`SELECT id,status FROM departments WHERE lower(btrim(name))=lower($1) ORDER BY id ${lock?'FOR SHARE':''}`,[employee.departmentName])).rows;
+    if(dept.length!==1||dept[0].status!=='ACTIVE')throw new AppError(400,'departmentName must match exactly one ACTIVE department.');
+    const positions=(await this.databasePool.query(`SELECT id,job_level,status FROM positions WHERE department_id=$1 AND lower(btrim(name))=lower($2)
+      AND ($3::smallint IS NULL OR job_level=$3) ORDER BY id ${lock?'FOR SHARE':''}`,[dept[0].id,employee.positionName,employee.jobLevel??null])).rows.filter(p=>p.status==='ACTIVE');
+    if(!positions.length)throw new AppError(400,'positionName/job_level does not match an ACTIVE position in the selected department.');
+    if(positions.length!==1)throw new AppError(400,'positionName matches multiple levels. Supply job_level to select the correct position.');
+    if(employee.departmentId!==undefined&&(Number(employee.departmentId)!==Number(dept[0].id)||Number(employee.positionId)!==Number(positions[0].id)))throw new AppError(409,'Department or position changed during import. Preview the file again.');
+    return {...employee,departmentId:dept[0].id,positionId:positions[0].id};
+  }
+  async resolveImportedSchedule(employee,lock=false) {
+    if(employee.shiftType===undefined&&employee.workScheduleId===undefined)return employee;
+    const shift=employee.shiftType??null, scheduleId=employee.workScheduleId??null;
+    const {rows}=await this.databasePool.query(`SELECT id,shift_type,status FROM work_schedules
+      WHERE ($1::text IS NOT NULL AND upper(btrim(shift_type))=$1) OR ($2::integer IS NOT NULL AND id=$2)
+      ORDER BY id ${lock?'FOR SHARE':''}`,[shift,scheduleId]);
+    if(!rows.length)throw new AppError(404,'Imported shift_type/work_schedule_id does not exist in work_schedules.');
+    if(rows.length!==1)throw new AppError(409,'Imported shift_type is ambiguous or does not match work_schedule_id.');
+    const schedule=rows[0];
+    if(shift!==null&&require('../../common/validation/shift-type').shiftTypeKey(schedule.shift_type)!==shift||scheduleId!==null&&Number(schedule.id)!==scheduleId)throw new AppError(409,'shift_type and work_schedule_id must refer to the same schedule.');
+    if(schedule.status!=='ACTIVE')throw new AppError(409,'Imported work schedule must be ACTIVE.');
+    return {...employee,shiftType:require('../../common/validation/shift-type').shiftTypeKey(schedule.shift_type),workScheduleId:schedule.id};
+  }
   async listActiveImportAssignments() {
     const { rows } = await this.databasePool.query(
       `SELECT d.id AS "departmentId", d.name AS "departmentName",
@@ -112,9 +136,11 @@ class EmployeesRepository {
           throw new AppError(409, 'Existing account cannot be linked: only HR without an employee profile is supported.');
         }
       }
+      employee=await repository.resolveImportedJob(employee,true);
       if (!await repository.findActiveDepartmentById(employee.departmentId)) throw new AppError(404, 'Active department not found.');
       if (!await repository.findActivePositionById(employee.positionId)) throw new AppError(404, 'Active position not found.');
       await repository.assertPositionDepartment(employee.positionId, employee.departmentId);
+      employee=await repository.resolveImportedSchedule(employee,true);
       const record = await repository.create(employee, account?.status === 'ACTIVE' ? 'ACTIVE' : 'IN_PROCESS');
       let saved;
       if (account) {
@@ -244,6 +270,7 @@ class EmployeesRepository {
 date_of_birth AS "dateOfBirth", gender, address, distance_from_home_km AS "distanceFromHomeKm",
 department_id AS "departmentId", position_id AS "positionId", hire_date AS "hireDate",
 employment_type AS "employmentType", employment_status AS "employmentStatus",
+         work_schedule_id AS "workScheduleId",
 current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "updatedAt" FROM employees${where} ORDER BY id ASC${paging}`,
       paginated ? [...values, query.limit, (query.page - 1) * query.limit] : values);
     return { data: rows, pagination: paginated ? { page: query.page, limit: query.limit, total, totalPages: Math.ceil(total / query.limit) } : { page: 1, limit: null, total, totalPages: total ? 1 : 0 } };
@@ -283,9 +310,10 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
          hire_date,
          employment_type,
          current_salary,
-         employment_status
+         employment_status,
+         work_schedule_id
        )
-       VALUES ($15, $14, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       VALUES ($15, $14, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $16)
        RETURNING
          id,
          employee_code AS "employeeCode",
@@ -301,6 +329,7 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
          hire_date AS "hireDate",
          employment_type AS "employmentType",
          employment_status AS "employmentStatus",
+         work_schedule_id AS "workScheduleId",
          current_salary AS "currentSalary",
          created_at AS "createdAt",
          updated_at AS "updatedAt"`,
@@ -319,7 +348,8 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
         employee.currentSalary,
         employmentStatus,
         employeeCode,
-        employeeId
+        employeeId,
+        employee.workScheduleId??null
       ]
     );
 
@@ -328,7 +358,8 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
 
   async findById(id) {
     const { rows } = await this.databasePool.query(
-      `SELECT id, employee_code AS "employeeCode", full_name AS "fullName", email, phone, date_of_birth AS "dateOfBirth", gender, address, distance_from_home_km AS "distanceFromHomeKm", department_id AS "departmentId", position_id AS "positionId", hire_date AS "hireDate", employment_type AS "employmentType", employment_status AS "employmentStatus", current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "updatedAt" FROM employees WHERE id = $1
+      `SELECT id, employee_code AS "employeeCode", full_name AS "fullName", email, phone, date_of_birth AS "dateOfBirth", gender, address, distance_from_home_km AS "distanceFromHomeKm", department_id AS "departmentId", position_id AS "positionId", hire_date AS "hireDate", employment_type AS "employmentType", employment_status AS "employmentStatus",
+         work_schedule_id AS "workScheduleId", current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "updatedAt" FROM employees WHERE id = $1
        LIMIT 1`,
       [id]
     );
@@ -351,6 +382,7 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
          employees.hire_date AS "hireDate",
          employees.employment_type AS "employmentType",
          employees.employment_status AS "employmentStatus",
+         work_schedule_id AS "workScheduleId",
          employees.current_salary AS "currentSalary",
          employees.created_at AS "createdAt",
          employees.updated_at AS "updatedAt",
@@ -389,7 +421,8 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
       if (rows[0].employment_status === 'INACTIVE') throw new AppError(409, 'Employee is already inactive.');
       const result = await client.query(
         `UPDATE employees SET employment_status = 'INACTIVE', updated_at = CURRENT_TIMESTAMP
-         WHERE id = $1 RETURNING id, employee_code AS "employeeCode", employment_status AS "employmentStatus", updated_at AS "updatedAt"`, [id]);
+         WHERE id = $1 RETURNING id, employee_code AS "employeeCode", employment_status AS "employmentStatus",
+         work_schedule_id AS "workScheduleId", updated_at AS "updatedAt"`, [id]);
       await client.query("UPDATE users SET status = 'INACTIVE', updated_at = CURRENT_TIMESTAMP WHERE employee_id = $1", [id]);
       await recordChange(client, actorId, 'employees', id, 'SOFT_DELETE', beforeAudit, await snapshot(client, 'employees', id));
       await client.query('COMMIT');
@@ -471,6 +504,7 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
          hire_date AS "hireDate",
          employment_type AS "employmentType",
          employment_status AS "employmentStatus",
+         work_schedule_id AS "workScheduleId",
          current_salary AS "currentSalary",
          updated_at AS "updatedAt"),
        synced_account AS (

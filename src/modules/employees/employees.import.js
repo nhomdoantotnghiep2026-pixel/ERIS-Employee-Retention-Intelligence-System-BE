@@ -3,13 +3,17 @@ const multer = require('multer');
 const { AppError } = require('../../common/errors/app-error');
 const { validateCreateEmployeeInput, requiredEmployeeFields, validateEmployeeCode } = require('./employees.validation');
 const { phoneKey } = require('./employee-phone');
-const { openEmployeeWorkbook } = require('./employee-workbook');
+const { readXlsx } = require('../../common/utils/xlsx-reader');
+const ExcelJS=require('exceljs');
+const {normalizeShiftType}=require('../../common/validation/shift-type');
+const {prepareImportInstitutions,parseInstitutionChoices,institutionPreview}=require('./import-institutions');
+const importProfileFields=requiredEmployeeFields.map(field=>field==='departmentId'?'departmentName':field==='positionId'?'positionName':field);
 
 const idColumns = ['departmentId', 'positionId'];
 const nameColumns = ['departmentName', 'positionName'];
 const profileColumns = ['employee_code', ...requiredEmployeeFields.filter(field => !idColumns.includes(field))];
 const levelColumns = ['job_level', 'positionLevel', 'jobLevel'];
-const fields = [...profileColumns, ...idColumns, ...nameColumns, ...levelColumns];
+const fields = [...profileColumns, ...idColumns, ...nameColumns, ...levelColumns, 'shift_type'];
 const levelNames = ['Entry', 'Junior', 'Intermediate', 'Senior', 'Expert / Leadership'];
 const educationFields = ['email', 'educationLevel', 'fieldOfStudy', 'institution', 'institutionRefId', 'graduationYear'];
 
@@ -92,12 +96,14 @@ function createAssignmentResolver(catalog) {
         : `Chức danh "${positionName}" có nhiều cấp. Hãy chọn ${levels}. / Select a level: ${levels}.`);
     }
     const { departmentId, positionId } = matches[0];
-    return { departmentId, positionId };
+    return { departmentId, positionId, departmentName:matches[0].departmentName,positionName:matches[0].positionName,jobLevel:Number(matches[0].jobLevel) };
   };
 }
 
 function validateImportEmployee(input, resolveAssignment) {
-  const { employee_code, departmentName, positionName, job_level, positionLevel, jobLevel, ...profile } = input;
+  if(Object.hasOwn(input,'work_schedule_id'))throw new AppError(400,'Use shift_type only; work_schedule_id is resolved internally.');
+  const { employee_code, departmentName, positionName, shift_type, job_level, positionLevel, jobLevel, ...profile } = input;
+  const shiftType=normalizeShiftType(shift_type);
   if (employee_code == null || (typeof employee_code === 'string' && !employee_code.trim())) {
     throw new AppError(400, 'Thiếu mã nhân viên (employee_code). / Employee code is required.');
   }
@@ -107,8 +113,19 @@ function validateImportEmployee(input, resolveAssignment) {
   } catch (error) {
     throw new AppError(400, error.message.replace('employeeCode', 'employee_code') + ' Use a Text cell.');
   }
-  if (resolveAssignment) Object.assign(profile, resolveAssignment({ departmentName, positionName, positionLevel: job_level ?? positionLevel, jobLevel }));
-  return validateCreateEmployeeInput({ ...profile, employeeCode });
+  let assignment={};
+  if(resolveAssignment)assignment=resolveAssignment({departmentName,positionName,positionLevel:job_level??positionLevel,jobLevel});
+  else if(departmentName!==undefined||positionName!==undefined){
+    for(const [field,value] of Object.entries({departmentName,positionName}))if(typeof value!=='string'||!value.trim()||value.trim().length>150)throw fieldError(400,field,field+' is required.');
+    const level=job_level??positionLevel??jobLevel;
+    const names={entry:1,junior:2,intermediate:3,senior:4,expert:5,leadership:5,'expert / leadership':5};
+    const parsed=level==null||level===''?null:names[String(level).trim().toLowerCase()]??Number(level);
+    if(parsed!==null&&(!Number.isInteger(parsed)||parsed<1||parsed>5))throw fieldError(400,'job_level','Invalid job_level.');
+    assignment={departmentName:departmentName.trim(),positionName:positionName.trim(),jobLevel:parsed};
+  }
+  const employee=validateCreateEmployeeInput({...profile,departmentId:assignment.departmentId??profile.departmentId??1,positionId:assignment.positionId??profile.positionId??1,employeeCode},{allowUnverifiedInstitution:true});
+  if(assignment.departmentName!==undefined&&!assignment.departmentId){delete employee.departmentId;delete employee.positionId;}
+  return {...employee,...assignment,shiftType};
 }
 function checkImportCode(employee, seen) {
   if (seen.has(employee.employeeCode)) throw new AppError(409, 'Duplicate employee_code within workbook.');
@@ -117,7 +134,7 @@ function checkImportCode(employee, seen) {
 const upload = multer({
   storage: multer.memoryStorage(),
   // Busboy emits the parts limit on reaching it, including the accepted file.
-  limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 0, parts: 2 },
+  limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 1, fieldSize: 131072, parts: 3 },
   fileFilter: (_req, file, cb) => cb(/\.xlsx$/i.test(file.originalname) ? null : new AppError(400, 'Only .xlsx files are supported.'), /\.xlsx$/i.test(file.originalname))
 }).single('file');
 
@@ -163,12 +180,12 @@ async function getAssignmentResolver(headers, loadCatalog, sheet) {
   if (missing.length) throw workbookError(sheet + ': Missing columns: ' + missing.join(', '),
     missing.map(field => makeIssue(sheet, 1, headers, field, 'Thêm cột với đúng tên trường. / Add this required column header.')));
   if (usesIds) return undefined;
-  return createAssignmentResolver(await loadCatalog());
+  return loadCatalog?createAssignmentResolver(await loadCatalog()):undefined;
 }
 
 async function parseWorkbook(buffer, loadCatalog) {
   let workbook;
-  try { workbook = await openEmployeeWorkbook(buffer); }
+  try { workbook = await readXlsx(buffer); }
   catch {
     throw workbookError('Không đọc được cấu trúc tệp Excel. Mở tệp, lưu lại dưới dạng Excel Workbook (.xlsx), rồi chọn lại. / Open the file and save a new copy as Excel Workbook (.xlsx), then select it again.');
   }
@@ -176,7 +193,7 @@ async function parseWorkbook(buffer, loadCatalog) {
   if (sheets.length !== 1) return parseRelatedSheets(sheets, loadCatalog);
   const sheet = sheets[0];
   if (sheet.rowCount > 1000) throw new AppError(400, 'Workbook exceeds row limits.');
-  const headers = readHeaders(sheet, [...fields, 'educations'], [...profileColumns, 'educations']);
+  const headers = readHeaders(sheet, [...fields, 'educations'], [...profileColumns, 'shift_type', 'educations']);
   const source = { sheet: sheet.name, headers };
   const resolveAssignment = await getAssignmentResolver(headers, loadCatalog, sheet.name);
   const rows = [];
@@ -252,9 +269,9 @@ async function parseRelatedSheets(sheets, loadCatalog) {
     throw workbookError('Dùng một sheet có cột educations dạng JSON, hoặc đúng 2 sheet Employees, Educations. / Use the sheet names from the Excel template.');
   }
   const sheet = name => sheets.find(s => s.name === name);
-  const { headers, records: employees } = readRelatedSheet(sheet('Employees'), fields, profileColumns, 200);
+  const { headers, records: employees } = readRelatedSheet(sheet('Employees'), fields, [...profileColumns,'shift_type'], 200);
   if (!employees.length) throw new AppError(400, 'Employees phải có từ 1 đến 200 nhân viên.');
-  const { headers: educationHeaders, records: educations } = readRelatedSheet(sheet('Educations'), educationFields, ['email', 'educationLevel', 'institution', 'institutionRefId'], 4000);
+  const { headers: educationHeaders, records: educations } = readRelatedSheet(sheet('Educations'), educationFields, ['email', 'educationLevel', 'institution'], 4000);
   const resolveAssignment = await getAssignmentResolver(headers, loadCatalog, 'Employees');
   const source = { sheet: 'Employees', headers };
   const emailKey = value => typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -332,12 +349,25 @@ async function mapEmployeeRows(rows, handle, concurrency, fallbackMessage) {
 async function processEmployeeRows(rows, service, actorId, concurrency = 3, importId = randomUUID()) {
   const distanceCache = new Map();
   return mapEmployeeRows(rows, async row => {
+    if(!row.input.shiftType)throw new AppError(400,'Provide shift_type in the employee import row.');
     const data = await service.createEmployee({ actorId, employee: row.input, distanceCache, auditContext: { source: 'IMPORT', importId, row: row.row } });
-    return { row: row.row, status: 'CREATED', data };
+    return { row: row.row, status: 'CREATED', data, warnings:(row.institutions||[]).filter(i=>i.warning).map(i=>i.warning) };
   }, concurrency, 'Unable to create employee.');
 }
 
+async function employeeImportTemplate() {
+  const workbook=new ExcelJS.Workbook();const sheet=workbook.addWorksheet('Employees');
+  sheet.columns=['employee_code',...importProfileFields,'job_level','shift_type','educations'].map(key=>({header:key,key,width:['address','educations'].includes(key)?60:24}));
+  sheet.views=[{state:'frozen',ySplit:1}];sheet.getRow(1).font={bold:true};
+  sheet.getCell(1,importProfileFields.length+3).note='Nhập mã ca đã có trong work_schedules, ví dụ GENERAL. Không phân biệt hoa/thường. Bắt buộc shift_type; hệ thống tự tra ID ca.';
+  sheet.getCell(1,importProfileFields.length+4).note='Mảng JSON bằng cấp bắt buộc, gồm educationLevel, institution, fieldOfStudy, graduationYear.';
+  sheet.getCell(1,8).note='Tên phòng ban ACTIVE trong ERIS; không nhập ID.';
+  sheet.getCell(1,9).note='Tên chức danh ACTIVE thuộc phòng ban đã nhập; không nhập ID.';
+  sheet.getCell(1,importProfileFields.length+2).note='Nếu chức danh có nhiều cấp, nhập Entry, Junior, Intermediate, Senior, Expert / Leadership hoặc 1–5.';
+  return workbook.xlsx.writeBuffer();
+}
 function registerEmployeeImport(router, authenticate, service) {
+  router.get('/import/template',authenticate,async(req,res,next)=>{try{await service.assertHr(req.auth.userId);const buffer=await employeeImportTemplate();res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');res.attachment('ERIS_Employee_Import_Template.xlsx');res.send(Buffer.from(buffer));}catch(error){next(error);}});
   const receiveWorkbook = (handle, preview = false) => async (req, res, next) => {
     try { await service.assertHr(req.auth.userId); }
     catch (error) { return next(error); }
@@ -346,25 +376,27 @@ function registerEmployeeImport(router, authenticate, service) {
       try {
         if (!req.file) throw new AppError(400, 'Upload an Excel file using the file field.');
         let rows;
-        try { rows = await parseWorkbook(req.file.buffer, () => service.employeesRepository.listActiveImportAssignments()); }
+        try { rows = await parseWorkbook(req.file.buffer, service.employeesRepository.listActiveImportAssignments?() => service.employeesRepository.listActiveImportAssignments():undefined); }
         catch (error) {
           if (preview && error instanceof AppError && error.statusCode === 400) {
             return res.json({ total: 0, valid: 0, failed: 0, results: [], fileIssues: error.issues || [{ message: error.message }] });
           }
           throw error;
         }
+        const choices=parseInstitutionChoices(req.body?.institutionChoices,rows);
+        rows=await prepareImportInstitutions(rows,service.educationService,choices);
+        if(!preview&&rows.some(r=>r.needsSelection))throw new AppError(409,'Cần chọn trường trong bước xem trước trước khi nhập hồ sơ.');
         await handle(rows, req.auth.userId, res);
       } catch (error) { next(error); }
     });
   };
 
   router.post('/import/preview', authenticate, receiveWorkbook(async (rows, actorId, res) => {
-    const results = await mapEmployeeRows(rows, async row => {
-      await service.checkCreateEligibility(actorId, row.input);
-      return { row: row.row, status: 'VALID', email: row.input.email };
-    }, 3, 'Unable to validate employee.');
-    const valid = results.filter(row => row.status === 'VALID').length;
-    res.json({ total: results.length, valid, failed: results.length - valid, results });
+    const checked=await mapEmployeeRows(rows,async row=>{
+      if(service.checkCreateEligibility)await service.checkCreateEligibility(actorId,row.input);
+      return row;
+    },3,'Unable to validate employee.');
+    res.set('Cache-Control','no-store');res.json(institutionPreview(checked));
   }, true));
 
   router.post('/import', authenticate, receiveWorkbook(async (rows, actorId, res) => {
@@ -381,4 +413,4 @@ function registerEmployeeImport(router, authenticate, service) {
     res.status(200).json({ importId, ...(auditWarning ? { auditWarning } : {}), total: results.length, created, failed: results.length - created, results });
   }));
 }
-module.exports = { parseWorkbook, registerEmployeeImport, processEmployeeRows };
+module.exports = { parseWorkbook, registerEmployeeImport, processEmployeeRows,validateImportEmployee,employeeImportTemplate };
