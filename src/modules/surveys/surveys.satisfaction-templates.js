@@ -2,11 +2,11 @@
 const {ratingConfig}=require('./surveys.dynamic.validation');
 const catalog={
   "COMPENSATION_BENEFITS": {
-    "facets": [
-      "mức lương hiện tại",
-      "các chế độ phúc lợi được hưởng",
-      "cách công ty ghi nhận đóng góp thông qua đãi ngộ",
-      "sự minh bạch của chính sách đãi ngộ"
+    "satisfaction": [
+      "Bạn hài lòng với mức lương hiện tại ở mức độ nào?",
+      "Mức độ hài lòng của bạn với các chế độ phúc lợi đang được hưởng như thế nào?",
+      "Bạn đánh giá mức độ hài lòng với cách công ty ghi nhận đóng góp thông qua đãi ngộ như thế nào?",
+      "Về sự minh bạch của chính sách đãi ngộ, bạn cảm thấy hài lòng ở mức nào?"
     ],
     "bank": [
       "Bạn muốn công ty làm rõ thông tin nào trong chính sách lương?",
@@ -22,11 +22,11 @@ const catalog={
     ]
   },
   "WORKING_TIME": {
-    "facets": [
-      "lịch làm việc hiện tại",
-      "tính chủ động trong sắp xếp thời gian làm việc",
-      "thời gian nghỉ giữa các khoảng làm việc",
-      "cách công ty sắp xếp thời gian làm thêm"
+    "satisfaction": [
+      "Bạn hài lòng với lịch làm việc hiện tại ở mức độ nào?",
+      "Về khả năng chủ động sắp xếp thời gian làm việc, bạn cảm thấy hài lòng ở mức nào?",
+      "Mức độ hài lòng của bạn với thời gian nghỉ giữa ca làm việc như thế nào?",
+      "Bạn đánh giá mức độ hài lòng với cách công ty sắp xếp thời gian làm thêm như thế nào?"
     ],
     "bank": [
       "Thời điểm nào trong lịch làm việc gây khó khăn cho bạn?",
@@ -42,11 +42,11 @@ const catalog={
     ]
   },
   "WORK_ENVIRONMENT": {
-    "facets": [
-      "điều kiện vật chất tại nơi làm việc",
-      "công cụ được cung cấp để thực hiện công việc",
-      "mức độ an toàn tại nơi làm việc",
-      "sự hỗ trợ giữa các đồng nghiệp trong công việc"
+    "satisfaction": [
+      "Bạn hài lòng với điều kiện vật chất tại nơi làm việc ở mức độ nào?",
+      "Với các công cụ được cung cấp để làm việc, bạn cảm thấy hài lòng ở mức nào?",
+      "Mức độ hài lòng của bạn với sự an toàn tại nơi làm việc như thế nào?",
+      "Bạn đánh giá mức độ hài lòng với sự hỗ trợ từ đồng nghiệp trong công việc như thế nào?"
     ],
     "bank": [
       "Công cụ hoặc thiết bị nào đang cản trở công việc của bạn?",
@@ -62,11 +62,11 @@ const catalog={
     ]
   },
   "CAREER_DEVELOPMENT": {
-    "facets": [
-      "cơ hội học tập chuyên môn tại công ty",
-      "cơ hội phát triển nghề nghiệp tại công ty",
-      "sự hỗ trợ để đạt mục tiêu nghề nghiệp",
-      "sự rõ ràng của lộ trình phát triển tại công ty"
+    "satisfaction": [
+      "Bạn hài lòng với cơ hội học tập chuyên môn tại công ty ở mức độ nào?",
+      "Mức độ hài lòng của bạn với cơ hội phát triển nghề nghiệp tại công ty như thế nào?",
+      "Về sự hỗ trợ để đạt mục tiêu nghề nghiệp, bạn cảm thấy hài lòng ở mức nào?",
+      "Bạn đánh giá mức độ hài lòng với sự rõ ràng của lộ trình phát triển nghề nghiệp như thế nào?"
     ],
     "bank": [
       "Bạn muốn phát triển theo hướng nghề nghiệp nào trong thời gian tới?",
@@ -82,11 +82,11 @@ const catalog={
     ]
   },
   "MANAGEMENT": {
-    "facets": [
-      "sự hỗ trợ từ quản lý trực tiếp",
-      "chất lượng phản hồi từ quản lý về công việc",
-      "cách quản lý phân công công việc",
-      "sự công bằng trong cách quản lý đối xử với nhân viên"
+    "satisfaction": [
+      "Bạn hài lòng với sự hỗ trợ của quản lý trực tiếp ở mức độ nào?",
+      "Bạn đánh giá mức độ hài lòng với những phản hồi về công việc từ quản lý như thế nào?",
+      "Về cách quản lý phân công công việc, bạn cảm thấy hài lòng ở mức nào?",
+      "Mức độ hài lòng của bạn với sự công bằng trong cách quản lý đối xử với nhân viên như thế nào?"
     ],
     "bank": [
       "Bạn cần quản lý hỗ trợ thêm ở những tình huống nào?",
@@ -102,11 +102,11 @@ const catalog={
     ]
   },
   "EMPLOYEE_ENGAGEMENT": {
-    "facets": [
-      "trải nghiệm làm việc tại công ty",
-      "sự ghi nhận dành cho đóng góp của bản thân",
-      "cơ hội tham gia đóng góp vào hoạt động của công ty",
-      "mức độ kết nối với tập thể tại công ty"
+    "satisfaction": [
+      "Bạn hài lòng với trải nghiệm làm việc tại công ty ở mức độ nào?",
+      "Về sự ghi nhận dành cho đóng góp của mình, bạn cảm thấy hài lòng ở mức nào?",
+      "Mức độ hài lòng của bạn với cơ hội tham gia đóng góp vào các hoạt động của công ty như thế nào?",
+      "Bạn đánh giá mức độ hài lòng với sự kết nối của mình với tập thể tại công ty như thế nào?"
     ],
     "bank": [
       "Điều gì khiến bạn muốn tiếp tục làm việc tại công ty?",
@@ -122,11 +122,11 @@ const catalog={
     ]
   },
   "WORK_LIFE_BALANCE": {
-    "facets": [
-      "sự cân bằng giữa công việc và cuộc sống cá nhân",
-      "khả năng nghỉ ngơi sau giờ làm việc",
-      "khả năng sắp xếp việc cá nhân bên cạnh công việc",
-      "sự hỗ trợ của công ty khi có nhu cầu cân bằng công việc và cuộc sống"
+    "satisfaction": [
+      "Bạn hài lòng với sự cân bằng giữa công việc và cuộc sống cá nhân ở mức độ nào?",
+      "Về khả năng nghỉ ngơi sau giờ làm việc, bạn cảm thấy hài lòng ở mức nào?",
+      "Mức độ hài lòng của bạn với khả năng sắp xếp việc cá nhân bên cạnh công việc như thế nào?",
+      "Bạn đánh giá mức độ hài lòng với sự hỗ trợ của công ty khi cần cân bằng công việc và cuộc sống như thế nào?"
     ],
     "bank": [
       "Yếu tố công việc nào thường ảnh hưởng đến thời gian cá nhân của bạn?",
@@ -142,11 +142,11 @@ const catalog={
     ]
   },
   "COMMUNICATION_CULTURE": {
-    "facets": [
-      "việc cung cấp thông tin cần thiết cho công việc",
-      "sự rõ ràng của thông tin được trao đổi trong công ty",
-      "cơ hội nêu ý kiến trong công ty",
-      "sự tôn trọng trong giao tiếp tại công ty"
+    "satisfaction": [
+      "Bạn hài lòng với việc được cung cấp thông tin cần thiết cho công việc ở mức độ nào?",
+      "Mức độ hài lòng của bạn với sự rõ ràng của thông tin được trao đổi trong công ty như thế nào?",
+      "Về cơ hội nêu ý kiến tại công ty, bạn cảm thấy hài lòng ở mức nào?",
+      "Bạn đánh giá mức độ hài lòng với sự tôn trọng trong giao tiếp tại công ty như thế nào?"
     ],
     "bank": [
       "Thông tin nào bạn thường nhận được chậm hoặc chưa đầy đủ?",
@@ -162,11 +162,11 @@ const catalog={
     ]
   },
   "JOB_FIT": {
-    "facets": [
-      "nội dung công việc đang đảm nhận",
-      "cơ hội sử dụng kỹ năng trong công việc hiện tại",
-      "sự phù hợp giữa nhiệm vụ và thế mạnh của bản thân",
-      "sự rõ ràng của vai trò công việc hiện tại"
+    "satisfaction": [
+      "Bạn hài lòng với nội dung công việc đang đảm nhận ở mức độ nào?",
+      "Mức độ hài lòng của bạn với cơ hội sử dụng kỹ năng trong công việc hiện tại như thế nào?",
+      "Về sự phù hợp giữa nhiệm vụ và thế mạnh của bản thân, bạn cảm thấy hài lòng ở mức nào?",
+      "Bạn đánh giá mức độ hài lòng với sự rõ ràng của vai trò công việc hiện tại như thế nào?"
     ],
     "bank": [
       "Những nhiệm vụ nào phù hợp nhất với thế mạnh của bạn?",
@@ -182,11 +182,11 @@ const catalog={
     ]
   },
   "OTHER": {
-    "facets": [
-      "trải nghiệm của mình liên quan đến các nội dung được hỏi trong nhóm Khác",
-      "cách công ty xử lý các vấn đề được hỏi trong nhóm Khác",
-      "sự hỗ trợ của công ty đối với các nội dung được hỏi trong nhóm Khác",
-      "mức độ đáp ứng nhu cầu của mình đối với các nội dung được hỏi trong nhóm Khác"
+    "satisfaction": [
+      "Với các nội dung trong chủ đề này, bạn hài lòng với trải nghiệm thực tế của mình ở mức nào?",
+      "Bạn đánh giá mức độ hài lòng với cách công ty xử lý các vấn đề thuộc chủ đề này như thế nào?",
+      "Mức độ hài lòng của bạn với sự hỗ trợ của công ty đối với các nội dung trong chủ đề này như thế nào?",
+      "Về cách công ty đáp ứng các nhu cầu được đề cập trong chủ đề này, bạn cảm thấy hài lòng ở mức nào?"
     ],
     "bank": [
       "Bạn muốn chia sẻ thêm vấn đề nào chưa được các chủ đề khác đề cập?",
@@ -202,7 +202,8 @@ const catalog={
     ]
   }
 };
-function templates(category){return (catalog[category.name]?.facets||[]).map((facet,i)=>({templateCode:`ERIS_${category.name}_${i+1}_V2`,questionText:`Nhìn chung, bạn hài lòng với ${facet} ở mức độ nào?`,categoryId:category.id,questionType:'RATING',answerConfig:ratingConfig()}));}
+// Keep measurement facets, template codes and the satisfaction scale stable; author each prompt directly.
+function templates(category){return (catalog[category.name]?.satisfaction||[]).map((questionText,i)=>({templateCode:`ERIS_${category.name}_${i+1}_V2`,questionText,categoryId:category.id,questionType:'RATING',answerConfig:ratingConfig()}));}
 const diagnosticOptions={"COMPENSATION_BENEFITS": ["Lương cơ bản", "Thưởng", "Phụ cấp", "Bảo hiểm và phúc lợi", "Thông tin chính sách"], "WORKING_TIME": ["Lịch làm việc", "Thay đổi ca", "Làm thêm giờ", "Thời gian nghỉ", "Tính linh hoạt"], "WORK_ENVIRONMENT": ["Thiết bị và công cụ", "Không gian làm việc", "An toàn", "Quan hệ đồng nghiệp", "Nguồn lực hỗ trợ"], "CAREER_DEVELOPMENT": ["Đào tạo chuyên môn", "Người hướng dẫn", "Lộ trình nghề nghiệp", "Cơ hội thử vai trò mới", "Tiêu chí thăng tiến"], "MANAGEMENT": ["Phân công nhiệm vụ", "Phản hồi công việc", "Sự hỗ trợ", "Tính công bằng", "Trao đổi với quản lý"], "EMPLOYEE_ENGAGEMENT": ["Sự ghi nhận", "Động lực làm việc", "Kết nối tập thể", "Cơ hội đóng góp ý kiến", "Ý nghĩa công việc"], "WORK_LIFE_BALANCE": ["Liên hệ ngoài giờ", "Thời gian phục hồi", "Lịch làm linh hoạt", "Khối lượng việc", "Hỗ trợ việc cá nhân"], "COMMUNICATION_CULTURE": ["Thông tin kịp thời", "Thông tin rõ ràng", "Kênh giao tiếp", "Cơ hội nêu ý kiến", "Phối hợp phòng ban"], "JOB_FIT": ["Nội dung nhiệm vụ", "Kỹ năng được sử dụng", "Thế mạnh cá nhân", "Sự rõ ràng của vai trò", "Nguồn lực thực hiện"], "OTHER": ["Điều kiện hỗ trợ", "Cách xử lý vấn đề", "Thông tin và hướng dẫn", "Khả năng nêu ý kiến", "Nội dung khác"]};
 const supportOptions={
   "COMPENSATION_BENEFITS": [
