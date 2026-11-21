@@ -43,8 +43,6 @@ class EmployeesRepository {
         (SELECT role.name FROM users INNER JOIN role ON role.id = users.role_id
          WHERE users.id = $1 AND users.status = 'ACTIVE') AS "actorRole",
         EXISTS (SELECT 1 FROM employees WHERE lower(email) = lower($2)) AS "emailExists",
-        (SELECT COALESCE(jsonb_agg(jsonb_build_object('id',u.id,'role',r.name,'status',u.status,'employeeId',u.employee_id)), '[]'::jsonb)
-         FROM users u JOIN role r ON r.id=u.role_id WHERE lower(u.email)=lower($2)) AS accounts,
         EXISTS (SELECT 1 FROM departments WHERE id = $3 AND status = 'ACTIVE') AS "activeDepartment",
         EXISTS (SELECT 1 FROM positions WHERE id = $4 AND status = 'ACTIVE') AS "activePosition",
         (SELECT department_id FROM positions WHERE id=$4) AS "positionDepartmentId",
@@ -114,7 +112,7 @@ class EmployeesRepository {
     const { rows } = await this.databasePool.query('SELECT id, email FROM users WHERE employee_id = $1 LIMIT 1', [employeeId]);
     return rows[0] || null;
   }
-  async createWithAccount(employee, passwordHash, actorId, auditContext = null) {
+  async createWithAccount(employee, _unusedPasswordHash, actorId, auditContext = null) {
     const client = await this.databasePool.connect();
     try {
       await client.query('BEGIN');
@@ -125,44 +123,14 @@ class EmployeesRepository {
         if (actor?.role !== 'HR') throw new AppError(403, 'Only ACTIVE HR can create employee profiles.');
       }
       if (await repository.findByEmail(employee.email)) throw new AppError(409, 'Email already has an employee profile.');
-      const profileOnly = auditContext?.source === 'IMPORT';
-      const { rows: accounts } = profileOnly ? { rows: [] } : await client.query(
-        `SELECT u.id, u.email, u.role_id AS "roleId", u.status, u.employee_id AS "employeeId", r.name AS role
-         FROM users u JOIN role r ON r.id=u.role_id WHERE lower(u.email)=lower($1) FOR UPDATE OF u`, [employee.email]);
-      if (accounts.length > 1) throw new AppError(409, 'Multiple accounts use this email.');
-      const account = accounts[0];
-      if (account) {
-        if (Number(account.id) === Number(actorId)) throw new AppError(403, 'Another HR must create your profile.');
-        if (account.role !== 'HR' || account.employeeId != null || !['ACTIVE','IN_PROCESS'].includes(account.status)) {
-          throw new AppError(409, 'Existing account cannot be linked: only HR without an employee profile is supported.');
-        }
-      }
       employee=await repository.resolveImportedJob(employee,true);
       if (!await repository.findActiveDepartmentById(employee.departmentId)) throw new AppError(404, 'Active department not found.');
       if (!await repository.findActivePositionById(employee.positionId)) throw new AppError(404, 'Active position not found.');
       await repository.assertPositionDepartment(employee.positionId, employee.departmentId);
       employee=await repository.resolveImportedSchedule(employee,true);
-      const profileStatus = profileOnly || account?.status === 'ACTIVE' ? 'ACTIVE' : 'IN_PROCESS';
+      // Profile creation never writes users; only ADMIN provisioning creates accounts.
+      const profileStatus = 'ACTIVE';
       const record = await repository.create(employee, profileStatus);
-      let saved;
-      if (account) {
-        const result = await client.query(
-          `UPDATE users SET employee_id=$2, full_name=$3, updated_at=CURRENT_TIMESTAMP
-           WHERE id=$1 AND employee_id IS NULL
-           RETURNING id, email, role_id AS "roleId", status, employee_id AS "employeeId"`, [account.id,record.id,employee.fullName]);
-        if (!result.rows[0]) throw new AppError(409, 'HR account already has a profile.');
-        saved = { ...result.rows[0], role: 'HR' };
-      } else if (!profileOnly) {
-        if (!passwordHash) throw new AppError(409, 'Account changed during creation; reload and try again.');
-        const {rows: roles} = await client.query("SELECT id FROM role WHERE name='EMPLOYEE'");
-        if (roles.length !== 1) throw new AppError(503, 'EMPLOYEE role is not configured.');
-        const result = await client.query(
-          `INSERT INTO users (email,password,role_id,status,employee_id,full_name)
-           VALUES ($1,$2,$3,'IN_PROCESS',$4,$5)
-           RETURNING id,email,role_id AS "roleId",status,employee_id AS "employeeId"`,
-          [employee.email,passwordHash,roles[0].id,record.id,employee.fullName]);
-        saved = { ...result.rows[0], role: 'EMPLOYEE' };
-      }
       const initialJobHistory = profileStatus === 'ACTIVE'
         ? await new JobHistoriesRepository(client).insert(record.id, {
           departmentId: employee.departmentId,
@@ -181,7 +149,7 @@ class EmployeesRepository {
         newValue: { ...createdSnapshot, educations: educationRows.map(row => row.data), ...(experienceRows ? { workExperiences: experienceRows.map(row => row.data) } : {}),
           ...(initialJobHistory ? { initialJobHistory } : {}), _context: auditContext || { source: 'MANUAL' } } });
       await client.query('COMMIT');
-      return { employee: { ...record, ...background }, account: saved, accountCreated: !profileOnly && !account, initialJobHistory };
+      return { employee: { ...record, ...background }, initialJobHistory };
     } catch (error) {
       await client.query('ROLLBACK');
       if (error.code === '23505') throw new AppError(409, 'Employee or account already exists.');
@@ -193,7 +161,7 @@ class EmployeesRepository {
       `SELECT e.id, e.employee_code AS "employeeCode", e.full_name AS "fullName", e.email
        FROM employees e
        WHERE e.employment_status='ACTIVE' AND NULLIF(btrim(e.email),'') IS NOT NULL
-         AND NOT EXISTS (SELECT 1 FROM users u WHERE u.employee_id=e.id OR lower(u.email)=lower(e.email))
+         AND NOT EXISTS (SELECT 1 FROM users u WHERE u.employee_id=e.id OR lower(btrim(u.email))=lower(btrim(e.email)))
        ORDER BY e.employee_code`);
     return rows;
   }
@@ -210,9 +178,10 @@ class EmployeesRepository {
           [employeeId])).rows[0];
         if (!employee) throw new AppError(404, 'Active employee profile not found.');
         if (!employee.email?.trim()) throw new AppError(409, 'Employee profile has no email.');
-        await client.query('SELECT pg_advisory_xact_lock(hashtext(lower($1)))', [employee.email]);
+        const email=employee.email.trim().toLowerCase();
+        await client.query('SELECT pg_advisory_xact_lock(hashtext(lower($1)))', [email]);
         const existing = await client.query(
-          'SELECT id FROM users WHERE employee_id=$1 OR lower(email)=lower($2)', [employee.id, employee.email]);
+          'SELECT id FROM users WHERE employee_id=$1 OR lower(btrim(email))=lower($2)', [employee.id, email]);
         if (existing.rows.length) throw new AppError(409, 'An account already uses this profile or email.');
         const { rows: roles } = await client.query("SELECT id FROM role WHERE name='EMPLOYEE'");
         if (roles.length !== 1) throw new AppError(503, 'EMPLOYEE role is not configured.');
@@ -220,7 +189,7 @@ class EmployeesRepository {
           `INSERT INTO users (email,password,role_id,status,employee_id,full_name)
            VALUES ($1,$2,$3,'IN_PROCESS',$4,$5)
            RETURNING id,email,role_id AS "roleId",status,employee_id AS "employeeId"`,
-          [employee.email, passwordHash, roles[0].id, employee.id, employee.full_name]);
+          [email, passwordHash, roles[0].id, employee.id, employee.full_name]);
         const account = { ...rows[0], role: 'EMPLOYEE' };
         await writeAudit(client, { actorId, entityType: 'users', entityId: account.id, action: 'CREATE', newValue: account });
         return account;

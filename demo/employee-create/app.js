@@ -179,7 +179,7 @@ function resetEmployeeForm() {
   $('#position-hint').textContent = 'Chọn một phòng ban để xem các vị trí đang hoạt động.';
   $('#department-summary').textContent = 'Chưa chọn phòng ban';
   $('#success-panel').hidden = true; $('#editor').hidden = false; $('#employee-fields').disabled = false;
-  state.busy = false; $('#create-button').textContent = 'Tạo hồ sơ và tài khoản →'; notice(''); addEducation();
+  state.busy = false; $('#create-button').textContent = 'Tạo hồ sơ →'; notice(''); addEducation();
 }
 function signOut() {
   state.token = null; state.user = null; state.positionRequest++;
@@ -251,15 +251,13 @@ function showCreated(data) {
   $('#success-description').textContent = `${data.fullName} · ${data.email}`;
   const summary = $('#success-summary'); summary.replaceChildren();
   const background = data;
-  const rows = [['Mã nhân viên', data.employeeCode], ['Trạng thái tài khoản', data.account?.status], ['Quãng đường đến công ty', `${data.distanceFromHomeKm} km`],
+  const rows = [['Mã nhân viên', data.employeeCode], ['Trạng thái hồ sơ', data.employmentStatus], ['Quãng đường đến công ty', `${data.distanceFromHomeKm} km`],
     ['Bằng cấp', `${background.educations?.length || 0}${data.backgroundStatus === 'PENDING_ACTIVATION' ? ' · chờ kích hoạt' : ''}`]];
   for (const [title, value] of rows) {
     const wrapper = document.createElement('div'), dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = title; dd.textContent = value ?? '—'; wrapper.append(dt, dd); summary.append(wrapper);
   }
   const warnings = [];
-  if (data.backgroundStatus === 'PENDING_ACTIVATION') warnings.push('Học vấn đã được lưu với trạng thái IN_PROCESS và sẽ chuyển sang ACTIVE khi tài khoản hoàn tất kích hoạt qua email.');
-  if (data.emailDelivery === 'FAILED') warnings.push('Hồ sơ đã được lưu nhưng gửi email thất bại. Không tạo lại hồ sơ này.');
-  if (data.accountCreated === false) warnings.push('Đã liên kết hồ sơ với tài khoản HR có sẵn, giữ nguyên quyền và mật khẩu.');
+  warnings.push('Hồ sơ đã lưu. Admin có thể cấp tài khoản đăng nhập riêng sau đó.');
   for (const education of background.educations || []) if (education.warning) warnings.push(education.warning);
   $('#success-warning').className = data.emailDelivery === 'FAILED' ? 'notice' : 'notice info';
   $('#success-warning').textContent = warnings.join('\n'); $('#success-warning').hidden = !warnings.length;
@@ -280,6 +278,6 @@ $('#employee-form').addEventListener('submit', async event => {
     showCreated(result.data);
   } catch (error) { if (state.token === token) { notice(error.message); $('#status').scrollIntoView({ behavior: 'smooth', block: 'center' }); } }
   finally {
-    state.busy = false; $('#employee-fields').disabled = false; $('#create-button').textContent = 'Tạo hồ sơ và tài khoản →';
+    state.busy = false; $('#employee-fields').disabled = false; $('#create-button').textContent = 'Tạo hồ sơ →';
   }
 });
