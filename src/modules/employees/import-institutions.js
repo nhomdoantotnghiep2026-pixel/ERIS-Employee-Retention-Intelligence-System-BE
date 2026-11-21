@@ -45,12 +45,12 @@ async function prepareImportInstitutions(rows,educationService,choices=new Map()
     educationKeys.add(key);
    }
    output[index]={...row,input,institutions,needsSelection:institutions.some(i=>i.status==='NEEDS_SELECTION')};
-  }catch(error){output[index]={row:row.row,status:'FAILED',statusCode:error.statusCode||400,message:error.message};}
+  }catch(error){output[index]={row:row.row,previewData:row.previewData??row.input,status:'FAILED',statusCode:error.statusCode||400,message:error.message};}
  }}
  await Promise.all(Array.from({length:Math.min(rows.length,3)},worker));return output;
 }
 function institutionPreview(rows){
- const results=rows.map(r=>({row:r.row,email:r.input?.email,status:!r.input?'FAILED':r.needsSelection?'NEEDS_REVIEW':'VALID',message:r.message,issue:r.issue,institutions:r.institutions||[]}));
+ const results=rows.map(r=>({row:r.row,email:r.input?.email??r.previewData?.email,employee:r.previewData??r.input??{},status:!r.input?'FAILED':r.needsSelection?'NEEDS_REVIEW':'VALID',message:r.message,issue:r.issue,institutions:r.institutions||[]}));
  return{total:results.length,valid:results.filter(r=>r.status==='VALID').length,failed:results.filter(r=>r.status==='FAILED').length,pending:results.filter(r=>r.status==='NEEDS_REVIEW').length,results};
 }
 module.exports={prepareImportInstitutions,parseInstitutionChoices,institutionPreview};

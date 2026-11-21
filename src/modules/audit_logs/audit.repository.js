@@ -1,5 +1,5 @@
 const { isDeepStrictEqual } = require('node:util');
-const tables = new Set(['employees', 'departments', 'positions', 'employee_educations', 'employee_work_experiences', 'surveys']);
+const tables = new Set(['employees', 'departments', 'positions', 'employee_educations', 'employee_work_experiences', 'employee_job_histories', 'surveys']);
 
 async function snapshot(client, table, id, lock = false) {
   if (!tables.has(table)) throw new Error('Unsupported audit entity');

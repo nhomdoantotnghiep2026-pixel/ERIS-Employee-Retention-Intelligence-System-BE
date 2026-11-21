@@ -50,7 +50,7 @@ class AttendanceImportService {
       }
       else if(!row.check_in||!row.check_out) { row.validation_status='INCOMPLETE';row.issues.push(issue('ATT-014','Both check_in and check_out are required.','INFO')); }
       else if(Date.parse(row.check_out)<=Date.parse(row.check_in))row.issues.push(issue('ATT-006','check_out must be after check_in.'));
-      if(row.check_in&&row.check_out&&(Date.parse(row.check_in)>now||Date.parse(row.check_out)>now))row.issues.push(issue('ATT-018','Future check-in/check-out is not allowed.'));
+      if(row.check_in&&row.check_out&&(Date.parse(row.check_in)>now||Date.parse(row.check_out)>now))row.issues.push(issue('ATT-018','The attendance date or time has not occurred yet. Import only attendance up to the current time in Vietnam.'));
       if(!row.issues.some(i=>i.severity==='ERROR') && row.check_in && row.check_out) {
         const duration=(Date.parse(row.check_out)-Date.parse(row.check_in))/R.MINUTE, p=R.policy(schedule.attendance_policy);
         if(duration>p.max_duration_minutes)row.issues.push(issue('ATT-010','Duration exceeds the configured maximum.'));
@@ -139,8 +139,9 @@ class AttendanceImportService {
   }
   async confirm(user,file,body={}) {
     await this.repo.actor(this.repo.pool,user.id,true);
-    R.object(body,['preview_token','choices','confirm_warnings','duplicate_strategy','confirm_complete']);
+    R.object(body,['preview_token','choices','confirm_warnings','duplicate_strategy','confirm_complete','skip_invalid']);
     const complete=this.completeness(body);
+    if(body.skip_invalid!==undefined&&typeof body.skip_invalid!=='boolean')R.fail('VALIDATION_ERROR','skip_invalid must be boolean.');
     if(body.duplicate_strategy!==undefined&&body.duplicate_strategy!=='SKIP')R.fail('VALIDATION_ERROR','Only SKIP duplicate strategy is supported.');
     if(body.confirm_warnings!==undefined&&typeof body.confirm_warnings!=='boolean')R.fail('VALIDATION_ERROR','confirm_warnings must be boolean.');
     const input=await parseWorkbook(file),choices=this.choices(body.choices,input),proof=this.verify(user,file,body.preview_token,{choices,complete});
@@ -153,10 +154,13 @@ class AttendanceImportService {
       const rows=await this.build(db,input,choices,complete);
       for(const row of rows)row.selected_work_date=choices[row.excel_row]?.work_date;
       if(R.hash(rows)!==proof.viewHash)R.fail('STALE_PREVIEW','Attendance, employee, schedule, leave or holiday data changed; preview again.',409);
-      const included=rows.filter(r=>!r.excluded&&!['NO_DATA','INCOMPLETE'].includes(r.validation_status));
+      const candidates=rows.filter(r=>!r.excluded&&!['NO_DATA','INCOMPLETE'].includes(r.validation_status));
+      const invalid=row=>row.validation_status==='ERROR'||row.issues.some(i=>i.severity==='ERROR'||i.requires_resolution);
+      const included=body.skip_invalid?candidates.filter(row=>!invalid(row)):candidates;
+      if(body.skip_invalid&&!included.some(row=>row.action==='INSERT'))R.fail('NO_VALID_ROWS','No valid attendance rows are available to save.',409);
       if(included.some(r=>r.validation_status==='ERROR'||r.issues.some(i=>i.requires_resolution)))R.fail('UNRESOLVED_ROWS','Resolve or exclude invalid rows before confirming.',409);
       if(included.some(r=>r.issues.some(i=>i.severity==='WARNING'))&&!body.confirm_warnings)R.fail('WARNINGS_UNCONFIRMED','HR must acknowledge preview warnings.',409);
-      const result={status:'CONFIRMED',inserted:0,skipped:0,excluded:rows.length-included.length,rows:[]};
+      const result={status:'CONFIRMED',inserted:0,skipped:0,skipped_invalid:body.skip_invalid?candidates.filter(invalid).length:0,excluded:rows.length-included.length,rows:[]};
       for(const row of [...included].sort((a,b)=>a.employee_id-b.employee_id||a.work_date.localeCompare(b.work_date)||a.excel_row-b.excel_row)){
         if(row.file_duplicate){result.skipped++;result.rows.push({excel_row:row.excel_row,action:'SKIP'});continue;}
         await this.repo.lockKey(db,row.employee_id,row.work_date);

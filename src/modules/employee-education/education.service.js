@@ -28,7 +28,7 @@ class EducationService {
   async listAll(actorId) { return {data:await this.repository.listAllForHr(actorId)}; }
   async listOwn(actorId) { return {data:await this.repository.listOwn(actorId)}; }
   async list(actorId, employeeId) {
-    return this.repository.withHrEmployee(actorId,employeeId,false,async repo => ({data:await repo.list(employeeId)}));
+    return this.repository.withHrEmployee(actorId,employeeId,false,async repo => ({data:await repo.list(employeeId,true)}));
   }
   async create(actorId, employeeId, data) {
     const input=await this.verifySchool(actorId,validateEducation(data));

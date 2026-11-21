@@ -80,7 +80,7 @@ class EmployeesService {
     if (!row) throw new AppError(404, 'No employee profile is linked to this user.');
     return { ...output(row), ...await this.employeesRepository.findBackground(row.id) };
   }
-  async checkCreateEligibility(actorId, employee, { profileOnly = false } = {}) {
+  async checkCreateEligibility(actorId, employee) {
     if(employee.departmentName!==undefined||employee.positionName!==undefined){await this.assertHr(actorId);employee=await this.employeesRepository.resolveImportedJob(employee);}
     if(employee.shiftType!==undefined||employee.workScheduleId!==undefined)employee=await this.employeesRepository.resolveImportedSchedule(employee);
     const checks = await this.employeesRepository.preflightCreate(actorId, employee);
@@ -88,26 +88,16 @@ class EmployeesService {
     if (checks.employeeCodeExists) throw new AppError(409, 'employee_code already exists.');
     if (checks.emailExists) throw new AppError(409, 'Email already has an employee profile.');
     if (checks.phoneExists) throw new AppError(409, 'Số điện thoại đã được sử dụng trong hồ sơ nhân viên khác.');
-    const accounts = profileOnly ? [] : checks.accounts || [];
-    if (accounts.length > 1) throw new AppError(409, 'Multiple accounts use this email.');
-    const existingAccount = accounts[0];
-    if (existingAccount && Number(existingAccount.id) === Number(actorId)) throw new AppError(403, 'Another HR must create your profile.');
-    if (existingAccount && (existingAccount.role !== 'HR' || existingAccount.employeeId != null || !['ACTIVE','IN_PROCESS'].includes(existingAccount.status))) {
-      throw new AppError(409, 'Existing account cannot be linked: only HR without an employee profile is supported.');
-    }
     if (!checks.activeDepartment) throw new AppError(404, 'Active department not found.');
     if (!checks.activePosition) throw new AppError(404, 'Active position not found.');
     if (Number(checks.positionDepartmentId) !== Number(employee.departmentId)) throw new AppError(400, 'Vị trí công việc không thuộc phòng ban đã chọn.');
-    if (!employee.email) throw new AppError(400, 'Email is required for the employee account.');
-    return existingAccount;
+    if (!employee.email) throw new AppError(400, 'Email is required for the employee profile.');
   }
   async createEmployee({ actorId, employee, distanceCache, auditContext }) {
     if(employee.departmentName!==undefined||employee.positionName!==undefined){await this.assertHr(actorId);employee=await this.employeesRepository.resolveImportedJob(employee);}
     if(employee.shiftType!==undefined||employee.workScheduleId!==undefined)employee=await this.employeesRepository.resolveImportedSchedule(employee);
-    const profileOnly = auditContext?.source === 'IMPORT';
-    const existingAccount = await this.checkCreateEligibility(actorId, employee, { profileOnly });
-    if (!profileOnly && !existingAccount) this.assertInvitationConfigured();
-    employee = await this.prepareBackground(actorId, employee, {allowUnverifiedInstitution:profileOnly});
+    await this.checkCreateEligibility(actorId, employee);
+    employee = await this.prepareBackground(actorId, employee, {allowUnverifiedInstitution:auditContext?.source === 'IMPORT'});
     // The cache belongs to one import request; no addresses or stale results are retained globally.
     const cacheKey = JSON.stringify([employee.address.trim(), employee.addressRefId || null]);
     if (distanceCache && !distanceCache.has(cacheKey)) {
@@ -120,12 +110,9 @@ class EmployeesService {
     if (calculation.status !== 'READY' || !Number.isFinite(calculation.distanceFromHomeKm) || calculation.distanceFromHomeKm < 0) {
       throw new AppError(422, 'Employee was not saved because distance could not be calculated: ' + calculation.reason);
     }
-    const passwordHash = profileOnly || existingAccount ? null : await hashPassword(this.initialPassword);
     const created = await this.employeesRepository.createWithAccount(
-      { ...employee, distanceFromHomeKm: calculation.distanceFromHomeKm }, passwordHash, actorId, auditContext);
-    if (profileOnly) return { ...output(created.employee, calculation), initialJobHistory: created.initialJobHistory };
-    if (created.accountCreated === false) return { ...output(created.employee, calculation), account: created.account, accountCreated: false, initialJobHistory: created.initialJobHistory };
-    return { ...output(created.employee, calculation), initialJobHistory: created.initialJobHistory, ...await this.sendAccountInvitation(created.account) };
+      { ...employee, distanceFromHomeKm: calculation.distanceFromHomeKm }, null, actorId, auditContext);
+    return { ...output(created.employee, calculation), initialJobHistory: created.initialJobHistory };
   }
 
   assertInvitationConfigured() {
@@ -166,7 +153,7 @@ class EmployeesService {
       emailDelivery = 'FAILED';
     }
     return { account, emailDelivery,
-      ...(emailDelivery === 'FAILED' ? { warning: 'Profile and account saved. Email delivery failed; do not create again. HR can provide the configured temporary password securely; first login will send the activation OTP.' } : {}) };
+      ...(emailDelivery === 'FAILED' ? { warning: 'Account saved, but the invitation email could not be sent. Do not create the account again. Contact an administrator to restore email delivery and help the employee complete activation.' } : {}) };
 
   }
 

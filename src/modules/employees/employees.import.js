@@ -56,8 +56,18 @@ function identifyField(error, headers) {
   return undefined;
 }
 
-function failedRow(row, error, source) {
-  return { row, status: 'FAILED', statusCode: error.statusCode || 400, message: error.message,
+function previewCells(row,headers){
+  return Object.fromEntries(headers.map((field,index)=>{
+    const cell=row.getCell(index+1),value=cell.value;
+    if(value instanceof Date)return[field,Number.isFinite(value.getTime())?value.toISOString().slice(0,10):cell.text];
+    if(value&&typeof value==='object')return[field,value.formula?'='+value.formula:cell.text];
+    if(field==='educations'&&typeof value==='string'){try{return[field,JSON.parse(value)];}catch{}}
+    return[field,value??null];
+  }));
+}
+
+function failedRow(row, error, source, previewData) {
+  return { row, previewData, status: 'FAILED', statusCode: error.statusCode || 400, message: error.message,
     issue: makeIssue(source.sheet, source.row ?? row, source.headers, identifyField(error, source.headers), error.message) };
 }
 
@@ -204,6 +214,7 @@ async function parseWorkbook(buffer, loadCatalog) {
     if (rowNumber === 1) return;
     if (!row.values.slice(1).some(v => v !== null && v !== undefined && v !== '')) return;
     let input = {};
+    const previewData=previewCells(row,headers);
     try {
       headers.forEach((field, index) => {
         let value = row.getCell(index + 1).value;
@@ -229,9 +240,9 @@ async function parseWorkbook(buffer, loadCatalog) {
       checkImportCode(input, codes);
       emails.add(input.email);
       phones.add(phoneKey(input.phone));
-      rows.push({ row: rowNumber, input, source });
+      rows.push({ row: rowNumber, input, source, previewData });
     } catch (error) {
-      rows.push(failedRow(rowNumber, error, source));
+      rows.push(failedRow(rowNumber, error, source, previewData));
     }
   });
   if (!rows.length || rows.length > 200) throw new AppError(400, 'File must contain between 1 and 200 employee rows.');
@@ -258,7 +269,7 @@ function readRelatedSheet(sheet, allowed, requiredHeaders, maxRows) {
         input[field] = value;
       }
     } catch (caught) { error = caught; }
-    records.push({ row: number, input, error });
+    records.push({ row: number, input, error, previewData:previewCells(row,headers) });
   });
   return { headers, records };
 }
@@ -276,7 +287,7 @@ async function parseRelatedSheets(sheets, loadCatalog) {
   const source = { sheet: 'Employees', headers };
   const emailKey = value => typeof value === 'string' ? value.trim().toLowerCase() : '';
   const knownEmails = new Set(employees.map(row => emailKey(row.input.email)).filter(Boolean));
-  const backgrounds = new Map([...knownEmails].map(email => [email, { educations: [], educationRows: [], errors: [] }]));
+  const backgrounds = new Map([...knownEmails].map(email => [email, { educations: [], educationRows: [], rawEducations: [], errors: [] }]));
   for (const [sheetName, key, rows] of [['Educations', 'educations', educations]]) {
     for (const row of rows) {
       const email = emailKey(row.input.email);
@@ -286,6 +297,8 @@ async function parseRelatedSheets(sheets, loadCatalog) {
           [makeIssue(sheetName, row.row, educationHeaders, 'email', message)]);
       }
       const background = backgrounds.get(email);
+      const {email:_originalEmail,...originalEducation}=row.previewData;
+      background.rawEducations.push(originalEducation);
       if (row.error) background.errors.push(row);
       else {
         const { email: _email, ...data } = row.input;
@@ -299,11 +312,12 @@ async function parseRelatedSheets(sheets, loadCatalog) {
   const seenCodes = new Set();
   return employees.map(row => {
     const background = backgrounds.get(emailKey(row.input.email));
+    const previewData={...row.previewData,educations:background?.rawEducations??[]};
     try {
       if (row.error) throw row.error;
       if (background?.errors.length) {
         const invalidEducation = background.errors[0];
-        return failedRow(row.row, invalidEducation.error, { sheet: 'Educations', row: invalidEducation.row, headers: educationHeaders });
+        return failedRow(row.row, invalidEducation.error, { sheet: 'Educations', row: invalidEducation.row, headers: educationHeaders },previewData);
       }
       const input = validateImportEmployee({ ...row.input, educations: background?.educations ?? [] }, resolveAssignment);
       if (seen.has(input.email)) throw new AppError(409, 'Duplicate email within workbook.');
@@ -311,16 +325,16 @@ async function parseRelatedSheets(sheets, loadCatalog) {
       checkImportCode(input, seenCodes);
       seen.add(input.email);
       seenPhones.add(phoneKey(input.phone));
-      return { row: row.row, input, source };
+      return { row: row.row, input, source, previewData };
     } catch (error) {
       const education = error.message.match(/^educations\[(\d+)\]:\s*(.*)/u);
       const educationRow = education && background?.educationRows[Number(education[1])];
       if (educationRow) {
         const detail = new AppError(error.statusCode || 400, education[2]);
-        const result = failedRow(row.row, detail, { sheet: 'Educations', row: educationRow, headers: educationHeaders });
+        const result = failedRow(row.row, detail, { sheet: 'Educations', row: educationRow, headers: educationHeaders },previewData);
         return { ...result, message: `Educations, row ${educationRow}: ${detail.message}` };
       }
-      return failedRow(row.row, error, source);
+      return failedRow(row.row, error, source, previewData);
     }
   });
 }
@@ -337,8 +351,8 @@ async function mapEmployeeRows(rows, handle, concurrency, fallbackMessage) {
         results[index] = await handle(row);
       } catch (error) {
         const failure = error.statusCode ? error : new AppError(500, fallbackMessage);
-        results[index] = row.source ? failedRow(row.row, failure, row.source)
-          : { row: row.row, status: 'FAILED', statusCode: failure.statusCode, message: failure.message };
+        results[index] = row.source ? failedRow(row.row, failure, row.source,row.previewData)
+          : { row: row.row, previewData:row.previewData, status: 'FAILED', statusCode: failure.statusCode, message: failure.message };
       }
     }
   }
