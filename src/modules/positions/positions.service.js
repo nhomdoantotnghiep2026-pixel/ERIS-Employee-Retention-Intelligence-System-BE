@@ -72,7 +72,7 @@ class PositionsService {
     }
 
     if (await this.positionsRepository.hasNonInactiveEmployees(positionId)) {
-      throw new AppError(409, 'Cannot deactivate a position while employees with employment_status other than INACTIVE are assigned to it.');
+      throw new AppError(409, 'Cannot delete this position because employees still use it. Assign another position to those employees or deactivate their profiles first.');
     }
 
     return this.positionsRepository.deactivate(positionId, actorId);
