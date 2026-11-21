@@ -464,6 +464,15 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
       const { rows } = await client.query('SELECT id, employment_status FROM employees WHERE id = $1 FOR UPDATE', [id]);
       if (!rows[0]) throw new AppError(404, 'Employee not found.');
       if (rows[0].employment_status === 'INACTIVE') throw new AppError(409, 'Employee is already inactive.');
+      const {rows:dates}=await client.query("SELECT to_char(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh','YYYY-MM-DD') AS today");
+      const today=dates[0].today;
+      const {rows:openHistories}=await client.query('SELECT id,start_date::text AS start_date FROM public.employee_job_histories WHERE employee_id=$1 AND end_date IS NULL ORDER BY id FOR UPDATE',[id]);
+      if(openHistories.some(history=>history.start_date>today))throw new AppError(409,'Cannot deactivate a profile with a job history starting in the future. Review the job history first.');
+      for(const history of openHistories){
+        const beforeHistory=await snapshot(client,'employee_job_histories',history.id,true);
+        await client.query('UPDATE public.employee_job_histories SET end_date=$2::date WHERE id=$1 AND end_date IS NULL',[history.id,today]);
+        await recordChange(client,actorId,'employee_job_histories',history.id,'UPDATE',beforeHistory,await snapshot(client,'employee_job_histories',history.id));
+      }
       const result = await client.query(
         `UPDATE employees SET employment_status = 'INACTIVE', updated_at = CURRENT_TIMESTAMP
          WHERE id = $1 RETURNING id, employee_code AS "employeeCode", employment_status AS "employmentStatus",

@@ -34,7 +34,7 @@ class EducationRepository {
       }
       const { rows: employees } = await client.query(`SELECT id, employment_status, to_char(date_of_birth,'YYYY-MM-DD') AS "dateOfBirth" FROM employees WHERE id=$1 FOR SHARE`, [employeeId]);
       if (!employees[0]) throw new AppError(404, 'Employee not found.');
-      if (employees[0].employment_status !== 'ACTIVE') throw new AppError(409, 'Employee profile must be ACTIVE.');
+      if (write && employees[0].employment_status !== 'ACTIVE') throw new AppError(409, 'Employee profile must be ACTIVE.');
       const result = await work(new EducationRepository(client, actorId), employees[0]);
       await client.query('COMMIT'); return result;
     } catch (error) {
@@ -50,9 +50,8 @@ class EducationRepository {
       const {rows:users}=await client.query(`SELECT u.status,r.name AS role FROM users u JOIN role r ON r.id=u.role_id WHERE u.id=$1 FOR SHARE OF u`,[actorId]);
       if(users[0]?.status!=='ACTIVE'||users[0]?.role!=='HR') throw new AppError(403,'Only ACTIVE HR can view employee education.');
       const {rows}=await client.query(`SELECT education.*, e.employee_code AS "employeeCode", e.full_name AS "fullName"
-        FROM (SELECT ${columns} FROM public.employee_educations WHERE status='ACTIVE') education
+        FROM (SELECT ${columns} FROM public.employee_educations WHERE status IN ('ACTIVE','IN_PROCESS')) education
         JOIN employees e ON e.id=education."employeeId"
-        WHERE e.employment_status = 'ACTIVE'
         ORDER BY education."employeeId" ASC, education."graduationYear" DESC NULLS LAST, education.id DESC`);
       await client.query('COMMIT'); return rows;
     } catch(error) { await client.query('ROLLBACK'); throw error; }
@@ -61,8 +60,7 @@ class EducationRepository {
   async activeEmployees() {
     const {rows}=await this.pool.query(`SELECT e.id,e.employee_code AS "employeeCode",e.full_name AS "fullName",
       to_char(e.date_of_birth,'YYYY-MM-DD') AS "dateOfBirth",e.employment_status AS "employmentStatus"
-      FROM employees e WHERE e.employment_status='ACTIVE'
-      ORDER BY e.id`);
+      FROM employees e WHERE e.employment_status='ACTIVE' ORDER BY e.id`);
     return rows;
   }
   async assertHr(actorId) {
