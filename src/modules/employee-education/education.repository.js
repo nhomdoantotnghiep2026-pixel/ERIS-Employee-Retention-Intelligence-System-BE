@@ -35,10 +35,6 @@ class EducationRepository {
       const { rows: employees } = await client.query(`SELECT id, employment_status, to_char(date_of_birth,'YYYY-MM-DD') AS "dateOfBirth" FROM employees WHERE id=$1 FOR SHARE`, [employeeId]);
       if (!employees[0]) throw new AppError(404, 'Employee not found.');
       if (employees[0].employment_status !== 'ACTIVE') throw new AppError(409, 'Employee profile must be ACTIVE.');
-      if (!write) {
-        const {rows:accounts}=await client.query("SELECT id FROM users WHERE employee_id=$1 AND status='ACTIVE' FOR SHARE",[employeeId]);
-        if(!accounts[0])throw new AppError(409,'Employee account must be ACTIVE to view education.');
-      }
       const result = await work(new EducationRepository(client, actorId), employees[0]);
       await client.query('COMMIT'); return result;
     } catch (error) {
@@ -57,7 +53,6 @@ class EducationRepository {
         FROM (SELECT ${columns} FROM public.employee_educations WHERE status='ACTIVE') education
         JOIN employees e ON e.id=education."employeeId"
         WHERE e.employment_status = 'ACTIVE'
-          AND EXISTS (SELECT 1 FROM users account WHERE account.employee_id=e.id AND account.status='ACTIVE')
         ORDER BY education."employeeId" ASC, education."graduationYear" DESC NULLS LAST, education.id DESC`);
       await client.query('COMMIT'); return rows;
     } catch(error) { await client.query('ROLLBACK'); throw error; }
@@ -67,7 +62,7 @@ class EducationRepository {
     const {rows}=await this.pool.query(`SELECT e.id,e.employee_code AS "employeeCode",e.full_name AS "fullName",
       to_char(e.date_of_birth,'YYYY-MM-DD') AS "dateOfBirth",e.employment_status AS "employmentStatus"
       FROM employees e WHERE e.employment_status='ACTIVE'
-      AND EXISTS (SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE') ORDER BY e.id`);
+      ORDER BY e.id`);
     return rows;
   }
   async assertHr(actorId) {

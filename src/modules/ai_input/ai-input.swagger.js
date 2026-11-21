@@ -4,7 +4,7 @@ const previewSchema={type:'object',additionalProperties:false,required:['periodS
 previewSchema.properties.supplementalFeatures.properties.Years_At_Company={type:'integer',minimum:0,maximum:102};
 function aiInputPaths({op,params,content}){
  return {
- '/api/ai/employees':{get:op('Nhân viên có thể chọn chạy thử AI (HR)','Hồ sơ và tài khoản đều ACTIVE. Không có nghĩa đã đủ 12 feature.')},
+ '/api/ai/employees':{get:op('Nhân viên có thể chọn chạy thử AI (HR)','Danh sách dựa trên hồ sơ ACTIVE. Mỗi hồ sơ được kiểm tra đủ 12 feature ở bước chuẩn bị dữ liệu.')},
  '/api/ai/employees/{employeeId}/snapshots':{get:op('Danh sách snapshot đã lưu của nhân viên (HR)','Trả các snapshot trong ai_input, feature, missingFeatures/invalidFeatures/outOfDomainFeatures; chỉ đọc.',{parameters:params})},
  '/api/ai/employees/{employeeId}/snapshots/{snapshotId}':{get:op('Xem một snapshot đã lưu (HR)','Không tạo hoặc sửa dữ liệu. Snapshot phải thuộc đúng employeeId.',{parameters:[...params,{in:'path',name:'snapshotId',required:true,schema:{type:'integer',minimum:1}}]})},
  '/api/ai/employees/{employeeId}/preview':{post:op('Kiểm tra và tạo snapshot khi đủ 12 feature (HR)','Tính giờ thực tế và điểm khảo sát trong kỳ bắt đầu từ periodStart tới lúc chốt. Tăng ca lấy từ đầu năm. Thiếu dữ liệu trả missingFeatures và issues. Đủ dữ liệu lưu snapshot và audit, trả snapshotId.',{parameters:params,requestBody:content(previewSchema)})},

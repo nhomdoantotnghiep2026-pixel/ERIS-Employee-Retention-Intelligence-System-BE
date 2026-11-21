@@ -47,9 +47,9 @@ class PolicyDemoRepository {
       await client.query('BEGIN');
       await this.assertHr(client,actorId,true);
       const {rows:employees}=await client.query(`SELECT e.id FROM employees e WHERE e.id=ANY($1::int[])
-        AND e.employment_status='ACTIVE' AND EXISTS(SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')
+        AND e.employment_status='ACTIVE'
         ORDER BY e.id FOR SHARE OF e`,[employeeIds]);
-      if (employees.length!==employeeIds.length) throw new AppError(409,'Mỗi nhân viên được chọn phải tồn tại và có hồ sơ/tài khoản ACTIVE.');
+      if (employees.length!==employeeIds.length) throw new AppError(409,'Mỗi nhân viên được chọn phải tồn tại và có hồ sơ ACTIVE.');
       const policies=[];
       for(const policy of DEMO_POLICIES) {
         await client.query(`INSERT INTO retention_policies(code,name,description,target_factor,status)

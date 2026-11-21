@@ -10,8 +10,8 @@ class AiRepository extends AiInputRepository {
       await client.query('BEGIN');
       await this.assertHr(actorId,client,true);
       const employeeId=preview.employee.id;
-      const active=await client.query(`SELECT e.id,u.id AS user_id FROM employees e JOIN users u ON u.employee_id=e.id
-        WHERE e.id=$1 AND e.employment_status='ACTIVE' AND u.status='ACTIVE' FOR SHARE OF e,u`,[employeeId]);
+      const active=await client.query(`SELECT e.id FROM employees e
+        WHERE e.id=$1 AND e.employment_status='ACTIVE' FOR SHARE OF e`,[employeeId]);
       if(!active.rows.length) throw new AppError(409,'Nhân viên không còn ACTIVE; không lưu kết quả.');
       const snapshot={id:preview.snapshotId};
       if(!snapshot.id)throw new AppError(409,'Phải tạo hoặc chọn snapshot trước khi lưu dự đoán.');

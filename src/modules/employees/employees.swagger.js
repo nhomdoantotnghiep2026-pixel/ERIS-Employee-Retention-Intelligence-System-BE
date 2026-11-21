@@ -137,7 +137,7 @@ employeesPaths['/api/employees/{id}'].delete = {
 };
 employeesPaths['/api/employees/import'] = {
   post: {
-    tags: ['Employees'], summary: 'Import Excel tạo hồ sơ và tài khoản nhân viên (HR)',
+    tags: ['Employees'], summary: 'Import Excel tạo hồ sơ nhân viên (HR)',
     description: 'Upload một file .xlsx, tối đa 5 MB và 200 dòng, chỉ một sheet có dữ liệu. Dòng đầu là tên cột giống JSON tạo thủ công. Bắt buộc đủ 11 cột và giá trị: fullName, email, phone, dateOfBirth, gender, address, departmentId, positionId, hireDate, employmentType, currentSalary. Không gửi employeeCode, distanceFromHomeKm. Ngày nhập dạng YYYY-MM-DD hoặc ô ngày Excel; phone phải là Text để giữ số 0 đầu. Không dùng công thức/hyperlink. Dùng chung validation và luồng tạo thủ công: kiểm tra trùng email, phòng ban/vị trí ACTIVE, lương > 0; chỉ lưu khi tính được distance; nếu không, dòng đó FAILED và không tạo hồ sơ/tài khoản. Tự tính distance, tạo tài khoản IN_PROCESS và gửi email. Xử lý tối đa 3 dòng đồng thời và giữ thứ tự kết quả theo file; dòng lỗi không hủy dòng thành công. Các địa chỉ giống hệt nhau dùng chung kết quả distance trong một lần import. Response có total, created, failed và results theo số dòng Excel. CREATED với emailDelivery FAILED vẫn đã lưu, không import lại dòng đó. Request xử lý đồng bộ và có thể mất vài phút với file lớn; giữ kết nối đến khi có kết quả.',
     security: [{ bearerAuth: [] }],
     requestBody: { required: true, content: { 'multipart/form-data': { schema: { type: 'object', required: ['file'], properties: { file: { type: 'string', format: 'binary' } } } } } },
@@ -198,7 +198,29 @@ employeesPaths['/api/employees/import'].post.description += ' Không cho phép t
 module.exports = { employeesPaths };
 
 // Current database omits past work experience. Both creation paths use education only.
-employeesPaths['/api/employees/import'].post.description = 'Upload .xlsx tối đa 5 MB, 200 nhân viên. Một sheet có 11 cột hồ sơ và educations dạng JSON Text; hoặc 2 sheet Employees và Educations, liên kết bằng email. Không còn cột/sheet WorkExperiences. Mỗi người có ít nhất một bằng cấp. Dùng cùng validation, tính khoảng cách và tạo tài khoản như tạo thủ công. Học vấn lưu IN_PROCESS và chuyển ACTIVE sau kích hoạt. Dòng lỗi không hủy dòng thành công. Nếu emailDelivery FAILED, hồ sơ đã lưu; không import lại.';
+employeesPaths['/api/employees/import'].post.description = 'Upload .xlsx tối đa 5 MB và 200 nhân viên. Một sheet có cột educations dạng JSON hoặc hai sheet Employees và Educations ghép bằng email. Mỗi dòng hợp lệ tạo hồ sơ ACTIVE, lưu bằng cấp và lịch sử HIRE. Admin có thể cấp tài khoản sau. Dòng lỗi không hủy dòng thành công.';
+employeesPaths['/api/employees/account-candidates'] = {
+  get: {
+    tags: ['Employees'],
+    summary: 'Liệt kê hồ sơ đủ điều kiện cấp tài khoản',
+    security: [{ bearerAuth: [] }],
+    responses: { 200: { description: 'Hồ sơ ACTIVE có email và chưa có tài khoản trùng hồ sơ hoặc email.' }, 403: { description: 'Yêu cầu ADMIN ACTIVE.' } }
+  }
+};
+employeesPaths['/api/employees/{id}/account'] = {
+  post: {
+    tags: ['Employees'],
+    summary: 'Cấp tài khoản EMPLOYEE từ hồ sơ đã có',
+    security: [{ bearerAuth: [] }],
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    responses: {
+      201: { description: 'Tài khoản IN_PROCESS đã được lưu. emailDelivery cho biết kết quả gửi lời mời.' },
+      403: { description: 'Yêu cầu ADMIN ACTIVE.' },
+      404: { description: 'Không tìm thấy hồ sơ ACTIVE.' },
+      409: { description: 'Hồ sơ thiếu email hoặc đã có tài khoản trùng.' }
+    }
+  }
+};
 employeesPaths['/api/employees/{id}'].get.description = 'Trả hồ sơ và educations. HR xem hồ sơ IN_PROCESS được xem học vấn ACTIVE hoặc IN_PROCESS; không trả bằng cấp INACTIVE.';
 employeesPaths['/api/employees/me'].get.description = 'Xem hồ sơ và educations ACTIVE của chính người đăng nhập.';
 for (const salary of [

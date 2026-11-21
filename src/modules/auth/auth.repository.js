@@ -150,17 +150,17 @@ class AuthRepository {
           await client.query(
             `UPDATE employees SET employment_status = 'ACTIVE', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
             [profile.id]);
+          const histories = new JobHistoriesRepository(client);
+          if (profile.departmentId != null && profile.positionId != null && !await histories.latest(profile.id)) {
+            await histories.insert(profile.id, {
+              departmentId: profile.departmentId,
+              positionId: profile.positionId,
+              startDate: profile.hireDate,
+              endDate: null
+            }, 'HIRE');
+          }
+          await new EmployeeBackgroundRepository(client).activate(profile.id);
         }
-        const histories = new JobHistoriesRepository(client);
-        if (profile.departmentId != null && profile.positionId != null && !await histories.latest(profile.id)) {
-          await histories.insert(profile.id, {
-            departmentId: profile.departmentId,
-            positionId: profile.positionId,
-            startDate: profile.hireDate,
-            endDate: null
-          }, 'HIRE');
-        }
-        await new EmployeeBackgroundRepository(client).activate(profile.id);
       }
       await client.query('COMMIT');
       return rows[0];

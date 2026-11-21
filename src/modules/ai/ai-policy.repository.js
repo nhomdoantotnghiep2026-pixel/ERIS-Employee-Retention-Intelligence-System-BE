@@ -8,8 +8,7 @@ class AiPolicyRepository {
   await this.aiRepository.assertHr(actorId,client);
   const result=await this.aiRepository.result(actorId,predictionId);
   const {rows}=await client.query(`SELECT p.id FROM prediction_results p
-    JOIN employees e ON e.id=p.employee_id WHERE p.id=$1 AND e.employment_status='ACTIVE'
-    AND EXISTS(SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')`,[predictionId]);
+    JOIN employees e ON e.id=p.employee_id WHERE p.id=$1 AND e.employment_status='ACTIVE'`,[predictionId]);
   if(!rows.length)throw new AppError(409,'Nhân viên không còn ACTIVE.');
   return result;
  }
@@ -32,9 +31,9 @@ class AiPolicyRepository {
    await client.query('BEGIN');
    await client.query('SELECT pg_advisory_xact_lock($1,$2)',[74129,predictionId]);
    await this.aiRepository.assertHr(actorId,client,true);
-   // Lock result, employee/account and catalogue before persisting. No AI/network call inside transaction.
-   const locked=await client.query(`SELECT p.id FROM prediction_results p JOIN employees e ON e.id=p.employee_id JOIN users u ON u.employee_id=e.id
-     WHERE p.id=$1 AND e.employment_status='ACTIVE' AND u.status='ACTIVE' FOR SHARE OF p,e,u`,[predictionId]);
+   // Lock result, employee and catalogue before persisting. No AI/network call inside transaction.
+   const locked=await client.query(`SELECT p.id FROM prediction_results p JOIN employees e ON e.id=p.employee_id
+     WHERE p.id=$1 AND e.employment_status='ACTIVE' FOR SHARE OF p,e`,[predictionId]);
    if(!locked.rows.length)throw new AppError(409,'Nhân viên không còn ACTIVE; không lưu đề xuất.');
    const policies=await this.policies(client,true);
    const generated=this.engine?this.engine.format(result,policies,choices):recommend(result,policies,body);

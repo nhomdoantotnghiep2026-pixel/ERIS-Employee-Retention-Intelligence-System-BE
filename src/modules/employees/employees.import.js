@@ -393,7 +393,7 @@ function registerEmployeeImport(router, authenticate, service) {
 
   router.post('/import/preview', authenticate, receiveWorkbook(async (rows, actorId, res) => {
     const checked=await mapEmployeeRows(rows,async row=>{
-      if(service.checkCreateEligibility)await service.checkCreateEligibility(actorId,row.input);
+      if(service.checkCreateEligibility)await service.checkCreateEligibility(actorId,row.input,{profileOnly:true});
       return row;
     },3,'Unable to validate employee.');
     res.set('Cache-Control','no-store');res.json(institutionPreview(checked));

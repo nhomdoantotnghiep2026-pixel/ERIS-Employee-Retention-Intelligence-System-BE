@@ -11,7 +11,7 @@ class AiInputRepository {
   }
   async employees(actorId) {
     await this.assertHr(actorId);
-    return (await this.pool.query(`SELECT e.id,e.employee_code AS "employeeCode",e.full_name AS "fullName" FROM employees e WHERE e.employment_status='ACTIVE' AND EXISTS(SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE') ORDER BY e.id`)).rows;
+    return (await this.pool.query(`SELECT e.id,e.employee_code AS "employeeCode",e.full_name AS "fullName" FROM employees e WHERE e.employment_status='ACTIVE' ORDER BY e.id`)).rows;
   }
   async read(employeeId,opts,today,capturedAt=new Date().toISOString()) {
     const client=await this.pool.connect();
@@ -25,8 +25,8 @@ class AiInputRepository {
         (SELECT count(*)::int FROM employee_job_histories h WHERE h.employee_id=e.id AND h.change_type='PROMOTION' AND h.start_date<=$2::date) AS promotions,
         NULL::numeric AS satisfaction
         FROM employees e LEFT JOIN departments d ON d.id=e.department_id WHERE e.id=$1 AND e.employment_status='ACTIVE'
-          AND EXISTS(SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.status='ACTIVE')`,[employeeId,today]);
-      if(!rows[0]) throw new AppError(404,'Nhân viên không tồn tại hoặc hồ sơ/tài khoản chưa ACTIVE.');
+         `,[employeeId,today]);
+      if(!rows[0]) throw new AppError(404,'Nhân viên không tồn tại hoặc hồ sơ chưa ACTIVE.');
       rows[0].satisfaction=await periodSatisfaction(client,employeeId,capturedAt,opts.periodStart);
       const period=(await client.query(`WITH schedule AS (
         SELECT s.working_days FROM (${scheduleSql('$1::integer','$2::date')}) s WHERE s.status='ACTIVE'

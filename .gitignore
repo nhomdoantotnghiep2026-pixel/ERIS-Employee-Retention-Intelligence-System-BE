@@ -3,7 +3,8 @@ node_modules/
 .auth-inprocess-test-session.json
 *.log
 coverage/
-docs/
+docs/*
+!docs/backend-sequences.md
 
 
 .env.vps-backup

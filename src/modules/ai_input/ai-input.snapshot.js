@@ -27,7 +27,7 @@ function snapshotData(row,metadata=null){
   issues:outOfDomainFeatures.length?['Employee_Satisfaction_Score ngoài thang khảo sát 1–5; giữ nguyên giá trị snapshot để test model demo, không quy đổi.']:[]};
 }
 async function assertEmployee(client,employeeId,lock=false){
- const {rows}=await client.query(`SELECT e.id,u.id AS user_id FROM employees e JOIN users u ON u.employee_id=e.id WHERE e.id=$1 AND e.employment_status='ACTIVE' AND u.status='ACTIVE' ${lock?'FOR SHARE OF e,u':''}`,[employeeId]);
- if(!rows.length)throw new AppError(404,'Nhân viên không tồn tại hoặc hồ sơ/tài khoản chưa ACTIVE.');
+ const {rows}=await client.query(`SELECT e.id FROM employees e WHERE e.id=$1 AND e.employment_status='ACTIVE' ${lock?'FOR SHARE OF e':''}`,[employeeId]);
+ if(!rows.length)throw new AppError(404,'Nhân viên không tồn tại hoặc hồ sơ chưa ACTIVE.');
 }
 module.exports={assertEmployee,snapshotData,INSERT_COLUMNS};

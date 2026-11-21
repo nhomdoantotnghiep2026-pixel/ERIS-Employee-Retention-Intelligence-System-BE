@@ -80,7 +80,7 @@ class EmployeesService {
     if (!row) throw new AppError(404, 'No employee profile is linked to this user.');
     return { ...output(row), ...await this.employeesRepository.findBackground(row.id) };
   }
-  async checkCreateEligibility(actorId, employee) {
+  async checkCreateEligibility(actorId, employee, { profileOnly = false } = {}) {
     if(employee.departmentName!==undefined||employee.positionName!==undefined){await this.assertHr(actorId);employee=await this.employeesRepository.resolveImportedJob(employee);}
     if(employee.shiftType!==undefined||employee.workScheduleId!==undefined)employee=await this.employeesRepository.resolveImportedSchedule(employee);
     const checks = await this.employeesRepository.preflightCreate(actorId, employee);
@@ -88,7 +88,7 @@ class EmployeesService {
     if (checks.employeeCodeExists) throw new AppError(409, 'employee_code already exists.');
     if (checks.emailExists) throw new AppError(409, 'Email already has an employee profile.');
     if (checks.phoneExists) throw new AppError(409, 'Số điện thoại đã được sử dụng trong hồ sơ nhân viên khác.');
-    const accounts = checks.accounts || [];
+    const accounts = profileOnly ? [] : checks.accounts || [];
     if (accounts.length > 1) throw new AppError(409, 'Multiple accounts use this email.');
     const existingAccount = accounts[0];
     if (existingAccount && Number(existingAccount.id) === Number(actorId)) throw new AppError(403, 'Another HR must create your profile.');
@@ -104,12 +104,10 @@ class EmployeesService {
   async createEmployee({ actorId, employee, distanceCache, auditContext }) {
     if(employee.departmentName!==undefined||employee.positionName!==undefined){await this.assertHr(actorId);employee=await this.employeesRepository.resolveImportedJob(employee);}
     if(employee.shiftType!==undefined||employee.workScheduleId!==undefined)employee=await this.employeesRepository.resolveImportedSchedule(employee);
-    const existingAccount = await this.checkCreateEligibility(actorId, employee);
-    if (!existingAccount && (typeof this.initialPassword !== 'string' || this.initialPassword.length < 8 || Buffer.byteLength(this.initialPassword) > 72)) {
-      throw new AppError(503, 'INITIAL_USER_PASSWORD must contain at least 8 characters and at most 72 UTF-8 bytes.');
-    }
-    if (!existingAccount && (!this.mailTransporter || !this.mailFrom)) throw new AppError(503, 'Account email delivery is not configured.');
-    employee = await this.prepareBackground(actorId, employee, {allowUnverifiedInstitution:auditContext?.source==='IMPORT'});
+    const profileOnly = auditContext?.source === 'IMPORT';
+    const existingAccount = await this.checkCreateEligibility(actorId, employee, { profileOnly });
+    if (!profileOnly && !existingAccount) this.assertInvitationConfigured();
+    employee = await this.prepareBackground(actorId, employee, {allowUnverifiedInstitution:profileOnly});
     // The cache belongs to one import request; no addresses or stale results are retained globally.
     const cacheKey = JSON.stringify([employee.address.trim(), employee.addressRefId || null]);
     if (distanceCache && !distanceCache.has(cacheKey)) {
@@ -122,15 +120,44 @@ class EmployeesService {
     if (calculation.status !== 'READY' || !Number.isFinite(calculation.distanceFromHomeKm) || calculation.distanceFromHomeKm < 0) {
       throw new AppError(422, 'Employee was not saved because distance could not be calculated: ' + calculation.reason);
     }
-    const passwordHash = existingAccount ? null : await hashPassword(this.initialPassword);
+    const passwordHash = profileOnly || existingAccount ? null : await hashPassword(this.initialPassword);
     const created = await this.employeesRepository.createWithAccount(
       { ...employee, distanceFromHomeKm: calculation.distanceFromHomeKm }, passwordHash, actorId, auditContext);
+    if (profileOnly) return { ...output(created.employee, calculation), initialJobHistory: created.initialJobHistory };
     if (created.accountCreated === false) return { ...output(created.employee, calculation), account: created.account, accountCreated: false, initialJobHistory: created.initialJobHistory };
+    return { ...output(created.employee, calculation), initialJobHistory: created.initialJobHistory, ...await this.sendAccountInvitation(created.account) };
+  }
+
+  assertInvitationConfigured() {
+    if (typeof this.initialPassword !== 'string' || this.initialPassword.length < 8 || Buffer.byteLength(this.initialPassword) > 72) {
+      throw new AppError(503, 'INITIAL_USER_PASSWORD must contain at least 8 characters and at most 72 UTF-8 bytes.');
+    }
+    if (!this.mailTransporter || !this.mailFrom) throw new AppError(503, 'Account email delivery is not configured.');
+  }
+
+  async assertAccountAdmin(actorId) {
+    const actor = await this.employeesRepository.findUserRoleById(actorId);
+    if (actor?.role !== 'ADMIN') throw new AppError(403, 'Only ACTIVE ADMIN can provision employee accounts.');
+  }
+
+  async listAccountCandidates(actorId) {
+    await this.assertAccountAdmin(actorId);
+    return this.employeesRepository.listAccountCandidates();
+  }
+
+  async provisionEmployeeAccount(actorId, employeeId) {
+    await this.assertAccountAdmin(actorId);
+    this.assertInvitationConfigured();
+    const account = await this.employeesRepository.provisionAccount(actorId, employeeId, await hashPassword(this.initialPassword));
+    return this.sendAccountInvitation(account);
+  }
+
+  async sendAccountInvitation(account) {
     let emailDelivery = 'SENT';
     try {
       const delivery = await this.mailTransporter.sendMail({
-        from: this.mailFrom, to: created.account.email, subject: 'ERIS account setup',
-        text: 'Your ERIS employee account has been created.\nEmail: ' + created.account.email +
+        from: this.mailFrom, to: account.email, subject: 'ERIS account setup',
+        text: 'Your ERIS employee account has been created.\nEmail: ' + account.email +
           '\nTemporary password: ' + this.initialPassword +
           '\nSign in to receive an email OTP, then verify the OTP and choose a new password. Your account remains IN_PROCESS until setup is complete.'
       });
@@ -138,7 +165,7 @@ class EmployeesService {
     } catch {
       emailDelivery = 'FAILED';
     }
-    return { ...output(created.employee, calculation), account: created.account, initialJobHistory: created.initialJobHistory, emailDelivery,
+    return { account, emailDelivery,
       ...(emailDelivery === 'FAILED' ? { warning: 'Profile and account saved. Email delivery failed; do not create again. HR can provide the configured temporary password securely; first login will send the activation OTP.' } : {}) };
 
   }
