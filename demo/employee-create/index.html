@@ -12,7 +12,7 @@
   <header class="topbar"><a class="brand" href="/employee-create-demo">ERIS <span>NHÂN SỰ</span></a><div id="session" hidden><span id="actor-name"></span><button id="logout" class="quiet" type="button">Đổi tài khoản</button></div><span class="badge">BẢN THỬ NGHIỆM</span></header>
   <main>
     <section id="auth-panel" class="login-layout">
-      <div><p class="eyebrow">HỒ SƠ NHÂN SỰ</p><h1>Một hồ sơ.<br>Đầy đủ thông tin.</h1><p class="intro">Tạo tài khoản, lưu học vấn, tính quãng đường từ nhà đến công ty.</p><div class="login-note">Chọn phòng ban trước. Hệ thống sẽ hiển thị đúng những vị trí thuộc phòng ban đó.</div></div>
+      <div><p class="eyebrow">HỒ SƠ NHÂN SỰ</p><h1>Một hồ sơ.<br>Đầy đủ thông tin.</h1><p class="intro">Tạo hồ sơ, lưu học vấn, tính quãng đường từ nhà đến công ty.</p><div class="login-note">Chọn phòng ban trước. Hệ thống sẽ hiển thị đúng những vị trí thuộc phòng ban đó.</div></div>
       <div class="card login-card"><h2>Đăng nhập HR</h2><p class="muted">Dùng tài khoản HR đã kích hoạt.</p><div id="auth-message" class="notice" role="alert" hidden></div>
         <form id="login-form"><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">Đăng nhập</button></form>
         <details class="token-details"><summary>Dùng access token có sẵn</summary><form id="token-form"><label>Access token<textarea name="token" rows="3" autocomplete="off" required placeholder="Dán access token của HR"></textarea></label><button type="submit" class="secondary">Kết nối</button></form></details>
@@ -28,7 +28,7 @@
             <section class="card"><div class="section-title"><span class="step">01</span><div><h2>Thông tin cá nhân</h2><p class="muted">Các trường có dấu * là bắt buộc.</p></div></div><div class="fields">
               <label>Mã nhân viên *<input name="employeeCode" required maxlength="50" pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,49}" placeholder="NV-001"></label>
               <label class="full">Họ và tên *<input name="fullName" required maxlength="150" placeholder="Nguyễn Văn A"></label>
-              <label>Email tài khoản *<input name="email" type="email" required maxlength="255" placeholder="nhanvien@congty.com"><small>Dùng để gửi thông tin kích hoạt tài khoản.</small></label>
+              <label>Email nhân viên *<input name="email" type="email" required maxlength="255" placeholder="nhanvien@congty.com"><small>Admin dùng email này để cấp tài khoản riêng sau khi hồ sơ được lưu.</small></label>
               <label>Số điện thoại *<input name="phone" type="tel" required maxlength="30" placeholder="0901234567"></label>
               <label>Ngày sinh *<input name="dateOfBirth" type="date" required></label>
               <label>Giới tính *<select name="gender" required><option value="">Chọn giới tính</option><option value="MALE">Nam</option><option value="FEMALE">Nữ</option><option value="OTHER">Khác</option></select></label>
@@ -43,10 +43,10 @@
             </div></section>
             <section class="card"><div class="section-title"><span class="step">03</span><div><h2>Địa chỉ nhà</h2><p class="muted">Quãng đường sẽ được tính tự động khi lưu hồ sơ.</p></div></div><label>Số nhà, đường, phường/xã, tỉnh/thành phố *<div class="autocomplete"><input id="address" name="address" required maxlength="1000" placeholder="Nhập ít nhất 3 ký tự để tìm địa chỉ" autocomplete="off"><div id="address-results" class="suggestions" role="listbox" hidden></div></div></label><p id="address-hint" class="field-note" role="status">Chọn gợi ý có số nhà, hoặc nhập địa chỉ đầy đủ để hệ thống xác định.</p></section>
             <section class="card"><div class="section-title"><span class="step">04</span><div><h2>Học vấn</h2><p class="muted">Ít nhất một bằng cấp. Chọn trường từ danh sách gợi ý.</p></div></div><div id="education-list"></div><button id="add-education" type="button" class="secondary">＋ Thêm bằng cấp</button></section>
-            <div class="submit-row"><p>Hồ sơ mới sẽ chờ kích hoạt tài khoản qua email.</p><button id="create-button" type="submit" class="primary">Tạo hồ sơ và tài khoản →</button></div>
+            <div class="submit-row"><p>Hồ sơ được lưu ngay. Tài khoản do Admin cấp riêng.</p><button id="create-button" type="submit" class="primary">Tạo hồ sơ →</button></div>
           </fieldset>
         </form>
-        <aside><div class="card guide"><p class="eyebrow">TRƯỚC KHI LƯU</p><h3>Thông tin hồ sơ mới</h3><ol><li>Hồ sơ và tài khoản chờ kích hoạt</li><li>Bằng cấp lưu với IN_PROCESS</li><li>Quãng đường được tính khi tạo</li></ol><hr><p>Khi tài khoản kích hoạt qua email, học vấn đang IN_PROCESS sẽ chuyển sang ACTIVE.</p><p>Nếu thông tin chưa hợp lệ hoặc chưa tính được quãng đường, hồ sơ sẽ chưa được lưu.</p><p id="department-summary" class="selection-summary">Chưa chọn phòng ban</p></div></aside>
+        <aside><div class="card guide"><p class="eyebrow">TRƯỚC KHI LƯU</p><h3>Thông tin hồ sơ mới</h3><ol><li>Hồ sơ ACTIVE, chưa tự tạo tài khoản</li><li>Bằng cấp lưu với ACTIVE</li><li>Quãng đường được tính khi tạo</li></ol><hr><p>Admin cấp tài khoản sau khi lưu hồ sơ; nhân viên nhận email hướng dẫn xác minh.</p><p>Nếu thông tin chưa hợp lệ hoặc chưa tính được quãng đường, hồ sơ sẽ chưa được lưu.</p><p id="department-summary" class="selection-summary">Chưa chọn phòng ban</p></div></aside>
       </div>
     </section>
   </main>
