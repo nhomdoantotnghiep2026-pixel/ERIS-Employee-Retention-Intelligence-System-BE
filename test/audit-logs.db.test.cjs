@@ -9,7 +9,7 @@ const { WorkExperiencesRepository } = require('../src/modules/work-experiences/w
 const { WorkExperiencesService } = require('../src/modules/work-experiences/work-experiences.service');
 const { SurveysRepository } = require('../src/modules/surveys/surveys.repository');
 const { SurveysService } = require('../src/modules/surveys/surveys.service');
-const { processEmployeeRows } = require('../src/modules/employees/employees.import');
+const { processEmployeeRows } = require('../src/modules/employees/services/employees.import');
 
 test('Audit nghiệp vụ trên PostgreSQL TEMP: đủ nhóm, diff/no-op, quyền, rollback, import', async () => {
   const client = await databasePool.connect();

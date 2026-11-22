@@ -27,5 +27,5 @@ const scope={...object({from:{type:'string',format:'date'},to:{type:'string',for
 for(const action of ['preview','confirm'])attendancePaths[base+'/reconcile/'+action]={post:op('HR '+action+'s HOLIDAY / ON_LEAVE / DAY_OFF for selected employees and dates',{
  description:'Completed shifts on or after hire. HOLIDAY takes priority. ON_LEAVE applies to scheduled workdays. Actual work is preserved. Existing ACTIVE records are preserved; cancel one before creating a replacement. Preview expires in 30 minutes.',
  requestBody:json({...object({scope,...(action==='confirm'?{preview_token:{type:'string'},confirm_warnings:{type:'boolean'}}:{})}),required:['scope',...(action==='confirm'?['preview_token']:[])]})})};
-Object.assign(attendancePaths,require('./attendance-legacy.swagger').legacyAttendancePaths);
+Object.assign(attendancePaths,require('./legacy/attendance-legacy.swagger').legacyAttendancePaths);
 module.exports={attendancePaths};

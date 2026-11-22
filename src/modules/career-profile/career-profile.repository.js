@@ -1,4 +1,4 @@
-const {transaction,writeAudit}=require('../audit_logs/audit.repository');
+const {transaction,writeAudit}=require('../audit_logs/repositories/audit.repository');
 const columns='id, employee_id AS "employeeId", career_aspiration AS "careerAspiration", goal_description AS "goalDescription", created_at AS "createdAt", updated_at AS "updatedAt", goal_change_reason AS "goalChangeReason", status';
 class CareerProfileRepository {
   constructor(pool) {this.pool=pool;}

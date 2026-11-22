@@ -1,7 +1,7 @@
 const { hashPassword } = require('../../common/utils/password');
 const { AppError } = require('../../common/errors/app-error');
 
-const { resolveEmployeeDistance } = require('../distance/address-resolution');
+const { resolveEmployeeDistance } = require('../distance/helpers/address-resolution');
 const { JobHistoriesRepository } = require('../job-histories/job-histories.repository');
 function output(row, calculation) {
   return { ...row, distanceFromHomeKm: row.distanceFromHomeKm == null ? null : Number(row.distanceFromHomeKm),

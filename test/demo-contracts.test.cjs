@@ -1,8 +1,8 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const ExcelJS=require('exceljs');
-const {parseWorkbook}=require('../src/modules/employees/employees.import');
-const {EmployeeBackgroundRepository}=require('../src/modules/employees/employee-background.repository');
+const {parseWorkbook}=require('../src/modules/employees/services/employees.import');
+const {EmployeeBackgroundRepository}=require('../src/modules/employees/repositories/employee-background.repository');
 const {validateRegisterHrInput}=require('../src/modules/auth/auth.validation');
 const {validateCreatePositionInput}=require('../src/modules/positions/positions.validation');
 

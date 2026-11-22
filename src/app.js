@@ -95,7 +95,7 @@ const { createWorkSchedulesRouter, createScheduleAssignmentsRouter } = require('
 const workSchedulesService=new WorkSchedulesService(new WorkSchedulesRepository(databasePool));
 app.use('/api/employees',createScheduleAssignmentsRouter({service:workSchedulesService,authenticate}));
 app.use('/api/work-schedules',createWorkSchedulesRouter({service:workSchedulesService,authenticate}));
-app.use('/api/surveys', require('./modules/surveys/surveys.dynamic').createDynamicSurveysRouter({ pool: databasePool, authenticate }));
+app.use('/api/surveys', createSurveysRouter({ surveysController, authenticate }));
 app.use('/api/users', createUsersRouter({ usersController, authenticate }));
 const { PolicyDemoRepository } = require('./modules/prediction_results/policy-demo.repository');
 const { createPolicyDemoRouter } = require('./modules/prediction_results/policy-demo.routes');
@@ -119,12 +119,12 @@ app.get('/health', (_request, response) => {
 
 const { createAttendanceService } = require('./modules/attendance/attendance.service');
 const { AttendanceRepository } = require('./modules/attendance/attendance.repository');
-const { AttendanceImportService } = require('./modules/attendance/attendance-import.service');
-const { AttendanceImportRepository } = require('./modules/attendance/attendance-import.repository');
-const { attendanceConfig } = require('./modules/attendance/attendance.config');
-const { CompanyLocationStore } = require('./modules/attendance/company-location.store');
-const { AttendanceCalendarStore } = require('./modules/attendance/attendance-calendar');
-const { LeaveRequestsRepository } = require('./modules/attendance/leave-requests.repository');
+const { AttendanceImportService } = require('./modules/attendance/services/attendance-import.service');
+const { AttendanceImportRepository } = require('./modules/attendance/repositories/attendance-import.repository');
+const { attendanceConfig } = require('./modules/attendance/helpers/attendance.config');
+const { CompanyLocationStore } = require('./modules/attendance/repositories/company-location.store');
+const { AttendanceCalendarStore } = require('./modules/attendance/repositories/attendance-calendar');
+const { LeaveRequestsRepository } = require('./modules/attendance/repositories/leave-requests.repository');
 const attendanceSettings = attendanceConfig();
 const companyLocationStore = new CompanyLocationStore({
   redisClient, ensureRedisConnection,
@@ -134,15 +134,17 @@ const companyLocationStore = new CompanyLocationStore({
 const attendanceCalendarStore = new AttendanceCalendarStore({ databasePool, materializeAttendance:false });
 const legacyAttendanceService = createAttendanceService(attendanceSettings, new AttendanceRepository(databasePool), undefined, companyLocationStore, attendanceCalendarStore, new LeaveRequestsRepository(databasePool));
 const attendanceService = new AttendanceImportService(new AttendanceImportRepository(databasePool));
+const { AttendanceController } = require('./modules/attendance/attendance.controller');
+const attendanceController = new AttendanceController(attendanceService);
 
 const companyDemoPath = require('node:path').join(__dirname, '../demo/company-location');
 app.get('/company-location-demo', (_req, res) => { res.set('Cache-Control', 'no-store'); res.sendFile(require('node:path').join(companyDemoPath, 'index.html')); });
 app.use('/company-location-demo/assets', express.static(companyDemoPath, { index: false, etag: false, setHeaders: res => res.set('Cache-Control', 'no-store') }));
-const {createHolidayRouter}=require('./modules/holidays/holidays');
+const {createHolidayRouter}=require('./modules/holidays/holidays.service');
 for(const prefix of ['/api/holidays','/api/attendance/holidays','/api/v1/attendance/holidays']) app.use(prefix,createHolidayRouter({pool:databasePool,authenticate}));
 for (const prefix of ['/api/v1/attendance','/api/attendance']) {
-  app.use(prefix, require('./modules/attendance/attendance-legacy.routes').createAttendanceLegacyRouter({service:legacyAttendanceService,authenticate,databasePool}));
-  app.use(prefix, require('./modules/attendance/attendance.routes').createAttendanceRouter({service:attendanceService,authenticate,databasePool}));
+  app.use(prefix, require('./modules/attendance/legacy/attendance-legacy.routes').createAttendanceLegacyRouter({service:legacyAttendanceService,authenticate,databasePool}));
+  app.use(prefix, require('./modules/attendance/attendance.routes').createAttendanceRouter({service:attendanceService,attendanceController,authenticate,databasePool}));
 }
 const path = require('node:path');
 for (const [route, directory] of [['/demo', 'portal'], ['/attendance-demo', 'attendance']]) {
@@ -152,11 +154,22 @@ for (const [route, directory] of [['/demo', 'portal'], ['/attendance-demo', 'att
 }
 const { AiRepository } = require('./modules/ai/ai.repository');
 const { AiService } = require('./modules/ai/ai.service');
-const { AiClient, aiConfig } = require('./modules/ai/ai.client');
+const { AiClient, aiConfig } = require('./modules/ai/providers/ai.client');
 const { createAiRouter } = require('./modules/ai/ai.routes');
 const aiRepository = new AiRepository(databasePool);
 const aiService = new AiService({ repository: aiRepository, client: new AiClient(aiConfig()) });
-app.use('/api/ai', createAiRouter({ service: aiService, repository: aiRepository, authenticate }));
+const { AiController } = require('./modules/ai/ai.controller');
+const { UnifiedAnalysis, OllamaProvider } = require('./modules/ai/services/ai-unified.service');
+const { E5Provider } = require('./modules/ai/providers/ai-e5.provider');
+const { AiPolicyRepository } = require('./modules/ai/repositories/ai-policy.repository');
+const { OpenAiPolicy } = require('./modules/ai/providers/ai-policy.openai');
+const aiPolicyRepository = new AiPolicyRepository(databasePool, aiRepository, new OpenAiPolicy());
+const aiController = new AiController({
+  service: aiService, repository: aiRepository, policyRepository: aiPolicyRepository,
+  unified: new UnifiedAnalysis(aiService, aiRepository, { provider: new OllamaProvider(), retriever: new E5Provider() }),
+  demo: new UnifiedAnalysis(aiService, aiRepository, { provider: new OllamaProvider(), retriever: null })
+});
+app.use('/api/ai', createAiRouter({ service: aiService, repository: aiRepository, aiController, policyRepository: aiPolicyRepository, authenticate }));
 app.get('/ai-analysis-demo', (_req,res) => { res.set('Cache-Control','no-store'); res.sendFile(require('node:path').join(__dirname,'../demo/portal/ai-analysis-demo.html')); });
 app.get('/ai-demo', (_req,res) => { res.set('Cache-Control','no-store'); res.sendFile(require('node:path').join(__dirname,'../demo/portal/ai-demo.html')); });
 
@@ -173,7 +186,7 @@ const leaveRecordsService = new LeaveRecordsService(new LeaveRecordsRepository(d
 app.use('/api', createLeaveRecordsRouter({ service: leaveRecordsService, authenticate }));
 app.get('/career-goals-demo', (_req,res) => {res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/career-goals/index.html'));});
 app.use('/career-goals-demo/assets', express.static(require('node:path').join(__dirname,'../demo/career-goals'),{index:false,etag:false,setHeaders:res=>res.set('Cache-Control','no-store')}));
-app.use('/api/policy-agent',require('./modules/policy-agent/policy-agent').router({pool:databasePool,authenticate}));
+app.use('/api/policy-agent',require('./modules/policy-agent/policy-agent.service').router({pool:databasePool,authenticate}));
 app.get('/policy-agent-demo',(_req,res)=>{res.set('Cache-Control','no-store');res.sendFile(require('node:path').join(__dirname,'../demo/policy-agent/index.html'));});
 app.use('/policy-agent-demo/assets',express.static(require('node:path').join(__dirname,'../demo/policy-agent'),{index:false,etag:false}));
 app.use(errorHandler);

@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { AppError } = require('../errors/app-error');
 const { env } = require('../../config/env');
-const { TOKEN_PURPOSE } = require('../../modules/auth/auth.constants');
+const { TOKEN_PURPOSE } = require('../../modules/auth/helpers/auth.constants');
 
 function authenticate(request, _response, next) {
   const authorization = request.get('authorization');

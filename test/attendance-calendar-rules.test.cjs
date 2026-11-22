@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateLeave } = require('../src/modules/attendance/attendance-calendar');
+const { validateLeave } = require('../src/modules/attendance/repositories/attendance-calendar');
 const { createAttendanceService } = require('../src/modules/attendance/attendance.service');
 
 test('ngày bắt đầu đơn nghỉ nhận mọi ngày trong tương lai theo giờ Việt Nam', () => {

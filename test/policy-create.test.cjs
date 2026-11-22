@@ -1,6 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {PolicyDemoRepository}=require('../src/modules/prediction_results/policy-demo.repository');
-const {validatePolicyCreate}=require('../src/modules/prediction_results/policy-create.validation');
+const {validatePolicyCreate}=require('../src/modules/prediction_results/helpers/policy-create.validation');
 const {createPolicyDemoRouter}=require('../src/modules/prediction_results/policy-demo.routes');
 const {errorHandler}=require('../src/common/middleware/error-handler');
 const valid=()=>({code:'RETENTION_WORKLOAD_REVIEW',name:'Rà soát khối lượng công việc',description:'HR trao đổi về phân bổ nhiệm vụ.\nKiểm tra lại sau 30 ngày.'});

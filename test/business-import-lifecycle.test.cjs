@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),Excel=require('exceljs');
-const {AttendanceImportService}=require('../src/modules/attendance/attendance-import.service');
+const {AttendanceImportService}=require('../src/modules/attendance/services/attendance-import.service');
 const {EmployeesRepository}=require('../src/modules/employees/employees.repository');
 const {EducationRepository}=require('../src/modules/employee-education/education.repository');
 test('partial attendance confirmation saves only safe rows; warnings, stale proof and strict mode remain protected',async()=>{

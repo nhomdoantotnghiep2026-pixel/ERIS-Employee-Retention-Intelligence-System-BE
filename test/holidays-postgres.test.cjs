@@ -1,6 +1,6 @@
 ﻿const test = require('node:test');
 const assert = require('node:assert/strict');
-const { AttendanceCalendarStore, validateHoliday } = require('../src/modules/attendance/attendance-calendar');
+const { AttendanceCalendarStore, validateHoliday } = require('../src/modules/attendance/repositories/attendance-calendar');
 const now = new Date('2026-11-08T03:00:00Z');
 const input = {name:'Holiday',start_date:'2026-11-08',end_date:'2026-11-10'};
 test('holiday range validation',()=>{

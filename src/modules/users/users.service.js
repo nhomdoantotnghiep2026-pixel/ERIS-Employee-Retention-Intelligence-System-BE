@@ -1,5 +1,5 @@
 const { AppError } = require('../../common/errors/app-error');
-const { USER_ROLE, UPDATABLE_HR_STATUS } = require('./users.constants');
+const { USER_ROLE, UPDATABLE_HR_STATUS } = require('./helpers/users.constants');
 
 class UsersService {
   constructor({ usersRepository, revokeUserSessions = async () => undefined }) {

@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {PolicyAgent,Provider,selection,validateOutput,router}=require('../src/modules/policy-agent/policy-agent');
+const {PolicyAgent,Provider,selection,validateOutput,router}=require('../src/modules/policy-agent/policy-agent.service');
 const {errorHandler}=require('../src/common/middleware/error-handler');
 const body=()=>({employeeId:1,from:'2026-11-01',to:'2026-11-18',surveyIds:[2],includeAttendance:true});
 function fixture(){

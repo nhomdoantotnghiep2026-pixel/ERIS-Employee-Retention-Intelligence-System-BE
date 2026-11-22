@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),ExcelJS=require('exceljs');
-const {HolidayService,createHolidayRouter,input,parse,workWarnings,leaveCalendar}=require('../src/modules/holidays/holidays');
+const {HolidayService,createHolidayRouter,input,parse,workWarnings,leaveCalendar}=require('../src/modules/holidays/holidays.service');
 async function file(rows,headers=['name','start_date','end_date','description']){const w=new ExcelJS.Workbook(),s=w.addWorksheet('Holidays');s.addRow(headers);rows.forEach(r=>s.addRow(r));return {originalname:'holidays.xlsx',buffer:Buffer.from(await w.xlsx.writeBuffer())};}
 test('holiday validation rejects identity override, invalid dates, reversed ranges and excessive length',()=>{
  const good={name:'Company day',start_date:'2026-11-18',end_date:'2026-11-18'};assert.equal(input(good).description,null);
@@ -42,7 +42,7 @@ test('TEMP PostgreSQL: HR API, preview/confirm/idempotency, calendar and part-ti
  const invalid=await file([['Valid new','2026-11-20','2026-11-20',''],['Bad overlap','2026-11-18','2026-11-19','']]);const invalidPreview=await service.import(1,invalid);assert.equal(invalidPreview.failed,1);await assert.rejects(service.import(1,invalid,true,invalidPreview.fingerprint),e=>e.statusCode===422&&e.details.rows.length===2);assert.equal((await c.query('SELECT count(*)::int AS n FROM holidays')).rows[0].n,2);
  const repeated=await service.import(1,await file([['Third','2026-11-20','2026-11-20',''],['Third','2026-11-20','2026-11-20','']]));assert.equal(repeated.valid,1);assert.equal(repeated.skipped,1);
  // Existing import preview renders warnings and uses the normal warning acknowledgment flow.
- const {AttendanceImportService}=require('../src/modules/attendance/attendance-import.service');
+ const {AttendanceImportService}=require('../src/modules/attendance/services/attendance-import.service');
  const refs={employees:(await c.query('SELECT * FROM employees')).rows,schedules:(await c.query('SELECT * FROM work_schedules')).rows};
  const attendance=new AttendanceImportService({references:async()=>refs,current:async()=>null,overlapping:async()=>[]},
    {clock:()=>new Date('2026-11-19T12:00:00+07:00')});

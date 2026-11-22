@@ -1,5 +1,5 @@
 const { AppError } = require('../../common/errors/app-error');
-const { UPDATABLE_HR_STATUS } = require('./users.constants');
+const { UPDATABLE_HR_STATUS } = require('./helpers/users.constants');
 
 function validateUserId(value) {
   const userId = Number(value);

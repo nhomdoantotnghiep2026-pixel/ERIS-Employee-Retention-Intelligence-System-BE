@@ -4,7 +4,7 @@ const {WorkSchedulesRepository}=require('../src/modules/work-schedules/work-sche
 const {WorkSchedulesService}=require('../src/modules/work-schedules/work-schedules.service');
 const {createWorkSchedulesRouter}=require('../src/modules/work-schedules/work-schedules.routes');
 const {AttendanceRepository}=require('../src/modules/attendance/attendance.repository');
-const {resolveSchedule}=require('../src/modules/attendance/attendance-schedule');
+const {resolveSchedule}=require('../src/modules/attendance/repositories/attendance-schedule');
 class Store{
  constructor(){this.value=null;this.fail=false;this.failCommit=false;}
  async get(){return structuredClone(this.value);}

@@ -1,4 +1,4 @@
-const { auditMutation, transaction } = require('../audit_logs/audit.repository');
+const { auditMutation, transaction } = require('../audit_logs/repositories/audit.repository');
 class DepartmentsRepository {
   constructor(databasePool) {
     this.databasePool = databasePool;

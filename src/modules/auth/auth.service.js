@@ -8,7 +8,7 @@ const {
   verifyRefreshToken
 } = require('../../common/utils/token');
 const { env } = require('../../config/env');
-const { OTP_PURPOSE, USER_STATUS } = require('./auth.constants');
+const { OTP_PURPOSE, USER_STATUS } = require('./helpers/auth.constants');
 
 class AuthService {
   constructor({ authRepository, mailTransporter, redisClient, ensureRedisConnection, initialPassword = process.env.INITIAL_USER_PASSWORD }) {

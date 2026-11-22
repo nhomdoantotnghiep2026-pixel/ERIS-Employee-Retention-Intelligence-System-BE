@@ -1,5 +1,5 @@
 const { env } = require('../../config/env');
-const { REFRESH_COOKIE_NAME } = require('./auth.constants');
+const { REFRESH_COOKIE_NAME } = require('./helpers/auth.constants');
 const {
   validateRegisterHrInput,
   validateChangePasswordInput,

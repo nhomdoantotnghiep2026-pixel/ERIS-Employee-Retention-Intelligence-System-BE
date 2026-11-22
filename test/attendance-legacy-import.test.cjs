@@ -1,7 +1,7 @@
 // Compatibility coverage for the retired importer; it is not mounted on the live router.
 const test=require('node:test'),assert=require('node:assert/strict');
 const ExcelJS=require('exceljs');
-const {HEADERS,parse,validate,processRows}=require('../src/modules/attendance/attendance.import');
+const {HEADERS,parse,validate,processRows}=require('../src/modules/attendance/services/attendance.import');
 const fixture=()=>({row:2,errors:[],data:{employee_id:'EMP009',attendance_date:'2025-01-02',shift_type:'DAY',attendance_status:'PRESENT',login_timestamp:'2025-01-02 08:00:00',logout_timestamp:'2025-01-02 18:00:00',total_hours_worked:9,late_arrival_mins:0,early_exit_mins:0,overtime_hours:1,leave_type:null}});
 test('accept total including OT; reject invalid dates, metrics, timestamps and status',()=>{
  assert.equal(validate(fixture()).errors.length,0);

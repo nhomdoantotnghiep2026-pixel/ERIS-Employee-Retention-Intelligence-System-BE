@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { databasePool } = require('../src/config/database');
 const { AuthRepository } = require('../src/modules/auth/auth.repository');
 const { validateRegisterHrInput } = require('../src/modules/auth/auth.validation');
-const { recordJobChange } = require('../src/modules/job-histories/job-histories.transition');
+const { recordJobChange } = require('../src/modules/job-histories/helpers/job-histories.transition');
 
 test('ADMIN tạo HR: tài khoản và hồ sơ IN_PROCESS liên kết, mã EMP theo ID', async () => {
   const client = await databasePool.connect();

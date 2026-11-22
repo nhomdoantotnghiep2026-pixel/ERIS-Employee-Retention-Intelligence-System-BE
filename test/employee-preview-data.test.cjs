@@ -1,6 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict'),Excel=require('exceljs');
-const {parseWorkbook}=require('../src/modules/employees/employees.import');
-const {prepareImportInstitutions,institutionPreview}=require('../src/modules/employees/import-institutions');
+const {parseWorkbook}=require('../src/modules/employees/services/employees.import');
+const {prepareImportInstitutions,institutionPreview}=require('../src/modules/employees/helpers/import-institutions');
 const base=['EMP001','Test Employee','test@example.com','0901234567','1990-01-01','MALE','12 Nguyen Hue','Engineering','Software Engineer','Junior','2024-01-01','FULL_TIME',15000000,'General'];
 const headers=['employee_code','fullName','email','phone','dateOfBirth','gender','address','departmentName','positionName','job_level','hireDate','employmentType','currentSalary','shift_type'];
 const degrees=[{educationLevel:'Bachelor',institution:'School A',graduationYear:2012},{educationLevel:'Master',institution:'School B',graduationYear:2015}];

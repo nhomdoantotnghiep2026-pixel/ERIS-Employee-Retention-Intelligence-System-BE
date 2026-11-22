@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {validateAgainstSchedule}=require('../src/modules/attendance/import-schedule.validation');
+const {validateAgainstSchedule}=require('../src/modules/attendance/helpers/import-schedule.validation');
 const {validateCreateScheduleInput,validateAssignmentInput,validateCreateIndividual,prepareScheduleUpdate}=require('../src/modules/work-schedules/work-schedules.validation');
 const schedule={id:1,name:'Mid shift',shift_type:'mid',start_time:'11:00:00',end_time:'20:00:00',break_start:'15:00:00',break_end:'16:00:00',working_days:[1,2,3,4,5],status:'ACTIVE'};
 function fixture(changes={}){return {errors:[],data:{employee_id:'EMP01',attendance_date:'2025-01-02',shift_type:'mid',attendance_status:'PRESENT',login_timestamp:'2025-01-02 11:00:00',logout_timestamp:'2025-01-02 20:00:00',total_hours_worked:8,overtime_hours:0,late_arrival_mins:0,early_exit_mins:0,...changes}};}

@@ -1,7 +1,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {AiInputRepository}=require('../src/modules/ai_input/ai-input.repository');
-const {build}=require('../src/modules/ai_input/ai-input.features');
+const {build}=require('../src/modules/ai_input/helpers/ai-input.features');
 
 test('repository assembles period attendance and YTD sources in one consistent transaction',async()=>{
  const queries=[];let released=false;

@@ -1,9 +1,9 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const R=require('../src/modules/attendance/attendance-import.rules');
-const {AttendanceImportService}=require('../src/modules/attendance/attendance-import.service');
-const {AttendanceImportRepository}=require('../src/modules/attendance/attendance-import.repository');
+const R=require('../src/modules/attendance/helpers/attendance-import.rules');
+const {AttendanceImportService}=require('../src/modules/attendance/services/attendance-import.service');
+const {AttendanceImportRepository}=require('../src/modules/attendance/repositories/attendance-import.repository');
 const {LeaveRecordsRepository}=require('../src/modules/leave-records/leave-records.repository');
-const Sources=require('../src/modules/attendance/attendance-sources.service');
+const Sources=require('../src/modules/attendance/services/attendance-sources.service');
 const secret='business-tests-stateless-preview-secret-12345';
 function fixture(){
  const state={holidays:[],leaves:[],attendance:[],overlaps:[],queries:[],writes:[],employee:{id:1,employee_code:'EMP001',full_name:'Employee',hire_date:'2026-11-01',work_schedule_id:1},schedule:{id:1,shift_type:'MID',status:'ACTIVE',start_time:'11:00:00',end_time:'20:00:00',break_start:'15:00:00',break_end:'16:00:00',working_days:[1,2,3,4,5]}};

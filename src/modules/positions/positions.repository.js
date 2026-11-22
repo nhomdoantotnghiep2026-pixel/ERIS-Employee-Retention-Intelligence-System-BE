@@ -1,4 +1,4 @@
-const { auditMutation, transaction } = require('../audit_logs/audit.repository');
+const { auditMutation, transaction } = require('../audit_logs/repositories/audit.repository');
 const { AppError } = require('../../common/errors/app-error');
 class PositionsRepository {
   constructor(databasePool) {

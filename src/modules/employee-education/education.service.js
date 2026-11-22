@@ -1,7 +1,7 @@
 const { validateEducation, validateGraduationYear } = require('./education.validation');
-const { createInstitutionSearch, createInstitutionResolver } = require('./institutions.service');
+const { createInstitutionSearch, createInstitutionResolver } = require('./services/institutions.service');
 const { AppError } = require('../../common/errors/app-error');
-const { assessEducationLevel } = require('./education-level-advice');
+const { assessEducationLevel } = require('./helpers/education-level-advice');
 class EducationService {
   constructor(repository, searchInstitutions = createInstitutionSearch(), resolveInstitution = createInstitutionResolver()) { this.repository = repository; this.searchInstitutions = searchInstitutions; this.resolveInstitution = resolveInstitution; }
   async verifySchool(actorId,input) {

@@ -1,6 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const ExcelJS=require('exceljs');
-const {parse}=require('../src/modules/leave-records/leave-records.import');
+const {parse}=require('../src/modules/leave-records/services/leave-records.import');
 const V=require('../src/modules/leave-records/leave-records.validation');
 test('strict whole-date input rejects hourly fields, spoofed creator, impossible dates and reversed dates',()=>{
  const base={employee_id:1,leave_type_id:1,start_date:'2026-11-16',end_date:'2026-11-16'};

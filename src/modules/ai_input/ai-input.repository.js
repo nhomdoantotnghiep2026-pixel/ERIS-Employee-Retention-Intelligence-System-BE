@@ -1,8 +1,8 @@
-const { periodSatisfaction } = require('../surveys/surveys.satisfaction');
+const { periodSatisfaction } = require('../surveys/surveys.repository');
 const { AppError } = require('../../common/errors/app-error');
-const { scheduleSql } = require('../attendance/attendance-schedule');
-const { FEATURES,valid } = require('./ai-input.features');
-const {assertEmployee,snapshotData,INSERT_COLUMNS}=require('./ai-input.snapshot');
+const { scheduleSql } = require('../attendance/repositories/attendance-schedule');
+const { FEATURES,valid } = require('./helpers/ai-input.features');
+const {assertEmployee,snapshotData,INSERT_COLUMNS}=require('./repositories/ai-input.snapshot');
 class AiInputRepository {
   constructor(pool){this.pool=pool;}
   async assertHr(actorId,client=this.pool,lock=false) {

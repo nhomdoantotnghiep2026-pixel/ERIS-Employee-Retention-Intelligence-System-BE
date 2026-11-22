@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {prepareImportInstitutions,parseInstitutionChoices,institutionPreview}=require('../src/modules/employees/import-institutions');
+const {prepareImportInstitutions,parseInstitutionChoices,institutionPreview}=require('../src/modules/employees/helpers/import-institutions');
 const {validateEducation}=require('../src/modules/employee-education/education.validation');
 const {EducationService}=require('../src/modules/employee-education/education.service');
 const row=(institution='Test University')=>({row:2,input:{email:'test@example.com',educations:[{educationLevel:'Bachelor',institution,graduationYear:2020}]}});
@@ -51,7 +51,7 @@ test('name-only import reaches background preparation without external verificat
 });
 test('HTTP preview reads only; import blocks unresolved schools before creating anyone and accepts HR choices',async t=>{
  const express=require('express'),Excel=require('exceljs');
- const {registerEmployeeImport}=require('../src/modules/employees/employees.import');
+ const {registerEmployeeImport}=require('../src/modules/employees/services/employees.import');
  let created=0;
  const candidates=[candidate('https://ror.org/012345678'),candidate('https://ror.org/123456789')];
  const service={assertHr:async()=>{},educationService:{searchInstitutions:async()=>({data:candidates})},
