@@ -7,17 +7,18 @@ const schema={type:'object',additionalProperties:false,required:['recommendation
 class OllamaProvider {
  constructor({url=process.env.OLLAMA_BASE_URL,model=process.env.OLLAMA_MODEL,key=process.env.OLLAMA_API_KEY,fetchImpl=fetch,timeoutMs=120000}={}){Object.assign(this,{url,model,key,fetchImpl,timeoutMs});}
  configured(){return !!(this.url&&this.model);}
- async generate(context,{numCtx=32768,numPredict=4096}={}){
+ async generate(context,{numCtx=32768,numPredict=4096,shortlist=false}={}){
   if(!this.configured())throw new AppError(503,'Configure OLLAMA_BASE_URL and OLLAMA_MODEL on the backend.');
   let endpoint;try{endpoint=new URL(this.url);if(!['http:','https:'].includes(endpoint.protocol)||endpoint.username||endpoint.password)throw Error();endpoint.pathname=endpoint.pathname.replace(/\/$/,'')+'/api/chat';}catch{throw new AppError(503,'Invalid OLLAMA_BASE_URL. Use the Ollama server base URL, without /api/chat.');}
-  let response;try{response=await this.fetchImpl(endpoint,{method:'POST',signal:AbortSignal.timeout(this.timeoutMs),headers:{'Content-Type':'application/json',...(this.key?{Authorization:'Bearer '+this.key}:{})},body:JSON.stringify({model:this.model,stream:false,format:schema,messages:[{role:'system',content:SYSTEM},{role:'user',content:JSON.stringify(context)}],options:{temperature:0,num_ctx:numCtx,num_predict:numPredict}})});}catch(e){throw new AppError(e.name==='TimeoutError'||e.name==='AbortError'?504:502,'Ollama is unavailable or timed out. No analysis was saved.');}
+  const instructions=shortlist?SYSTEM+' For each selected policy, cite only its matchedEvidenceId. Similarity is a ranking score, not a probability of effectiveness.':SYSTEM;
+  let response;try{response=await this.fetchImpl(endpoint,{method:'POST',redirect:'error',signal:AbortSignal.timeout(this.timeoutMs),headers:{'Content-Type':'application/json',...(this.key?{Authorization:'Bearer '+this.key}:{})},body:JSON.stringify({model:this.model,stream:false,format:schema,messages:[{role:'system',content:instructions},{role:'user',content:JSON.stringify(context)}],options:{temperature:0,num_ctx:numCtx,num_predict:numPredict}})});}catch(e){throw new AppError(e.name==='TimeoutError'||e.name==='AbortError'?504:502,'Ollama is unavailable or timed out.');}
   if(!response.ok)throw new AppError(response.status===429?503:502,'Ollama rejected the request. Check server authentication, model and capacity.');
   const text=await response.text();if(Buffer.byteLength(text)>1000000)throw new AppError(502,'Ollama response is too large.');
   try{const body=JSON.parse(text);if(body.done!==true||body.done_reason&&body.done_reason!=='stop'||typeof body.message?.content!=='string')throw Error();return JSON.parse(body.message.content);}catch{throw new AppError(502,'Ollama returned incomplete or invalid JSON.');}
  }
 }
 class UnifiedAnalysis {
- constructor(service,repository,{agent=new PolicyAgent(repository.pool),provider=new E5Provider()}={}){Object.assign(this,{service,repository,agent,provider});this.busy=new Set();}
+ constructor(service,repository,{agent=new PolicyAgent(repository.pool),provider=new E5Provider(),writer=new OllamaProvider()}={}){Object.assign(this,{service,repository,agent,provider,writer});this.busy=new Set();}
  async run(actor,employeeId,body){
   await this.repository.assertHr(actor);employeeId=id(employeeId);
   if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(k=>!['snapshotId','save','confirmExternalData','evidencePeriod'].includes(k))||body.confirmExternalData!==true||body.save!==undefined&&typeof body.save!=='boolean')throw new AppError(400,'Provide snapshotId, optional save and confirmExternalData=true for external policy ranking.');
@@ -73,7 +74,10 @@ class UnifiedAnalysis {
        [employeeId,period.start,period.end])).rows.map(row=>row.survey_id);
      selection={...base,surveyIds:surveys};
      const prepared=await this.agent.context(actor,selection,{compactAttendance:true});
-     result=await this.provider.rank(prepared.context);
+     const ranked=await this.provider.rank(prepared.context);
+     result=ranked.recommendations.length
+       ? await this.writeRecommendations(ranked.recommendations,prediction.model)
+       : ranked;
      if(result.recommendations.length){
       const fresh=await this.agent.context(actor,selection,{compactAttendance:true});
       if(fresh.fingerprint!==prepared.fingerprint)throw new AppError(409,'Evidence changed during analysis.');
@@ -85,11 +89,36 @@ class UnifiedAnalysis {
     }
    }
    await this.repository.assertHr(actor);
-   const policyAnalysis={...result,provider:this.provider.name,model:this.provider.model,selection,inputFingerprint,
+   const policyAnalysis={...result,provider:'E5_OLLAMA',model:this.writer.model??null,
+     rankingModel:this.provider.model,selection,inputFingerprint,
      generatedAt:new Date().toISOString(),requiresHrReview:true,autoApplied:false};
    const stored=body.save===true?await this.repository.save(actor,prediction.preview,prediction.model,policyAnalysis):null;
    return {...prediction,saved:!!stored,...stored,policyAnalysis};
   }finally{this.busy.delete(actor);}
+ }
+
+ async writeRecommendations(candidates,model){
+  const matches=new Map(candidates.map(item=>[String(item.policy.id),item]));
+  const evidence=new Map(candidates.map(item=>{
+   const source=item.evidence[0];
+   return [source.id,{id:source.id,source:source.source,text:item.evidenceText}];
+  }));
+  const context={
+   model:{riskLevel:model.riskLevel,score:model.score},
+   policies:candidates.map(({policy,similarity,evidence:[source]})=>({
+    ...policy,similarity,matchedEvidenceId:source.id
+   })),
+   evidence:[...evidence.values()]
+  };
+  const result=validateOutput(await this.writer.generate(context,{shortlist:true,numCtx:8192,numPredict:1024}),context);
+  return {...result,recommendations:result.recommendations.map(item=>{
+   const match=matches.get(String(item.policy.id));
+   if(item.evidence.length!==1||item.evidence[0].id!==match.evidence[0].id){
+    throw new AppError(502,'Qwen returned evidence outside the E5 policy match.');
+   }
+   return {...item,policy:match.policy,policyId:match.policyId,policyName:match.policyName,
+     evidenceText:match.evidenceText,evidence:match.evidence,similarity:match.similarity};
+  })};
  }
 }
 module.exports={UnifiedAnalysis,OllamaProvider};

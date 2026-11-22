@@ -3,6 +3,32 @@ const assert = require('node:assert/strict');
 const { E5Provider } = require('../src/modules/ai/ai-e5.provider');
 const { UnifiedAnalysis } = require('../src/modules/ai/ai-unified.service');
 
+test('Qwen receives only E5 candidates and cannot cite another policy match', async () => {
+  const candidate = id => ({
+    policy: { id, name: 'Policy ' + id }, policyId: id, policyName: 'Policy ' + id,
+    evidence: [{ id: 'SURVEY:' + id, source: 'SURVEY', comment: 'Original record' }],
+    evidenceText: 'Matched signal ' + id, similarity: 0.8
+  });
+  let evidenceId = 'SURVEY:39';
+  const analysis = new UnifiedAnalysis({}, { pool: {} }, {
+    writer: { generate: async context => {
+      assert.deepEqual(context.policies.map(policy => policy.id), ['39', '55']);
+      assert.deepEqual(context.evidence[0], { id: 'SURVEY:39', source: 'SURVEY', text: 'Matched signal 39' });
+      assert.equal(context.model.features, undefined);
+      return { recommendations: [{ policyId: '39', reason: 'Lý do từ bằng chứng', evidenceIds: [evidenceId],
+        hrVerification: 'Kiểm tra bằng chứng' }], noRecommendationReason: null };
+    }}
+  });
+  const model = { riskLevel: 'HIGH', score: 0.8, features: { salary: 123 } };
+  const candidates = [candidate('39'), candidate('55')];
+  const { recommendations } = await analysis.writeRecommendations(candidates, model);
+  assert.equal(recommendations[0].policyName, 'Policy 39');
+  assert.equal(recommendations[0].reason, 'Lý do từ bằng chứng');
+  assert.equal(recommendations[0].evidenceText, 'Matched signal 39');
+  evidenceId = 'SURVEY:55';
+  await assert.rejects(analysis.writeRecommendations(candidates, model), { statusCode: 502 });
+});
+
 test('E5 sends employee evidence and skips risk-only inputs', async () => {
   let calls = 0;
   const provider = new E5Provider({

@@ -13,7 +13,10 @@ function createAiRouter({service,repository,authenticate,policyRepository=new Ai
   router.use(authenticate,(_req,res,next)=>{res.set('Cache-Control','no-store, private');res.vary('Authorization');next();});
   const route=fn=>async(req,res,next)=>{try{res.json({data:await fn(req)});}catch(error){if(error instanceof AppError&&error.details)return res.status(error.statusCode).json({message:error.message,details:error.details});next(error);}};
   registerAiInputRoutes(router,{service,repository,route});
-  router.get('/analysis-config',route(async req=>{await repository.assertHr(req.auth.userId);return {configured:unified.provider.configured(),provider:unified.provider.name,model:unified.provider.model};}));
+  router.get('/analysis-config',route(async req=>{await repository.assertHr(req.auth.userId);return {
+    configured:unified.provider.configured()&&unified.writer.configured(),
+    provider:'E5_OLLAMA',model:unified.writer.model??null,rankingModel:unified.provider.model
+  };}));
   router.get('/model',route(req=>service.info(req.auth.userId)));
   router.get('/employees/:employeeId/results',route(req=>repository.results(req.auth.userId,id(req.params.employeeId))));
   router.post('/employees/:employeeId/predict',route(req=>service.predict(req.auth.userId,req.params.employeeId,req.body)));
