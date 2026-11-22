@@ -6,6 +6,21 @@ const {
 } = require('./employees.validation');
 
 class EmployeesController {
+  listAccountCandidates = async (req, res, next) => {
+    try {
+      res.set('Cache-Control', 'no-store, private');
+      res.json({ data: await this.employeesService.listAccountCandidates(req.auth.userId) });
+    } catch (error) { next(error); }
+  };
+
+  provisionAccount = async (req, res, next) => {
+    try {
+      const data = await this.employeesService.provisionEmployeeAccount(req.auth.userId, validateEmployeeId(req.params.id));
+      res.set('Cache-Control', 'no-store, private');
+      res.status(201).json({ data });
+    } catch (error) { next(error); }
+  };
+
   constructor(employeesService) {
     this.employeesService = employeesService;
     this.listEmployees = this.listEmployees.bind(this);

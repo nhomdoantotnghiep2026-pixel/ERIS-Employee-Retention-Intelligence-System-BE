@@ -14,7 +14,7 @@ const policyDemoPaths={
   '/api/policy-recommendations':{get:read('HR xem danh sách đề xuất chính sách','Trả các đề xuất đã lưu cùng nhân viên, policy, reason, priority, status, xác suất, mức rủi ro và nhãn dữ liệu demo. ID bigint trả dạng chuỗi.')},
   '/api/policy-recommendations/{id}':{get:read('HR xem chi tiết đề xuất chính sách','Trả đề xuất gắn với một predictionResultId và policyId, kèm dữ liệu hiển thị cho FE.',parameter())}
 };
-const {POLICY_LIMITS}=require('./policy-create.validation');
+const {POLICY_LIMITS}=require('./helpers/policy-create.validation');
 policyDemoPaths['/api/retention-policies'].post={
  tags:['Retention policies'],summary:'HR tạo policy giữ chân nhân viên',security,
  description:'Chỉ HR ACTIVE. Mã được trim và chuyển thành chữ hoa, không trùng kể cả mã của policy INACTIVE. description chỉ chứa nội dung chính sách; không nhận reason, người tạo hoặc ID từ client. status mặc định ACTIVE. Tạo policy và ghi audit_logs trong cùng transaction. Không tự tạo policy_recommendations hay áp dụng chính sách cho nhân viên.',

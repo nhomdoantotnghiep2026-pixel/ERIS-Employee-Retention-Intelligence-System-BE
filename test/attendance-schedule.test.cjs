@@ -3,9 +3,9 @@ const assert=require('node:assert/strict');
 const express=require('express');
 const {databasePool}=require('../src/config/database');
 const {AttendanceRepository}=require('../src/modules/attendance/attendance.repository');
-const {LeaveRequestsRepository}=require('../src/modules/attendance/leave-requests.repository');
+const {LeaveRequestsRepository}=require('../src/modules/attendance/repositories/leave-requests.repository');
 const {createAttendanceService}=require('../src/modules/attendance/attendance.service');
-const {calculateAttendance}=require('../src/modules/attendance/attendance-schedule');
+const {calculateAttendance}=require('../src/modules/attendance/repositories/attendance-schedule');
 const {createAttendanceRouter}=require('../src/modules/attendance/attendance.routes');
 
 test('schedule calculations subtract only overlapping lunch, preserve overtime contract',()=>{

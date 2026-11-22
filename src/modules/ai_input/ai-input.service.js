@@ -1,5 +1,5 @@
-const {ExchangeRateService}=require('./ai-input.exchange-rate');
-const {build,options,id,todayVN}=require('./ai-input.features');
+const {ExchangeRateService}=require('./providers/ai-input.exchange-rate');
+const {build,options,id,todayVN}=require('./helpers/ai-input.features');
 
 class AiInputService {
   constructor({repository,clock=()=>new Date(),exchangeRates=new ExchangeRateService(),warning}){

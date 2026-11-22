@@ -1,123 +1,224 @@
-const { AppError } = require('../../common/errors/app-error');
-const { SURVEY_SCORE_MIN, SURVEY_SCORE_MAX } = require('./surveys.constants');
+const { AppError } = require("../../common/errors/app-error")
 
-function validateDateTime(value, fieldName) {
-  if (value === undefined || value === null || value === '') return null;
+const { ratingConfig, score } = require("./helpers/surveys.scoring")
 
-  if (typeof value !== 'string') {
-    throw new AppError(400, `${fieldName} must be an ISO-8601 date-time string.`);
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    throw new AppError(400, `${fieldName} must be a valid date-time.`);
-  }
-
-  return date.toISOString();
+const fail = (m) => {
+  throw new AppError(400, m)
 }
 
-function validateCreateSurveyInput(input) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    throw new AppError(400, 'Request body must be an object.');
-  }
-
-  const allowedFields = new Set(['title', 'description', 'startDate', 'endDate']);
-  if (Object.keys(input).some((field) => !allowedFields.has(field))) {
-    throw new AppError(400, 'Request body contains unsupported fields.');
-  }
-
-  if (typeof input.title !== 'string' || !input.title.trim() || input.title.trim().length > 255) {
-    throw new AppError(400, 'title is required and must be at most 255 characters.');
-  }
-
-  if (input.description !== undefined && input.description !== null && typeof input.description !== 'string') {
-    throw new AppError(400, 'description must be a string or null.');
-  }
-
-  const startDate = validateDateTime(input.startDate, 'startDate');
-  const endDate = validateDateTime(input.endDate, 'endDate');
-  if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
-    throw new AppError(400, 'endDate must be on or after startDate.');
-  }
-
-  return {
-    title: input.title.trim(),
-    description: input.description?.trim() || null,
-    startDate,
-    endDate
-  };
+function object(x, keys) {
+  if (
+    !x ||
+    typeof x !== "object" ||
+    Array.isArray(x) ||
+    Object.keys(x).some((k) => !keys.includes(k))
+  )
+    fail("Unsupported or invalid fields.")
 }
 
-function validateSurveyId(value) {
-  const id = Number(value);
-
-  if (!/^[1-9]\d*$/.test(String(value)) || !Number.isInteger(id) || id > 2147483647) {
-    throw new AppError(400, 'Survey id must be a positive integer.');
-  }
-
-  return id;
+function id(x) {
+  if (
+    !/^[1-9]\d*$/.test(String(x)) ||
+    !Number.isSafeInteger(Number(x)) ||
+    Number(x) > 2147483647
+  )
+    fail("Invalid ID.")
+  return Number(x)
 }
 
-function validateSubmitSurveyResponseInput(input) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    throw new AppError(400, 'Request body must be an object.');
+function text(x, max, required = true) {
+  if (!required && (x == null || x === "")) return null
+  if (
+    typeof x !== "string" ||
+    !x.trim() ||
+    x.trim().length > max ||
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(x)
+  )
+    fail("Invalid text value.")
+  return x.trim()
+}
+
+function survey(b, patch = false) {
+  const keys = [
+    "title",
+    "description",
+    "categoryIds",
+    "questions",
+    "startDate",
+    "endDate",
+  ]
+  object(b, keys)
+  if (patch && !Object.keys(b).length) fail("Empty update.")
+  const d = {}
+  for (const k of keys) {
+    if (patch && !Object.hasOwn(b, k)) continue
+    if (k === "questions") {
+      if (patch) fail("Use the question endpoints to edit saved questions.")
+      const items = b[k] ?? []
+      if (!Array.isArray(items) || items.length > 200)
+        fail("questions must be an array, maximum 200.")
+      d[k] = items.map(question)
+    } else if (k === "categoryIds") {
+      if (patch)
+        fail("Selected topics cannot be changed through metadata updates.")
+      if (!Array.isArray(b[k]) || !b[k].length || b[k].length > 50)
+        fail("Choose at least one topic, maximum 50.")
+      d[k] = b[k].map(id)
+      if (new Set(d[k]).size !== d[k].length) fail("Duplicate categoryIds.")
+    } else if (["title", "description"].includes(k))
+      d[k] = text(b[k], k === "title" ? 255 : 4000, k === "title")
+    else {
+      const x = b[k]
+      if (x == null || x === "") d[k] = null
+      else {
+        if (
+          typeof x !== "string" ||
+          !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/.test(
+            x,
+          ) ||
+          !Number.isFinite(Date.parse(x))
+        )
+          fail("Use ISO date-time with timezone.")
+        d[k] = new Date(x).toISOString()
+      }
+    }
   }
+  if (d.startDate && d.endDate && d.startDate >= d.endDate)
+    fail("endDate must be after startDate.")
+  return d
+}
 
-  if (Object.keys(input).some((field) => field !== 'answers')) {
-    throw new AppError(400, 'Request body contains unsupported fields.');
+function question(b) {
+  object(b, [
+    "questionText",
+    "categoryId",
+    "questionType",
+    "answerConfig",
+    "displayOrder",
+  ])
+  const d = {
+    questionText: text(b.questionText, 4000),
+    categoryId: id(b.categoryId),
+    questionType: b.questionType,
+    displayOrder: b.displayOrder ?? 0,
+    answerConfig: null,
   }
-
-  if (!Array.isArray(input.answers)) {
-    throw new AppError(400, 'answers must be an array.');
+  if (
+    !Number.isInteger(d.displayOrder) ||
+    d.displayOrder < 0 ||
+    d.displayOrder > 10000
+  )
+    fail("Invalid displayOrder.")
+  if (d.questionType === "TEXT") {
+    if (b.answerConfig != null) fail("TEXT must not have answerConfig.")
+    return d
   }
-
-  const questionIds = new Set();
-  const answers = input.answers.map((answer, index) => {
-    if (!answer || typeof answer !== 'object' || Array.isArray(answer)) {
-      throw new AppError(400, `answers[${index}] must be an object.`);
+  if (d.questionType === "RATING") {
+    object(b.answerConfig, ["min", "max", "labels"])
+    if (
+      b.answerConfig.min !== 1 ||
+      b.answerConfig.max !== 5 ||
+      !Array.isArray(b.answerConfig.labels) ||
+      b.answerConfig.labels.length !== 5
+    )
+      fail("RATING requires min=1, max=5 and five labels.")
+    d.answerConfig = {
+      min: 1,
+      max: 5,
+      labels: b.answerConfig.labels.map((x) => text(x, 300)),
     }
+    return d
+  }
+  if (!["SINGLE_CHOICE", "MULTIPLE_CHOICE"].includes(d.questionType))
+    fail("Unsupported questionType.")
+  object(b.answerConfig, ["options"])
+  const opts = b.answerConfig.options
+  if (!Array.isArray(opts) || opts.length < 2 || opts.length > 30)
+    fail("Provide 2-30 options.")
+  const seen = new Set()
+  d.answerConfig = {
+    options: opts.map((o) => {
+      object(o, ["code", "label"])
+      if (
+        typeof o.code !== "string" ||
+        !/^[A-Z][A-Z0-9_]{0,49}$/.test(o.code) ||
+        seen.has(o.code)
+      )
+        fail("Option codes must be unique uppercase identifiers.")
+      seen.add(o.code)
+      return { code: o.code, label: text(o.label, 300) }
+    }),
+  }
+  return d
+}
 
-    if (Object.keys(answer).some((field) => !['questionId', 'score', 'comment'].includes(field))) {
-      throw new AppError(400, `answers[${index}] contains unsupported fields.`);
+function answers(b, qs) {
+  object(b, ["answers"])
+  if (!Array.isArray(b.answers) || b.answers.length > 200)
+    fail("answers must be an array, max 200.")
+  const map = new Map(qs.map((q) => [q.id, q])),
+    seen = new Set()
+  const result = b.answers.map((a) => {
+    object(a, ["questionId", "answerValue", "comment"])
+    const q = map.get(id(a.questionId))
+    if (!q || seen.has(q.id)) fail("Unknown, foreign or duplicate question.")
+    seen.add(q.id)
+    let value = a.answerValue
+    if (q.questionType === "TEXT") value = text(value, 4000)
+    else if (q.questionType === "RATING") {
+      if (!Number.isInteger(value) || value < 1 || value > 5)
+        fail("RATING answerValue must be an integer from 1 to 5.")
+    } else {
+      object(value, ["selectedCodes"])
+      const codes = value.selectedCodes,
+        opts = q.answerConfig?.options || []
+      if (
+        !Array.isArray(codes) ||
+        !codes.length ||
+        codes.length > opts.length ||
+        new Set(codes).size !== codes.length ||
+        codes.some(
+          (c) => typeof c !== "string" || !opts.some((o) => o.code === c),
+        ) ||
+        (q.questionType === "SINGLE_CHOICE" && codes.length !== 1)
+      )
+        fail("Invalid option selection.")
+      value = { selectedCodes: codes }
     }
-
-    if (!Number.isInteger(answer.questionId) || answer.questionId <= 0) {
-      throw new AppError(400, `answers[${index}].questionId must be a positive integer.`);
-    }
-
-    if (questionIds.has(answer.questionId)) {
-      throw new AppError(400, 'Each question can only be answered once.');
-    }
-    questionIds.add(answer.questionId);
-
-    if (!Number.isInteger(answer.score) || answer.score < SURVEY_SCORE_MIN || answer.score > SURVEY_SCORE_MAX) {
-      throw new AppError(400, `answers[${index}].score must be an integer between 1 and 5.`);
-    }
-
-    if (answer.comment !== undefined && answer.comment !== null && typeof answer.comment !== 'string') {
-      throw new AppError(400, `answers[${index}].comment must be a string or null.`);
-    }
-
-    if (typeof answer.comment === 'string' && answer.comment.trim().length > 1000) {
-      throw new AppError(400, `answers[${index}].comment must be at most 1000 characters.`);
-    }
-
     return {
-      questionId: answer.questionId,
-      score: answer.score,
-      comment: answer.comment?.trim() || null
-    };
-  });
-
-  return { answers };
+      questionId: q.id,
+      answerValue: value,
+      comment: text(a.comment, 1000, false),
+    }
+  })
+  if (qs.some((q) => !seen.has(q.id))) fail("Answer every question.")
+  return result
 }
 
-function validateUpdateSurveyInput(input) {
-  if (!input || typeof input !== 'object' || Array.isArray(input) || !Object.keys(input).length) {
-    throw new AppError(400, 'A nonempty update object is required.');
-  }
-  const normalized = validateCreateSurveyInput({ ...input, title: input.title === undefined ? 'Unchanged' : input.title });
-  return Object.fromEntries(Object.keys(input).map(key => [key, normalized[key]]));
+function validateCreateSurveyInput(body) {
+  return survey(body)
 }
 
-module.exports = { validateCreateSurveyInput, validateUpdateSurveyInput, validateSurveyId, validateSubmitSurveyResponseInput };
+function validateUpdateSurveyInput(body) {
+  return survey(body, true)
+}
+
+function validateNoQueryParameters(query) {
+  if (Object.keys(query).length) fail("Unsupported query parameters.")
+}
+
+module.exports = {
+  validateSurveyId: id,
+  validateCreateSurveyInput,
+  validateUpdateSurveyInput,
+  validateSurveyQuestionInput: question,
+  validateAnswersForQuestions: answers,
+  validateNoQueryParameters,
+  id,
+  text,
+  survey,
+  question,
+  answers,
+  score,
+  ratingConfig,
+}

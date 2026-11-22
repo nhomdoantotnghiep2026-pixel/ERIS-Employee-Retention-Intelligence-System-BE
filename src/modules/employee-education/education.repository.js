@@ -1,4 +1,4 @@
-const { auditChildMethods } = require('../audit_logs/audit.repository');
+const { auditChildMethods } = require('../audit_logs/repositories/audit.repository');
 const { AppError } = require('../../common/errors/app-error');
 const columns = `id, employee_id AS "employeeId", CASE education_level WHEN '1' THEN 'Legacy College' WHEN '2' THEN 'Bachelor' WHEN '3' THEN 'Master' WHEN '4' THEN 'PhD' ELSE education_level END AS "educationLevel",
   field_of_study AS "fieldOfStudy", institution, graduation_year AS "graduationYear", status,

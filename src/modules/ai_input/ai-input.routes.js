@@ -1,4 +1,4 @@
-const {id}=require('./ai-input.features');
+const {id}=require('./helpers/ai-input.features');
 
 function registerAiInputRoutes(router,{service,repository,route}){
   router.get('/exchange-rate',route(req=>service.exchangeRate(req.auth.userId)));

@@ -1,6 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),ExcelJS=require('exceljs'),jwt=require('jsonwebtoken');
-const {AttendanceImportService}=require('../src/modules/attendance/attendance-import.service');
-const {AttendanceImportRepository}=require('../src/modules/attendance/attendance-import.repository');
+const {AttendanceImportService}=require('../src/modules/attendance/services/attendance-import.service');
+const {AttendanceImportRepository}=require('../src/modules/attendance/repositories/attendance-import.repository');
 const {AppError}=require('../src/common/errors/app-error');
 const secret='unit-test-preview-key-32-characters-minimum';
 async function file(times=['2026-11-16 08:00:00','2026-11-16 17:00:00']){const w=new ExcelJS.Workbook(),s=w.addWorksheet('Attendance');s.addRow(['employee_code','employee_name','shift_type','check_in','check_out']);s.addRow(['EMP001','Test Employee','DAY',...times]);return {originalname:'attendance.xlsx',buffer:Buffer.from(await w.xlsx.writeBuffer())};}

@@ -169,7 +169,7 @@ employeesPaths['/api/employees/import'].post.description += ' Email thuộc HR k
 employeesPaths['/api/employees/{id}'].patch.description += ' Khi departmentId hoặc positionId thay đổi, hệ thống đóng bản ghi lịch sử đang mở vào ngày trước hôm nay theo giờ Việt Nam, tạo bản ghi mới với endDate NULL và cập nhật hồ sơ trong cùng transaction. Tăng jobLevel trong cùng phòng là PROMOTION; đổi phòng hoặc thay đổi khác là ROLE_CHANGE. Đổi phòng ban phải gửi một positionId mới khác vị trí hiện tại. Không cần gửi changeType. Bảng positions chưa liên kết departmentId nên chưa kiểm tra vị trí thuộc phòng ban. Response có jobHistory khi có thay đổi công việc.';
 employeesPaths['/api/employees'].post.description += ' Tài khoản mới và hồ sơ ở trạng thái IN_PROCESS; chưa tạo lịch sử công việc. Khi kích hoạt email, hệ thống chuyển hồ sơ sang ACTIVE và tạo bản ghi HIRE với startDate bằng hireDate, endDate bằng NULL trong cùng giao dịch. Nếu liên kết hồ sơ với tài khoản HR đã ACTIVE, bản ghi HIRE được tạo ngay. Response chỉ có initialJobHistory khi lịch sử đã được tạo.';
 employeesPaths['/api/employees/import'].post.description += ' Mỗi dòng dùng cùng luồng tạo nhân viên: tài khoản mới IN_PROCESS chưa có HIRE; bản ghi HIRE chỉ được tạo khi tài khoản được kích hoạt, hoặc ngay khi liên kết với HR đã ACTIVE.';
-const { backgroundProperties } = require('./employee-background.swagger');
+const { backgroundProperties } = require('./legacy/employee-background.swagger');
 Object.assign(createSchema.properties, { educations: backgroundProperties.educations });
 createSchema.properties.employeeCode = {
   type: 'string', minLength: 1, maxLength: 50, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,49}$',

@@ -28,9 +28,9 @@ test('Leave Records database business rules on session-local TEMP tables',async(
  await db.query("INSERT INTO attendance(employee_id,work_date,check_in,check_out) VALUES(9,'2026-11-17','2026-11-17 22:00','2026-11-18 06:00')");
  await assert.rejects(()=>service.create(1,{...base,start_date:'2026-11-17',end_date:'2026-11-17'}),e=>e.code==='ATTENDANCE_CONFLICT'&&e.conflicts[0].work_date==='2026-11-17');
  await assert.rejects(()=>assertNoLeave(db,9,'2026-11-16'),e=>e.code==='LEAVE_CONFLICT');
- const {AttendanceImportRepository}=require('../src/modules/attendance/attendance-import.repository');
+ const {AttendanceImportRepository}=require('../src/modules/attendance/repositories/attendance-import.repository');
  await assert.rejects(()=>new AttendanceImportRepository(pool).write(db,{employee_id:9,work_date:'2026-11-16',check_in:'2026-11-16T08:00:00+07:00'},null,1),e=>e.code==='LEAVE_CONFLICT');
- const {AttendanceImportService}=require('../src/modules/attendance/attendance-import.service');
+ const {AttendanceImportService}=require('../src/modules/attendance/services/attendance-import.service');
  const snapshot={id:1,shift_type:'HC',start_time:'08:00:00',end_time:'17:00:00',break_start:'12:00:00',break_end:'13:00:00',working_days:[1,2,3,4,5],status:'ACTIVE'};
  const attendanceRepo=new AttendanceImportRepository(pool);
  attendanceRepo.references=async()=>({employees:[{id:9,employee_code:'EMP009',full_name:'A',hire_date:'2026-01-01',work_schedule_id:1}],schedules:[snapshot]});

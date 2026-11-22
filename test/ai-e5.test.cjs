@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { E5Provider } = require('../src/modules/ai/ai-e5.provider');
-const { UnifiedAnalysis } = require('../src/modules/ai/ai-unified.service');
+const { E5Provider } = require('../src/modules/ai/providers/ai-e5.provider');
+const { UnifiedAnalysis } = require('../src/modules/ai/services/ai-unified.service');
 
 test('E5 sends employee evidence and skips risk-only inputs', async () => {
   let calls = 0;
@@ -32,6 +32,28 @@ test('E5 sends employee evidence and skips risk-only inputs', async () => {
   assert.equal(result.recommendations[0].policyName, 'Rà soát tăng ca');
   assert.match(result.recommendations[0].evidenceText, /tăng ca cuối tuần/);
   assert.equal(calls, 1);
+});
+
+test('E5 accepts an unauthenticated loopback tunnel but rejects insecure remote HTTP', async () => {
+  for (const url of ['http://127.0.0.1:18092', 'http://localhost:18092', 'http://[::1]:18092']) {
+    const provider = new E5Provider({ url });
+    assert.equal(provider.configured(), true);
+    assert.equal(String(provider.endpoint), url + '/recommend');
+  }
+  assert.equal(new E5Provider({ url: 'http://e5.example.test' }).configured(), false);
+  assert.equal(new E5Provider({ url: 'https://e5.example.test' }).configured(), false);
+});
+
+test('E5 reports a transport error instead of leaking a raw fetch failure', async () => {
+  const provider = new E5Provider({
+    url: 'http://127.0.0.1:18092',
+    fetchImpl: async () => { throw new TypeError('fetch failed'); }
+  });
+  const context = {
+    policies: [{ id: '39', name: 'Review workload' }],
+    evidence: [{ id: 'ATTENDANCE:1', source: 'ATTENDANCE', month: '2026-11', overtimeMinutes: 60, lateMinutes: 0, earlyMinutes: 0, recordedDays: 20 }]
+  };
+  await assert.rejects(provider.rank(context), error => error.statusCode === 502 && /SSH tunnel/.test(error.message));
 });
 
 test('individual analysis preserves and saves prediction when E5 is unreachable', async () => {

@@ -1,7 +1,7 @@
 const crypto = require('node:crypto');
 const jwt = require('jsonwebtoken');
 const { env } = require('../../config/env');
-const { TOKEN_PURPOSE } = require('../../modules/auth/auth.constants');
+const { TOKEN_PURPOSE } = require('../../modules/auth/helpers/auth.constants');
 
 function createAccessToken(user) {
   return jwt.sign({ roleId: user.roleId, status: user.status, type: TOKEN_PURPOSE.ACCESS }, env.auth.jwtSecret, {

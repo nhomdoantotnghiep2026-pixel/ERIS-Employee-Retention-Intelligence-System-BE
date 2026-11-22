@@ -1,28 +1,29 @@
-const {demoData,runDemo}=require('./ai-demo-fixture');
-const {UnifiedAnalysis,OllamaProvider}=require('./ai-unified.service');
-const {AiPolicyRepository}=require('./ai-policy.repository');
-const {OpenAiPolicy}=require('./ai-policy.openai');
+const {UnifiedAnalysis,OllamaProvider}=require('./services/ai-unified.service');
+const {E5Provider}=require('./providers/ai-e5.provider');
+const {AiPolicyRepository}=require('./repositories/ai-policy.repository');
+const {OpenAiPolicy}=require('./providers/ai-policy.openai');
 const express=require('express');
+const {AiController}=require('./ai.controller');
 const {AppError}=require('../../common/errors/app-error');
-const {id}=require('../ai_input/ai-input.features');
 const {registerAiInputRoutes}=require('../ai_input/ai-input.routes');
-function createAiRouter({service,repository,authenticate,policyRepository=new AiPolicyRepository(repository.pool,repository,new OpenAiPolicy())}) {
+function createAiRouter({service,repository,authenticate,aiController: injectedController,policyRepository=new AiPolicyRepository(repository.pool,repository,new OpenAiPolicy())}) {
   const router=express.Router();
-  const unified=new UnifiedAnalysis(service,repository);
-  const demo=new UnifiedAnalysis(service,repository,{provider:new OllamaProvider()});
+  const unified=new UnifiedAnalysis(service,repository,{provider:new OllamaProvider(),retriever:new E5Provider()});
+  const demo=new UnifiedAnalysis(service,repository,{provider:new OllamaProvider(),retriever:null});
+  const aiController=injectedController||new AiController({service,repository,unified,demo,policyRepository});
   router.use(authenticate,(_req,res,next)=>{res.set('Cache-Control','no-store, private');res.vary('Authorization');next();});
   const route=fn=>async(req,res,next)=>{try{res.json({data:await fn(req)});}catch(error){if(error instanceof AppError&&error.details)return res.status(error.statusCode).json({message:error.message,details:error.details});next(error);}};
   registerAiInputRoutes(router,{service,repository,route});
-  router.get('/analysis-config',route(async req=>{await repository.assertHr(req.auth.userId);return {configured:unified.provider.configured(),provider:unified.provider.name,model:unified.provider.model};}));
-  router.get('/model',route(req=>service.info(req.auth.userId)));
-  router.get('/employees/:employeeId/results',route(req=>repository.results(req.auth.userId,id(req.params.employeeId))));
-  router.post('/employees/:employeeId/predict',route(req=>service.predict(req.auth.userId,req.params.employeeId,req.body)));
-  router.get('/employees/:employeeId/demo-data',route(req=>demoData(demo,req.auth.userId,req.params.employeeId)));
-  router.post('/employees/:employeeId/analyze-demo',route(req=>runDemo(demo,req.auth.userId,req.params.employeeId,req.body)));
-  router.post('/employees/:employeeId/analyze',route(req=>unified.run(req.auth.userId,req.params.employeeId,req.body)));
-  router.post('/predict-batch',route(req=>service.batch(req.auth.userId,req.body)));
-  router.post('/results/:id/policy-recommendations',route(req=>policyRepository.generate(req.auth.userId,req.params.id,req.body)));
-  router.get('/results/:id',route(req=>repository.result(req.auth.userId,id(req.params.id))));
+  router.get('/analysis-config',aiController.configuration);
+  router.get('/model',aiController.model);
+  router.get('/employees/:employeeId/results',aiController.results);
+  router.post('/employees/:employeeId/predict',aiController.predict);
+  router.get('/employees/:employeeId/demo-data',aiController.demoData);
+  router.post('/employees/:employeeId/analyze-demo',aiController.analyzeDemo);
+  router.post('/employees/:employeeId/analyze',aiController.analyze);
+  router.post('/predict-batch',aiController.batch);
+  router.post('/results/:id/policy-recommendations',aiController.recommendPolicies);
+  router.get('/results/:id',aiController.result);
   return router;
 }
 module.exports={createAiRouter};

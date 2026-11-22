@@ -1,7 +1,7 @@
 const {AppError}=require('../../common/errors/app-error');
-const {assess}=require('./ai.assessment');
+const {assess}=require('./helpers/ai.assessment');
 const {AiInputRepository}=require('../ai_input/ai-input.repository');
-const {FEATURES}=require('../ai_input/ai-input.features');
+const {FEATURES}=require('../ai_input/helpers/ai-input.features');
 class AiRepository extends AiInputRepository {
   async save(actorId,preview,result,policyAnalysis=null) {
     result=assess(result);

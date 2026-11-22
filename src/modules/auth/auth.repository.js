@@ -1,6 +1,6 @@
 const { AppError } = require('../../common/errors/app-error');
 const { JobHistoriesRepository } = require('../job-histories/job-histories.repository');
-const { EmployeeBackgroundRepository } = require('../employees/employee-background.repository');
+const { EmployeeBackgroundRepository } = require('../employees/repositories/employee-background.repository');
 class AuthRepository {
   constructor(databasePool) {
     this.databasePool = databasePool;

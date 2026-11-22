@@ -76,7 +76,7 @@ test('activating an account linked to an active profile writes only to users', a
 
 const { EmployeesRepository } = require('../src/modules/employees/employees.repository');
 const { JobHistoriesRepository } = require('../src/modules/job-histories/job-histories.repository');
-const { EmployeeBackgroundRepository } = require('../src/modules/employees/employee-background.repository');
+const { EmployeeBackgroundRepository } = require('../src/modules/employees/repositories/employee-background.repository');
 
 test('profile transaction stores ACTIVE profile, education and HIRE without writing users', async t => {
   const queries = [];

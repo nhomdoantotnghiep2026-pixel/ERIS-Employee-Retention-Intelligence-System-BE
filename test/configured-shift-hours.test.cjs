@@ -1,6 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {validateAgainstSchedule}=require('../src/modules/attendance/import-schedule.validation');
-const {validate}=require('../src/modules/attendance/attendance.import');
+const {validateAgainstSchedule}=require('../src/modules/attendance/helpers/import-schedule.validation');
+const {validate}=require('../src/modules/attendance/services/attendance.import');
 const {validateCreateScheduleInput}=require('../src/modules/work-schedules/work-schedules.validation');
 const shift={name:'Office',shift_type:'office',start_time:'09:00:00',end_time:'18:00:00',break_start:'12:00:00',break_end:'13:00:00',working_days:[1,2,3,4,5],status:'ACTIVE'};
 const row=(changes={})=>({errors:[],data:{employee_id:'EMP009',attendance_date:'2026-11-09',shift_type:'office',attendance_status:'PRESENT',login_timestamp:'2026-11-09 09:00:00',logout_timestamp:'2026-11-09 18:00:00',total_hours_worked:8,late_arrival_mins:0,early_exit_mins:0,overtime_hours:0,leave_type:null,...changes}});

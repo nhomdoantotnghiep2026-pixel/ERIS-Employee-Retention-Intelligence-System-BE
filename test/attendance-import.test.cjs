@@ -1,8 +1,8 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const ExcelJS=require('exceljs');
-const R=require('../src/modules/attendance/attendance-import.rules');
-const {parseWorkbook}=require('../src/modules/attendance/attendance-import.excel');
+const R=require('../src/modules/attendance/helpers/attendance-import.rules');
+const {parseWorkbook}=require('../src/modules/attendance/helpers/attendance-import.excel');
 const hc={id:1,shift_type:'HC',status:'ACTIVE',start_time:'08:00:00',end_time:'17:00:00',break_start:'12:00:00',break_end:'13:00:00',working_days:[1,2,3,4,5]};
 const night={...hc,id:2,shift_type:'NIGHT',start_time:'22:00:00',end_time:'06:00:00',break_start:'02:00:00',break_end:'03:00:00'};
 for(const [name,s,d,a,b,working,late,early] of [

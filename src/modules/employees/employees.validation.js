@@ -1,6 +1,6 @@
 const { AppError } = require('../../common/errors/app-error');
 const { normalizeEmail } = require('../../common/validation/email');
-const { normalizePhone } = require('./employee-phone');
+const { normalizePhone } = require('./helpers/employee-phone');
 const { validateEducation, validateGraduationYear } = require('../employee-education/education.validation');
 const { validateWorkExperiences } = require('../work-experiences/work-experiences.validation');
 const requiredEmployeeFields = ["fullName","email","phone","dateOfBirth","gender","address","departmentId","positionId","hireDate","employmentType","currentSalary"];

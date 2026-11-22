@@ -1,11 +1,11 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {databasePool}=require('../src/config/database');
 const {AiRepository}=require('../src/modules/ai/ai.repository');
-const {AiPolicyRepository}=require('../src/modules/ai/ai-policy.repository');
-const {OpenAiPolicy}=require('../src/modules/ai/ai-policy.openai');
-const {DRAFTS}=require('../src/modules/ai/ai-policy.rules');
-const {FEATURES}=require('../src/modules/ai_input/ai-input.features');
-const {MODEL_ID,SCHEMA,STATUS}=require('../src/modules/ai/ai.client');
+const {AiPolicyRepository}=require('../src/modules/ai/repositories/ai-policy.repository');
+const {OpenAiPolicy}=require('../src/modules/ai/providers/ai-policy.openai');
+const {DRAFTS}=require('../src/modules/ai/helpers/ai-policy.rules');
+const {FEATURES}=require('../src/modules/ai_input/helpers/ai-input.features');
+const {MODEL_ID,SCHEMA,STATUS}=require('../src/modules/ai/providers/ai.client');
 test('Live-schema TEMP transaction: catalogue read-only, foreign keys, repeat save and rollback',async()=>{
  const client=await databasePool.connect();let failAudit=false;
  const pool={query:(...args)=>client.query(...args),connect:async()=>({release(){},query(sql,values){if(failAudit&&sql.startsWith('INSERT INTO audit_logs'))throw new Error('Audit failed');return client.query(sql,values);}})};

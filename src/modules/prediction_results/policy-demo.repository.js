@@ -1,7 +1,7 @@
 const { AppError } = require('../../common/errors/app-error');
-const {validatePolicyCreate}=require('./policy-create.validation');
-const {writeAudit}=require('../audit_logs/audit.repository');
-const { DEMO_VERSION, DEMO_POLICIES, DEMO_EXPLANATIONS } = require('./policy-demo.data');
+const {validatePolicyCreate}=require('./helpers/policy-create.validation');
+const {writeAudit}=require('../audit_logs/repositories/audit.repository');
+const { DEMO_VERSION, DEMO_POLICIES, DEMO_EXPLANATIONS } = require('./data/policy-demo.data');
 const policyColumns=`id,code,name,description,status,created_at AS "createdAt",updated_at AS "updatedAt"`;
 const source = version => version===DEMO_VERSION?'DEMO_FIXED':'STORED';
 const predictionMetadata = alias => `LEFT JOIN LATERAL (

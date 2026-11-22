@@ -1,1 +1,1 @@
-module.exports = require('./current-schedules.repository');
+module.exports = require('./repositories/current-schedules.repository');

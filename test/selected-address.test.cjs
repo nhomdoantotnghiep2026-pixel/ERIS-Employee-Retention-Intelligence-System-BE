@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveEmployeeDistance } = require('../src/modules/distance/address-resolution');
+const { resolveEmployeeDistance } = require('../src/modules/distance/helpers/address-resolution');
 const { createDistanceService } = require('../src/modules/distance/distance.service');
 const display = 'Tòa S10.2 Origami, Phường Long Bình, Thành phố Hồ Chí Minh';
 const point = { display, lat: 10.84, lng: 106.83 };

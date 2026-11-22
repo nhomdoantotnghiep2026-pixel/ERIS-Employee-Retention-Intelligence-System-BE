@@ -1,7 +1,7 @@
 const {AiInputService}=require('../ai_input/ai-input.service');
 const { AppError } = require('../../common/errors/app-error');
-const { id,MISSING_SURVEY } = require('../ai_input/ai-input.features');
-const {assess}=require('./ai.assessment');
+const { id,MISSING_SURVEY } = require('../ai_input/helpers/ai-input.features');
+const {assess}=require('./helpers/ai.assessment');
 const WARNING='Cảnh báo hỗ trợ HR xem xét, không khẳng định nhân viên sẽ nghỉ việc. Ngưỡng thử nghiệm 9,9/100; model demo chưa đạt tiêu chí đánh giá và chưa có thời hạn dự báo.';
 class AiService extends AiInputService {
   constructor({repository,client,clock,exchangeRates}){

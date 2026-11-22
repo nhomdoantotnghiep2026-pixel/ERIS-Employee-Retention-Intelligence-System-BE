@@ -1,9 +1,9 @@
-const { snapshot, writeAudit, recordChange, transaction } = require('../audit_logs/audit.repository');
+const { snapshot, writeAudit, recordChange, transaction } = require('../audit_logs/repositories/audit.repository');
 const { AppError } = require('../../common/errors/app-error');
 const { JobHistoriesRepository } = require('../job-histories/job-histories.repository');
-const { recordJobChange } = require('../job-histories/job-histories.transition');
-const { EmployeeBackgroundRepository } = require('./employee-background.repository');
-const { normalizePhone, phoneKey, phoneKeySql } = require('./employee-phone');
+const { recordJobChange } = require('../job-histories/helpers/job-histories.transition');
+const { EmployeeBackgroundRepository } = require('./repositories/employee-background.repository');
+const { normalizePhone, phoneKey, phoneKeySql } = require('./helpers/employee-phone');
 class EmployeesRepository {
   constructor(databasePool) {
     this.databasePool = databasePool;

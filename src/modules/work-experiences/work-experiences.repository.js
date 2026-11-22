@@ -1,4 +1,4 @@
-const { auditChildMethods } = require('../audit_logs/audit.repository');
+const { auditChildMethods } = require('../audit_logs/repositories/audit.repository');
 const { AppError } = require('../../common/errors/app-error');
 const columns = `id, employee_id AS "employeeId", company_name AS "companyName", position_title AS "positionTitle",
   to_char(start_date, 'YYYY-MM-DD') AS "startDate", to_char(end_date, 'YYYY-MM-DD') AS "endDate",

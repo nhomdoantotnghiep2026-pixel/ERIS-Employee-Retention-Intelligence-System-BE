@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),ExcelJS=require('exceljs');
-const {HolidayService,createHolidayRouter,input,todayVN,holidayId}=require('../src/modules/holidays/holidays');
+const {HolidayService,createHolidayRouter,input,todayVN,holidayId}=require('../src/modules/holidays/holidays.service');
 function fixture(){
  let now=new Date('2026-11-18T05:00:00Z');
  const state={rows:[],audits:[],next:1,queries:[],rejectAudit:false};let backup;

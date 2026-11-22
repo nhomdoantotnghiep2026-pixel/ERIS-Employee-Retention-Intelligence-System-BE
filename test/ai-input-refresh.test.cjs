@@ -1,9 +1,9 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {ExchangeRateService}=require('../src/modules/ai_input/ai-input.exchange-rate');
+const {ExchangeRateService}=require('../src/modules/ai_input/providers/ai-input.exchange-rate');
 const {AiService}=require('../src/modules/ai/ai.service');
-const {score}=require('../src/modules/surveys/surveys.dynamic.validation');
-const {periodSatisfaction}=require('../src/modules/surveys/surveys.satisfaction');
+const {score}=require('../src/modules/surveys/surveys.validation');
+const {periodSatisfaction}=require('../src/modules/surveys/surveys.repository');
 const now=()=>new Date('2026-11-18T05:00:00Z');
 const data={date:'2026-11-18',base:'USD',quote:'VND',rate:25771};
 const ok=async()=>({ok:true,json:async()=>data});

@@ -1,9 +1,9 @@
 ﻿const assert = require('node:assert/strict');
 const test = require('node:test');
 const express = require('express');
-const { CompanyLocationStore, validateCompanyLocation } = require('../src/modules/attendance/company-location.store');
+const { CompanyLocationStore, validateCompanyLocation } = require('../src/modules/attendance/repositories/company-location.store');
 const { createAttendanceService } = require('../src/modules/attendance/attendance.service');
-const { createAttendanceLegacyRouter } = require('../src/modules/attendance/attendance-legacy.routes');
+const { createAttendanceLegacyRouter } = require('../src/modules/attendance/legacy/attendance-legacy.routes');
 const hr = { id: 1, status: 'ACTIVE', role_name: 'HR', employeeId: 10, employmentStatus: 'ACTIVE' };
 const location = { address: 'Công ty thử nghiệm', latitude: 10.845106259, longitude: 106.838943078 };
 const fallback = { address: 'Cấu hình ban đầu', latitude: 10, longitude: 106 };

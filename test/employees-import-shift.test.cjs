@@ -1,5 +1,5 @@
 ﻿const {test}=require('node:test'),assert=require('node:assert/strict');const Excel=require('exceljs');
-const {validateImportEmployee,employeeImportTemplate}=require('../src/modules/employees/employees.import');
+const {validateImportEmployee,employeeImportTemplate}=require('../src/modules/employees/services/employees.import');
 const {EmployeesRepository}=require('../src/modules/employees/employees.repository');
 const {WorkSchedulesService}=require('../src/modules/work-schedules/work-schedules.service');
 const input={employee_code:'TEST001',fullName:'Test Employee',email:'test@example.com',phone:'0987701101',dateOfBirth:'1998-05-12',gender:'MALE',address:'Test Address',departmentName:'Customer Support',positionName:'Customer Support Specialist',hireDate:'2025-01-01',employmentType:'FULL_TIME',currentSalary:18000000,educations:[{educationLevel:'Bachelor',fieldOfStudy:'Business',institution:'Test University',institutionRefId:'https://ror.org/012345678',graduationYear:2020}]};

@@ -1,8 +1,8 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {databasePool}=require('../src/config/database');
 const {WorkSchedulesRepository}=require('../src/modules/work-schedules/work-schedules.repository');
-const {processRows}=require('../src/modules/attendance/attendance.import');
-const {cancelAttendance}=require('../src/modules/attendance/attendance.cancellation');
+const {processRows}=require('../src/modules/attendance/services/attendance.import');
+const {cancelAttendance}=require('../src/modules/attendance/services/attendance.cancellation');
 test('TEMP schema: create, assign, validate, import, duplicate, unassign and audit rollback',async()=>{
  const c=await databasePool.connect();
  try{
@@ -18,7 +18,7 @@ test('TEMP schema: create, assign, validate, import, duplicate, unassign and aud
   const repo=new WorkSchedulesRepository(pool);
   const s=await repo.create({name:'Mid',shift_type:'mid',start_time:'11:00',end_time:'20:00',break_start:'15:00',break_end:'16:00',working_days:[1,2,3,4,5],status:'ACTIVE'},1);
   await repo.assign(10,{work_schedule_id:s.id},1);assert.equal((await repo.findAssignments(10))[0].shift_type,'mid');
-  const {scheduleSql}=require('../src/modules/attendance/attendance-schedule');
+  const {scheduleSql}=require('../src/modules/attendance/repositories/attendance-schedule');
   assert.equal((await c.query(scheduleSql('$1::integer','$2::date'),[10,'2025-01-02'])).rows[0].source,'EMPLOYEE_CURRENT');
   const row=()=>({row:2,errors:[],data:{employee_id:'EMP01',attendance_date:'2025-01-02',shift_type:'mid',attendance_status:'PRESENT',login_timestamp:'2025-01-02 11:00:00',logout_timestamp:'2025-01-02 20:00:00',total_hours_worked:8,late_arrival_mins:0,early_exit_mins:0,overtime_hours:0,leave_type:null}});
   assert.equal((await processRows([row()],pool,1)).created,1);assert.equal((await processRows([row()],pool,1)).failed,1);

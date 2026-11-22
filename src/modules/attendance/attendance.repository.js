@@ -1,5 +1,5 @@
 const { lockEmployee, assertNoLeave } = require('../leave-records/leave-records.repository');
-const { scheduleSql, resolveSchedule, requireSchedule, isScheduledDay, calculateAttendance, at } = require('./attendance-schedule');
+const { scheduleSql, resolveSchedule, requireSchedule, isScheduledDay, calculateAttendance, at } = require('./repositories/attendance-schedule');
 const { AppError } = require('../../common/errors/app-error');
 function fail(code, message) { const error = new AppError(409, message); error.code = code; throw error; }
 const columns = `id, employee_id AS "employeeId", to_char(work_date, 'YYYY-MM-DD') AS "workDate",
