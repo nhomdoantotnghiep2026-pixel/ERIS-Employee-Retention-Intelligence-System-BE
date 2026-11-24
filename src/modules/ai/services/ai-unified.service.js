@@ -26,9 +26,28 @@ class OllamaProvider {
           options: { temperature: 0, num_ctx: numCtx, num_predict: numPredict } })
       });
       if (!response.ok) {
-        await response.discard?.();
-        console.error('Ollama request failed', { model: this.model, elapsedMs: Date.now() - started, httpStatus: response.status });
-        throw new AppError(response.status === 429 ? 503 : 502, 'Ollama rejected the request. Check server authentication, model and capacity.');
+        let upstreamError = '(không đọc được trường error từ Ollama)';
+
+        try {
+          const payload = JSON.parse(await response.text());
+          if (typeof payload?.error === 'string') {
+            upstreamError = payload.error.slice(0, 500);
+          }
+        } catch {
+          // Tiếp tục xử lý theo mã HTTP nếu body không đọc được hoặc không phải JSON.
+        }
+
+        console.error('Ollama request failed', {
+          model: this.model,
+          elapsedMs: Date.now() - started,
+          httpStatus: response.status,
+          upstreamError,
+        });
+
+        throw new AppError(
+          response.status === 429 ? 503 : 502,
+          'Ollama rejected the request. Check server authentication, model and capacity.'
+        );
       }
       text = await response.text();
     } catch (error) {
