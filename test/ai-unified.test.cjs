@@ -12,6 +12,42 @@ function fixture(){
  return {u:new UnifiedAnalysis(service,repo,{agent,provider,retriever}),settings,repo,provider,retriever,counts:()=>({predict,save,call,retrieve})};
 }
 const body={snapshotId:3,save:true,confirmExternalData:true};
+test('recommendation validation accepts two grounded policies and rejects a third',()=>{
+ const {validateOutput}=require('../src/modules/policy-agent/policy-agent.service');
+ const policies=['1','2','3'].map(id=>({id,code:'P0'+id,name:'Support '+id}));
+ const context={policies,evidence:[{id:'SURVEY:1:2',source:'SURVEY'}]};
+ const recommendations=policies.map(p=>({policyId:p.id,reason:'Specific observed difficulty and why this support fits.',evidenceIds:['SURVEY:1:2'],hrVerification:'Ask the employee which tasks have conflicting priorities.'}));
+ assert.equal(validateOutput({recommendations:recommendations.slice(0,2),noRecommendationReason:null},context).recommendations.length,2);
+ assert.throws(()=>validateOutput({recommendations,noRecommendationReason:null},context),e=>e.statusCode===502);
+});
+test('Ollama uses non-thinking compact defaults and identifies HTTP timeout versus connection errors',async()=>{
+ let payload;
+ const provider=new OllamaProvider({url:'http://localhost:11434',model:'qwen3:8b',fetchImpl:async(_url,options)=>{
+  payload=JSON.parse(options.body);assert.equal(options.signal,undefined);
+  return {ok:true,text:async()=>JSON.stringify({done:true,done_reason:'stop',message:{content:JSON.stringify({recommendations:[],noRecommendationReason:'No evidence'})}})};
+ }});
+ await provider.generate({});
+ assert.equal(payload.think,false);assert.equal(payload.keep_alive,'15m');
+ assert.match(payload.messages[0].content,/Answer in Vietnamese\./);
+ assert.equal(payload.options.num_ctx,8192);assert.equal(payload.options.num_predict,768);
+ for(const [code,status] of [['UND_ERR_HEADERS_TIMEOUT',504],['ECONNRESET',502]]){
+  provider.fetchImpl=async()=>{throw Object.assign(new TypeError('fetch failed'),{cause:{code}});};
+  await assert.rejects(provider.generate({}),error=>error.statusCode===status);
+ }
+ provider.fetchImpl=async()=>({ok:true,text:async()=>{throw Object.assign(new Error('body timeout'),{code:'UND_ERR_BODY_TIMEOUT'});}});
+ await assert.rejects(provider.generate({}),error=>error.statusCode===504);
+});
+test('policy code from database context survives Ollama mapping in preview and persistence',async()=>{
+ for(const save of [false,true]){
+  const f=fixture();
+  const generate=f.provider.generate;
+  f.provider.generate=async context=>{assert.equal(context.policies[0].code,'P01');return generate(context);};
+  const persist=f.repo.save;
+  f.repo.save=async(...args)=>{assert.equal(args[3].recommendations[0].policy.code,'P01');return persist(...args);};
+  const result=await f.u.run(1,'7',{...body,save});
+  assert.equal(result.policyAnalysis.recommendations[0].policy.code,'P01');
+ }
+});
 test('E5 retrieval and Ollama generation combine all sources; save is last',async()=>{const f=fixture();const r=await f.u.run(1,'7',body);assert.equal(r.saved,true);assert.equal(r.predictionId,8);assert.equal(r.policyAnalysis.provider,'E5+OLLAMA');assert.equal(r.policyAnalysis.autoApplied,false);assert.deepEqual(f.counts(),{predict:1,save:1,call:1,retrieve:1});});
 test('preview never writes; invalid output, source changes and provider errors never save',async()=>{const preview=fixture();assert.equal((await preview.u.run(1,'7',{...body,save:false})).saved,false);assert.equal(preview.counts().save,0);for(const key of ['bad','stale','fail']){const f=fixture();f.settings[key]=true;await assert.rejects(f.u.run(1,'7',body));assert.equal(f.counts().save,0);assert.equal(f.u.busy.size,0);}});
 test('reject consent/unknown fields/missing provider config before prediction; HR remains required',async()=>{for(const b of [{...body,confirmExternalData:false},{...body,extra:1},{...body,snapshotId:0}]){const f=fixture();await assert.rejects(f.u.run(1,'7',b));assert.equal(f.counts().predict,0);}const ollama=fixture();ollama.provider.configured=()=>false;await assert.rejects(ollama.u.run(1,'7',body),e=>e.statusCode===503);const e5=fixture();e5.retriever.configured=()=>false;await assert.rejects(e5.u.run(1,'7',body),e=>e.statusCode===503);});
