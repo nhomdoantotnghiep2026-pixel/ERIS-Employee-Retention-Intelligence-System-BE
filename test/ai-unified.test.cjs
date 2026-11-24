@@ -29,6 +29,8 @@ test('Ollama uses non-thinking compact defaults and identifies HTTP timeout vers
  await provider.generate({});
  assert.equal(payload.think,false);assert.equal(payload.keep_alive,'15m');
  assert.match(payload.messages[0].content,/Answer in Vietnamese\./);
+ assert.match(payload.messages[0].content,/1-2 short sentences/);
+ assert.match(payload.messages[0].content,/one focused question/);
  assert.equal(payload.options.num_ctx,8192);assert.equal(payload.options.num_predict,768);
  for(const [code,status] of [['UND_ERR_HEADERS_TIMEOUT',504],['ECONNRESET',502]]){
   provider.fetchImpl=async()=>{throw Object.assign(new TypeError('fetch failed'),{cause:{code}});};
