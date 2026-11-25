@@ -8,17 +8,21 @@ function excerpt(value, limit) {
 function compactOllamaContext({ policies, candidates, evidence, model, period }) {
   const policiesById = new Map(policies.map(policy => [String(policy.id), policy]));
   const evidenceById = new Map(evidence.map(item => [String(item.id), item]));
-  const shortlist = candidates.slice(0, 2).flatMap(({ policyId, evidenceIds }) => {
+  const shortlist = candidates.flatMap(({ policyId, evidenceIds }) => {
     const policy = policiesById.get(String(policyId));
-    if (!policy) return [];
+    const matchedEvidenceIds = evidenceIds.map(String).filter(id => evidenceById.has(id));
+    if (!policy || !matchedEvidenceIds.length) return [];
     return [{
       id: String(policy.id),
       name: excerpt(policy.name, 100),
       description: excerpt(policy.description, 220),
-      matchedEvidenceIds: evidenceIds.map(String)
+      matchedEvidenceIds
     }];
-  });
-  const selected = [...new Set(shortlist.flatMap(policy => policy.matchedEvidenceIds))]
+  }).slice(0, 2);
+  const selected = [...new Set([
+    ...shortlist.map(policy => policy.matchedEvidenceIds[0]),
+    ...shortlist.flatMap(policy => policy.matchedEvidenceIds)
+  ])]
     .map(id => evidenceById.get(id))
     .filter(Boolean)
     .slice(0, 2);

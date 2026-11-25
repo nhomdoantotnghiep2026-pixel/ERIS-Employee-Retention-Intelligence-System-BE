@@ -375,7 +375,6 @@ function decode(row) {
   if (metadata.kind === "BANK")
     return { ...question, bankCode: metadata.code, catalogQuestionId: row.id,
       recommendedBankCodes: metadata.recommendedBankCodes ?? [] }
-
   throw new AppError(409, "Unsupported catalog item kind.")
 }
 
@@ -424,7 +423,7 @@ async function readCatalog(client) {
     if (defaults.length !== 4)
       throw new AppError(
         409,
-        `Survey question catalog is incomplete for ${category.name}: expected 4 SATISFACTION questions.`,
+        `Survey question catalog is incomplete for ${category.name}: expected 4 SATISFACTION questions`,
       )
 
     return {

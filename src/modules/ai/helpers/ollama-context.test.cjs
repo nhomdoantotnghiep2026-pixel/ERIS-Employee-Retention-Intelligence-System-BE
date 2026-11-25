@@ -31,6 +31,10 @@ test('Ollama receives the top two E5 policies and only their selected evidence',
   assert.deepEqual(result.model.shap, [{ feature: 'Overtime_Hours', impact: 0.1, period }]);
   assert.ok(result.policies[0].description.length < input.policies[1].description.length);
 
+  input.candidates[0].evidenceIds = ['attendance', 'other'];
+  const balanced = compactOllamaContext(input);
+  assert.deepEqual(balanced.policies.map(policy => policy.matchedEvidenceIds), [['attendance'], ['survey']]);
+
   input.candidates[0].evidenceIds = ['survey'];
   const deduplicated = compactOllamaContext(input);
   assert.deepEqual(deduplicated.evidence.map(item => item.id), ['survey']);

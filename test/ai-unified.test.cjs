@@ -1,5 +1,31 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');
 const {UnifiedAnalysis,OllamaProvider}=require('../src/modules/ai/services/ai-unified.service');
+
+test('Qwen returns two distinct E5 policies with their respective evidence', async () => {
+ const candidates = ['1', '2'].map(policyId => ({
+  policyId, policy: { id: policyId, name: `Policy ${policyId}` },
+  evidence: [{ id: `survey-${policyId}`, source: 'SURVEY', comment: `Observation ${policyId}` }]
+ }));
+ const recommendations = candidates.map(({ policyId, evidence }) => ({
+  policyId, evidenceIds: [evidence[0].id], reason: 'Xem lại phản hồi khảo sát.', hrVerification: 'Hỏi thêm nhân viên.'
+ }));
+ const writer = new OllamaProvider({ url: 'http://localhost:11434', model: 'qwen-test', fetchImpl: async (url, options) => {
+  const { format } = JSON.parse(options.body);
+  assert.equal(format.properties.recommendations.minItems, 2);
+  assert.equal(format.properties.recommendations.maxItems, 2);
+  return { ok: true, text: async () => JSON.stringify({ done: true, done_reason: 'stop', message: {
+   content: JSON.stringify({ recommendations, noRecommendationReason: null })
+  } }) };
+ } });
+ const analysis = new UnifiedAnalysis({}, {}, { agent: {}, writer });
+ const result = await analysis.writeRecommendations(candidates, {}, {});
+ assert.deepEqual(result.recommendations.map(item => item.policyId), ['1', '2']);
+
+ recommendations[1].evidenceIds = recommendations[0].evidenceIds;
+ await assert.rejects(analysis.writeRecommendations(candidates, {}, {}), /linked evidence/);
+ recommendations.pop();
+ await assert.rejects(analysis.writeRecommendations(candidates, {}, {}), /shortlisted policy/);
+});
 function fixture(){
  const preview={ready:true,snapshotId:3,capturedAt:'2026-11-20T00:00:00Z',employee:{id:7},period:{start:'2026-11-01',end:'2026-11-19'},features:{Overtime_Hours:20}};
  const policy={id:'1',code:'P01',name:'Support',description:'Review workload'};
