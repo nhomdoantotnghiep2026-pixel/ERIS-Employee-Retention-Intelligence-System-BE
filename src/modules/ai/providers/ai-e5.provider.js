@@ -91,4 +91,4 @@ class E5Provider {
   }
 }
 
-module.exports = { E5Provider };
+module.exports = { E5Provider, evidenceText };
