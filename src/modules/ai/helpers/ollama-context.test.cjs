@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { compactOllamaContext } = require('./ollama-context');
 
-test('Ollama receives the top two E5 policies and only their selected evidence', () => {
+test('Ollama receives three E5 policies with at least one source per candidate', () => {
   const period = { start: '2025-01-01', end: '2025-01-31' };
   const submittedAt = '2025-01-15T08:00:00.000Z';
   const input = {
@@ -21,9 +21,9 @@ test('Ollama receives the top two E5 policies and only their selected evidence',
     ]
   };
   const result = compactOllamaContext(input);
-  assert.deepEqual(result.policies.map(policy => policy.id), ['2', '1']);
+  assert.deepEqual(result.policies.map(policy => policy.id), ['2', '1', '3']);
   assert.deepEqual(result.evidence.map(item => [item.id, item.period]), [
-    ['attendance', '2025-01'], ['survey', submittedAt]
+    ['attendance', '2025-01'], ['survey', submittedAt], ['other', period]
   ]);
   assert.match(result.evidence[0].fact, /300 phút/);
   assert.match(result.evidence[1].fact, /Weekend overtime/);
@@ -33,10 +33,10 @@ test('Ollama receives the top two E5 policies and only their selected evidence',
 
   input.candidates[0].evidenceIds = ['attendance', 'other'];
   const balanced = compactOllamaContext(input);
-  assert.deepEqual(balanced.policies.map(policy => policy.matchedEvidenceIds), [['attendance'], ['survey']]);
+  assert.deepEqual(balanced.policies.map(policy => policy.matchedEvidenceIds), [['attendance', 'other'], ['survey'], ['other']]);
 
   input.candidates[0].evidenceIds = ['survey'];
   const deduplicated = compactOllamaContext(input);
-  assert.deepEqual(deduplicated.evidence.map(item => item.id), ['survey']);
+  assert.deepEqual(deduplicated.evidence.map(item => item.id), ['survey', 'other']);
   assert.equal(deduplicated.model.shap, undefined);
 });

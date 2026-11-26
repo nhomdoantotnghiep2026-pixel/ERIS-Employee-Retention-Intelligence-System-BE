@@ -10,7 +10,10 @@ function evidenceText(item) {
     const comment = typeof item.comment === 'string' ? item.comment.trim() : '';
     const freeText = item.question_type === 'TEXT' && typeof answer === 'string' ? answer.trim() : '';
     if (!unfavorable && !comment && !freeText) return '';
-    return [`Khảo sát: ${item.question_text}`, unfavorable && `Điểm: ${answer}/${max} (thang ${min}–${max})`, comment || freeText].filter(Boolean).join('. ');
+    const score = Number.isFinite(answer) && Number.isFinite(min) && Number.isFinite(max)
+      ? `Điểm: ${answer}/${max} (thang ${min}–${max})` : '';
+    return [`Khảo sát: ${item.question_text}`, score, freeText && `Trả lời: ${freeText}`,
+      comment && comment !== freeText && `Nhận xét: ${comment}`].filter(Boolean).join('. ');
   }
   if (item.source === 'ATTENDANCE') {
     const metrics = [[item.overtimeMinutes, 'tăng ca'], [item.lateMinutes, 'đi trễ'], [item.earlyMinutes, 'về sớm']]

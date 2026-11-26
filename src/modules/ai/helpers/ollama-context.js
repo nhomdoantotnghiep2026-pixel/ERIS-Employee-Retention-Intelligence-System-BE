@@ -14,18 +14,18 @@ function compactOllamaContext({ policies, candidates, evidence, model, period })
     if (!policy || !matchedEvidenceIds.length) return [];
     return [{
       id: String(policy.id),
-      name: excerpt(policy.name, 100),
-      description: excerpt(policy.description, 220),
+      name: excerpt(policy.name, 80),
+      description: excerpt(policy.description, 110),
       matchedEvidenceIds
     }];
-  }).slice(0, 2);
+  }).slice(0, 3);
   const selected = [...new Set([
     ...shortlist.map(policy => policy.matchedEvidenceIds[0]),
     ...shortlist.flatMap(policy => policy.matchedEvidenceIds)
   ])]
     .map(id => evidenceById.get(id))
     .filter(Boolean)
-    .slice(0, 2);
+    .slice(0, 3);
   const selectedIds = new Set(selected.map(item => String(item.id)));
   for (const policy of shortlist) {
     policy.matchedEvidenceIds = policy.matchedEvidenceIds.filter(id => selectedIds.has(id));
@@ -47,8 +47,8 @@ function compactOllamaContext({ policies, candidates, evidence, model, period })
       source: item.source,
       period: item.month ?? item.submitted_at ?? period,
       fact: item.source === 'SURVEY'
-        ? evidenceText({ ...item, question_text: excerpt(item.question_text, 100),
-          answer_value: excerpt(item.answer_value, 150), comment: excerpt(item.comment, 150) })
+        ? evidenceText({ ...item, question_text: excerpt(item.question_text, 85),
+          answer_value: excerpt(item.answer_value, 100), comment: excerpt(item.comment, 100) })
         : evidenceText(item)
     }))
   };
