@@ -1,22 +1,23 @@
 const { AppError } = require('../../../common/errors/app-error');
 
 function evidenceText(item) {
+  if (item.origin === 'SNAPSHOT') {
+    const period = typeof item.period === 'string' ? item.period : `${item.period.start}–${item.period.end}`;
+    return `${item.label}: ${item.value}${item.unit && (item.unit.startsWith('/') ? item.unit : ' ' + item.unit)} (${period}).`;
+  }
   if (item.source === 'SURVEY') {
-    const { min, max, positiveDirection } = item.answer_config || {};
+    const { min, max } = item.answer_config || {};
     const answer = item.answer_value;
-    const unfavorable = typeof answer === 'number' && Number.isFinite(min) && Number.isFinite(max) &&
-      (positiveDirection === 'HIGH' && answer < (min + max) / 2 ||
-       positiveDirection === 'LOW' && answer > (min + max) / 2);
     const comment = typeof item.comment === 'string' ? item.comment.trim() : '';
     const freeText = item.question_type === 'TEXT' && typeof answer === 'string' ? answer.trim() : '';
-    if (!unfavorable && !comment && !freeText) return '';
-    const score = Number.isFinite(answer) && Number.isFinite(min) && Number.isFinite(max)
+    const score = Number.isFinite(answer) && Number.isFinite(min) && Number.isFinite(max) && answer >= min && answer <= max
       ? `Điểm: ${answer}/${max} (thang ${min}–${max})` : '';
-    return [`Khảo sát: ${item.question_text}`, score, freeText && `Trả lời: ${freeText}`,
+    if (!score && !comment && !freeText) return '';
+    return [item.question_text ? `Khảo sát: ${item.question_text}` : 'Khảo sát', score, freeText && `Trả lời: ${freeText}`,
       comment && comment !== freeText && `Nhận xét: ${comment}`].filter(Boolean).join('. ');
   }
   if (item.source === 'ATTENDANCE') {
-    const metrics = [[item.overtimeMinutes, 'tăng ca'], [item.lateMinutes, 'đi trễ'], [item.earlyMinutes, 'về sớm']]
+    const metrics = [[item.overtimeMinutes, 'tăng ca'], [item.lateMinutes, 'đi trễ'], [item.earlyMinutes, 'về sớm'], [item.workingMinutes, 'làm việc']]
       .filter(([minutes]) => Number.isFinite(minutes) && minutes > 0);
     if (metrics.length) return `Chấm công tháng ${item.month}: ${metrics.map(([minutes, name]) => `${name} ${minutes} phút`).join(', ')} trong ${item.recordedDays} ngày có ghi nhận.`;
   }
@@ -44,21 +45,52 @@ class E5Provider {
     return Boolean(this.endpoint && (this.loopback || this.clientId?.trim() && this.clientSecret?.trim()));
   }
 
-  async rank(context) {
+  async rank(context, { supplementary = false } = {}) {
+    const ranked = await this.rankSignals(context);
+    if (!supplementary || !ranked.recommendations.length) return ranked;
+    const used = new Set(ranked.recommendations.map(item => item.evidence[0].id));
+    const alternatives = context.evidence.filter(item => !used.has(item.id));
+    if (!alternatives.some(evidenceText)) return ranked;
+    try {
+      const extra = await this.rankSignals({
+        ...context, policies: ranked.recommendations.map(item => item.policy), evidence: alternatives
+      }, 2500);
+      const byPolicy = new Map(extra.recommendations.map(item => [item.policyId, item]));
+      for (const item of ranked.recommendations) {
+        const match = byPolicy.get(item.policyId);
+        if (match && match.similarity > 0 && match.similarity >= item.similarity - 0.10) {
+          item.evidence.push(...match.evidence);
+        }
+      }
+    } catch (error) {
+      console.warn('E5 supplemental evidence unavailable', { status: error.statusCode });
+    }
+    return ranked;
+  }
+
+  async rankSignals(context, timeoutMs = 8000) {
     const policies = new Map(context.policies.map(policy => [String(policy.id), policy]));
     const sources = new Map(context.evidence.map(item => [item.id, item]));
     const evidence = context.evidence.flatMap(item => {
-      const text = evidenceText(item).slice(0, 1000);
+      const observation = evidenceText(item);
+      const impact = context.model?.contributions?.[item.feature];
+      const score = context.model?.score;
+      const background = [
+        Number.isFinite(score) && `điểm dự đoán ${Number(score.toPrecision(3))}`,
+        Number.isFinite(impact) && impact !== 0 && `SHAP ${Number(impact.toPrecision(3))}`
+      ].filter(Boolean);
+      const modelContext = item.origin === 'SNAPSHOT' && background.length ? ` [Bối cảnh: ${background.join(', ')}.]` : '';
+      const text = observation ? (observation + modelContext).slice(0, 1000) : '';
       return text ? [{ evidenceId: item.id, text }] : [];
     });
     if (!evidence.length || !policies.size) {
-      return { recommendations: [], noRecommendationReason: 'Chưa có tín hiệu khảo sát hoặc chấm công phù hợp để gợi ý chính sách.' };
+      return { recommendations: [], noRecommendationReason: 'Chưa có dẫn chứng phù hợp để gợi ý chính sách.' };
     }
     if (!this.configured()) throw new AppError(503, 'E5 is not configured.');
     let response;
     try {
       response = await this.fetchImpl(this.endpoint, {
-        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(8000),
+        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
         headers: {
           'Content-Type': 'application/json',
           ...(this.clientId?.trim() && this.clientSecret?.trim() ? {

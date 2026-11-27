@@ -52,14 +52,14 @@ class PolicyDemoRepository {
       if (employees.length!==employeeIds.length) throw new AppError(409,'Mỗi nhân viên được chọn phải tồn tại và có hồ sơ ACTIVE.');
       const policies=[];
       for(const policy of DEMO_POLICIES) {
-        await client.query(`INSERT INTO retention_policies(code,name,description,target_factor,status)
-          VALUES($1,$2,$3,$4,'ACTIVE') ON CONFLICT(code) DO NOTHING`,
-        [policy.code,policy.name,policy.description,policy.targetFactor]);
+        await client.query(`INSERT INTO retention_policies(code,name,description,status)
+          VALUES($1,$2,$3,'ACTIVE') ON CONFLICT(code) DO NOTHING`,
+        [policy.code,policy.name,policy.description]);
         const {rows}=await client.query(`SELECT ${policyColumns} FROM retention_policies WHERE code=$1 FOR SHARE`,[policy.code]);
-        if(rows[0].status!=='ACTIVE'||rows[0].targetFactor!==policy.targetFactor) {
-          throw new AppError(409,`Chính sách ${policy.code} không ACTIVE hoặc đã đổi yếu tố áp dụng.`);
+        if(rows[0].status!=='ACTIVE') {
+          throw new AppError(409,`Chính sách ${policy.code} không ACTIVE.`);
         }
-        policies.push(rows[0]);
+        policies.push({...rows[0],targetFactor:policy.targetFactor});
       }
       const resultIds=[];
       for(const employee of employees) {
@@ -77,8 +77,8 @@ class PolicyDemoRepository {
             VALUES($1,$2,$3,$4,$5,$6)`,[predictionId,explanation.featureName,explanation.featureValue,explanation.impactValue,explanation.impactDirection,explanation.rankOrder]);
         }
         for(let i=0;i<policies.length;i++) {
-          await client.query(`INSERT INTO policy_recommendations(prediction_result_id,policy_id,reason,priority,status)
-            VALUES($1,$2,$3,$4,'SUGGESTED')`,[predictionId,policies[i].id,DEMO_POLICIES[i].reason,DEMO_POLICIES[i].priority]);
+          await client.query(`INSERT INTO policy_recommendations(prediction_result_id,policy_id,reason,priority,status,target_factor)
+            VALUES($1,$2,$3,$4,'SUGGESTED',$5)`,[predictionId,policies[i].id,DEMO_POLICIES[i].reason,DEMO_POLICIES[i].priority,policies[i].targetFactor]);
         }
         resultIds.push(predictionId);
       }
@@ -100,7 +100,7 @@ class PolicyDemoRepository {
   }
   async readRecommendations(client,where='',values=[]) {
     const {rows}=await client.query(`SELECT r.id,r.prediction_result_id AS "predictionResultId",r.reason,r.priority,r.status,r.created_at AS "createdAt",
-      p.id AS "policyId",p.code,p.name,p.description,p.target_factor AS "targetFactor",p.status AS "policyStatus",
+      p.id AS "policyId",p.code,p.name,p.description,r.target_factor AS "targetFactor",p.status AS "policyStatus",
       e.id AS "employeeId",e.employee_code AS "employeeCode",e.full_name AS "fullName",
       pr.attrition_probability AS probability,pr.risk_level AS "riskLevel",m.model_version AS "modelVersion"
       FROM policy_recommendations r JOIN retention_policies p ON p.id=r.policy_id

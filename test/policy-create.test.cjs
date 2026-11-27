@@ -3,6 +3,17 @@ const {PolicyDemoRepository}=require('../src/modules/prediction_results/policy-d
 const {validatePolicyCreate}=require('../src/modules/prediction_results/helpers/policy-create.validation');
 const {createPolicyDemoRouter}=require('../src/modules/prediction_results/policy-demo.routes');
 const {errorHandler}=require('../src/common/middleware/error-handler');
+test('recommendations read target factors from the recommendation record', async () => {
+ const client = { async query(sql) {
+  assert.match(sql, /r\.target_factor AS "targetFactor"/);
+  assert.doesNotMatch(sql, /p\.target_factor/);
+  return { rows: [{ id: 1, policyId: 2, probability: '0.78', targetFactor: 'overtime_hours' },
+    { id: 3, policyId: 2, probability: '0.55', targetFactor: null }] };
+ } };
+ const result = await new PolicyDemoRepository(client).readRecommendations(client);
+ assert.deepEqual(result.map(item => item.policy.targetFactor), ['overtime_hours', null]);
+});
+
 const valid=()=>({code:'RETENTION_WORKLOAD_REVIEW',name:'Rà soát khối lượng công việc',description:'HR trao đổi về phân bổ nhiệm vụ.\nKiểm tra lại sau 30 ngày.'});
 function fixture(){
  const state={policies:[],audit:[],queries:[],released:0,failAudit:false,uniqueError:false};let snapshot;
