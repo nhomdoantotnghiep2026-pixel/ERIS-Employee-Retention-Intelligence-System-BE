@@ -1,11 +1,19 @@
 const {
   validateCreateEmployeeInput,
   validateUpdateEmployeeInput,
+  validateOwnContactInput,
   validateListQuery,
   validateEmployeeId
 } = require('./employees.validation');
 
 class EmployeesController {
+  updateMyContact = async (req, res, next) => {
+    try {
+      const data = await this.employeesService.updateMyContact(req.auth.userId, validateOwnContactInput(req.body));
+      res.set('Cache-Control', 'no-store, private');
+      res.json({ data });
+    } catch (error) { next(error); }
+  };
   listAccountCandidates = async (req, res, next) => {
     try {
       res.set('Cache-Control', 'no-store, private');

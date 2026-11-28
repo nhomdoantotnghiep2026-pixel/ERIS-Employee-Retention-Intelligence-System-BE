@@ -247,4 +247,12 @@ function validateListQuery(query) {
   }
   return result;
 }
-module.exports = { validateCreateEmployeeInput, validateUpdateEmployeeInput, validateEmployeeId, validateListQuery, requiredEmployeeFields, validateEmployeeCode };
+function validateOwnContactInput(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) ||
+      Object.keys(input).some(key => !['phone', 'address', 'addressRefId'].includes(key))) {
+    throw new AppError(400, 'Only phone and address may be updated.');
+  }
+  if (typeof input.address === 'string' && input.address.trim().length > 2000) throw new AppError(400, 'Address must not exceed 2000 characters.');
+  return validateUpdateEmployeeInput(input);
+}
+module.exports = { validateCreateEmployeeInput, validateUpdateEmployeeInput, validateOwnContactInput, validateEmployeeId, validateListQuery, requiredEmployeeFields, validateEmployeeCode };

@@ -479,6 +479,19 @@ current_salary AS "currentSalary", created_at AS "createdAt", updated_at AS "upd
       return updated && jobHistory ? { ...updated, jobHistory } : updated;
     });
   }
+  async updateOwnContactAuthorized(actorId, employeeId, changes) {
+    if (Object.keys(changes).some(key => !['phone', 'address', 'addressRefId', 'distanceFromHomeKm'].includes(key))) throw new AppError(400, 'Unsupported contact field.');
+    return this.withTransaction(async repository => {
+      const actor = await repository.findHrTarget(actorId, true);
+      if (actor?.role !== 'EMPLOYEE' || actor.status !== 'ACTIVE' || Number(actor.employeeId) !== Number(employeeId)) throw new AppError(403, 'You may only update your own profile.');
+      const before = await snapshot(repository.databasePool, 'employees', employeeId, true);
+      if (!before || before.employment_status !== 'ACTIVE') throw new AppError(409, 'An ACTIVE employee profile is required.');
+      const updated = await repository.update(employeeId, changes);
+      if (!updated) throw new AppError(404, 'Employee profile not found.');
+      await recordChange(repository.databasePool, actorId, 'employees', employeeId, 'UPDATE', before, await snapshot(repository.databasePool, 'employees', employeeId));
+      return updated;
+    });
+  }
   async update(id, employee) {
     if (Object.hasOwn(employee, 'phone')) {
       const phone = normalizePhone(employee.phone);

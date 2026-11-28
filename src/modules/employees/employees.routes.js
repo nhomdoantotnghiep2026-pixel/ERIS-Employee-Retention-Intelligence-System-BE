@@ -7,6 +7,7 @@ function createEmployeesRouter({ employeesController, authenticate }) {
 
   router.get('/', authenticate, employeesController.listEmployees);
   router.get('/me', authenticate, employeesController.getMyProfile);
+  router.patch('/me', authenticate, employeesController.updateMyContact);
   router.get('/account-candidates', authenticate, employeesController.listAccountCandidates);
   router.post('/:id/account', authenticate, employeesController.provisionAccount);
   router.get('/:id', authenticate, employeesController.getEmployee);

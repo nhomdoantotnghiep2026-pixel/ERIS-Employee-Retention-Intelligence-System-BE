@@ -1,4 +1,13 @@
 const employeesPaths = {
+  '/api/employees/me': {
+    patch: {
+      tags: ['Employees'], summary: 'EMPLOYEE: update own phone and address',
+      description: 'ACTIVE employee account and linked ACTIVE profile required. Only phone, address and optional addressRefId are accepted. Address updates recalculate distance before saving; failures save nothing. Changes are audited.',
+      security: [{ bearerAuth: [] }],
+      requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', additionalProperties: false, minProperties: 1, properties: { phone: { type: 'string', maxLength: 30 }, address: { type: 'string', maxLength: 2000 }, addressRefId: { type: 'string', maxLength: 2000 } } } } } },
+      responses: { 200: { description: 'Updated employee: {data: ...}' }, 400: { description: 'Invalid contact fields' }, 401: { description: 'Authentication required' }, 403: { description: 'Not an ACTIVE employee or no linked profile' }, 409: { description: 'Phone already used or profile inactive' }, 422: { description: 'Address distance could not be resolved; nothing saved' } },
+    },
+  },
   '/api/employees': {
     post: {
       tags: ['Employees'],
@@ -97,6 +106,7 @@ employeesPaths['/api/employees/{id}'].get = {
   responses: { 200: { description: 'Trả trực tiếp hồ sơ nhân viên, gồm distanceFromHomeKm và distanceCalculation; không bọc trong data.' }, 400: { description: 'ID nhân viên phải là số nguyên dương.' }, 401: { description: 'Thiếu hoặc sai token truy cập.' }, 403: { description: 'Chỉ tài khoản HR được phép truy cập.' }, 404: { description: 'Không tìm thấy nhân viên.' } }
 };
 employeesPaths['/api/employees/me'] = {
+  ...employeesPaths['/api/employees/me'],
   get: {
     tags: ['Employees'],
     summary: 'Xem hồ sơ nhân viên của chính mình',

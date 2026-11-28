@@ -163,6 +163,26 @@ class EmployeesService {
     if (Number(actor?.employeeId) === Number(employeeId)) throw new AppError(403, 'You cannot deactivate your own profile.');
     return this.employeesRepository.deactivate(employeeId, actorId);
   }
+  async updateMyContact(actorId, input) {
+    const { validateOwnContactInput } = require('./employees.validation');
+    const employee = validateOwnContactInput(input);
+    const actor = await this.employeesRepository.findHrTarget(actorId);
+    if (actor?.role !== 'EMPLOYEE' || actor.status !== 'ACTIVE') throw new AppError(403, 'Only ACTIVE employees can update their own contact details.');
+    if (!actor.employeeId) throw new AppError(403, 'A linked employee profile is required.');
+    const current = await this.employeesRepository.findById(actor.employeeId);
+    if (!current) throw new AppError(404, 'Employee profile not found.');
+    if (current.employmentStatus !== 'ACTIVE') throw new AppError(409, 'An ACTIVE employee profile is required.');
+    const changes = { ...employee };
+    let calculation;
+    if (Object.hasOwn(employee, 'address')) {
+      calculation = await resolveEmployeeDistance(employee.address, this.distanceService, employee.addressRefId);
+      if (calculation.status !== 'READY' || !Number.isFinite(calculation.distanceFromHomeKm) || calculation.distanceFromHomeKm < 0) {
+        throw new AppError(422, 'Địa chỉ chưa thể xác định khoảng cách. Vui lòng nhập địa chỉ đầy đủ hoặc liên hệ HR.');
+      }
+      changes.distanceFromHomeKm = calculation.distanceFromHomeKm;
+    }
+    return output(await this.employeesRepository.updateOwnContactAuthorized(actorId, actor.employeeId, changes), calculation);
+  }
   async updateEmployee({ actorId, employeeId, employee }) {
     if (['employeeCode', 'email', 'dateOfBirth', 'hireDate'].some(key => Object.hasOwn(employee, key))) {
       throw new AppError(400, 'employeeCode, email, dateOfBirth and hireDate cannot be updated.');
