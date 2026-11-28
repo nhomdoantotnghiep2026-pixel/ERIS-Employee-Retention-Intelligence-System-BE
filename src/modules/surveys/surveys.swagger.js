@@ -103,6 +103,7 @@ const surveysPaths = {
   },
 
   "/api/surveys/available": { get: op("EMPLOYEE: open surveys") },
+  "/api/surveys/my-history": { get: op("EMPLOYEE: own submitted surveys, including closed surveys; returns id, title, status, submittedAt") },
 
   "/api/surveys/{id}": {
     get: op("Survey detail", null, id),

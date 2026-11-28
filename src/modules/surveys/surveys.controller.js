@@ -15,6 +15,7 @@ class SurveysController {
       "listCategories",
       "listSurveys",
       "listAvailableSurveys",
+      "listMySurveyHistory",
       "createSurvey",
       "getSurvey",
       "updateSurvey",
@@ -59,6 +60,12 @@ class SurveysController {
   listAvailableSurveys(request, response, next) {
     return this.respond(request, response, next, () =>
       this.surveysService.listAvailableSurveys(request.auth.userId),
+    )
+  }
+
+  listMySurveyHistory(request, response, next) {
+    return this.respond(request, response, next, () =>
+      this.surveysService.listMySurveyHistory(request.auth.userId),
     )
   }
 

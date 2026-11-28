@@ -70,6 +70,12 @@ class SurveysService {
     )
   }
 
+  listMySurveyHistory(actorId) {
+    return this.run(actorId, ["EMPLOYEE"], (repository, actor) =>
+      repository.findSubmittedSurveys(actor.employeeId),
+    )
+  }
+
   async createDefaults(repository, surveyId, categoryIds) {
     const available = await repository.findCategoryCatalog(),
       categories = available.filter((category) =>

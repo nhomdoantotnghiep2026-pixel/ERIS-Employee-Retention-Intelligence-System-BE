@@ -82,6 +82,16 @@ class SurveysRepository {
     ).rows
   }
 
+  async findSubmittedSurveys(employeeId) {
+    return (await this.databasePool.query(
+      `SELECT s.id, s.title, s.status, r.submitted_at AS "submittedAt"
+       FROM survey_responses r JOIN surveys s ON s.id=r.survey_id
+       WHERE r.employee_id=$1 AND r.submitted_at IS NOT NULL
+       ORDER BY r.submitted_at DESC, s.id DESC`,
+      [employeeId],
+    )).rows
+  }
+
   async create(survey, actorId) {
     return (
       await this.databasePool.query(

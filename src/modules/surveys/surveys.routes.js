@@ -11,6 +11,7 @@ function createSurveysRouter({ surveysController, authenticate }) {
   router.get("/categories", surveysController.listCategories)
 
   router.get("/available", surveysController.listAvailableSurveys)
+  router.get("/my-history", surveysController.listMySurveyHistory)
 
   router.get("/", surveysController.listSurveys)
 
