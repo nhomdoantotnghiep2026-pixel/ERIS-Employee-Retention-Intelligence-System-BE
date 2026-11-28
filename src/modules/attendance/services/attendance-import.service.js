@@ -201,7 +201,24 @@ class AttendanceImportService {
     if(actor.role_name==='HR')for(const row of data)row.holiday_warnings=row.record_status==='ACTIVE'?await workWarnings(this.repo.pool,row.employee_id,row.check_in,row.check_out):[];
     return {data,limit:f.limit,offset:f.offset};
   }
-  async detail(user,id) {const actor=await this.repo.actor(this.repo.pool,user.id),row=await this.repo.find(this.repo.pool,R.id(id));if(!row||row.record_status!=='ACTIVE')R.fail('NOT_FOUND','Attendance not found.',404);if(actor.role_name!=='HR'&&String(actor.employeeId)!==String(row.employee_id))R.fail('NOT_FOUND','Attendance not found.',404);if(actor.role_name==='HR')row.holiday_warnings=await workWarnings(this.repo.pool,row.employee_id,row.check_in,row.check_out);return {data:row};}
+  async readAuthorizedRecord(user, id) {
+    const actor = await this.repo.actor(this.repo.pool, user.id);
+    const row = await this.repo.find(this.repo.pool, R.id(id));
+    if (!row || row.record_status !== 'ACTIVE' ||
+        (actor.role_name !== 'HR' && String(actor.employeeId) !== String(row.employee_id))) {
+      R.fail('NOT_FOUND', 'Attendance not found.', 404);
+    }
+    return { actor, row };
+  }
+
+  async detail(user, id) {
+    const { actor, row } = await this.readAuthorizedRecord(user, id);
+    const scheduledShift = await this.repo.findScheduledShift(this.repo.pool, row.id, row.work_schedule_id);
+    if (actor.role_name === 'HR') {
+      row.holiday_warnings = await workWarnings(this.repo.pool, row.employee_id, row.check_in, row.check_out);
+    }
+    return { data: { ...row, scheduled_shift: scheduledShift } };
+  }
   async cancellations(user,query={},id=null) {
     await this.repo.actor(this.repo.pool,user.id,true);
     const filters=this.filters(query);
@@ -210,7 +227,7 @@ class AttendanceImportService {
     if(!rows.length)R.fail('NOT_FOUND','Cancelled attendance not found.',404);
     return {data:rows[0]};
   }
-  async logs(user,id,query) {await this.repo.actor(this.repo.pool,user.id,true);await this.detail(user,id);const f=this.filters(query);return {data:await readLogs(this.repo.pool, id, f)};}
+  async logs(user,id,query) {await this.repo.actor(this.repo.pool,user.id,true);await this.readAuthorizedRecord(user,id);const f=this.filters(query);return {data:await readLogs(this.repo.pool, id, f)};}
   async cancel(user,id,body) {
     R.object(body,['reason']);
     const reason=R.reason(body.reason),attendanceId=R.id(id);

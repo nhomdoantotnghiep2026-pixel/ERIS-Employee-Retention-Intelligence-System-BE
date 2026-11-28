@@ -4,6 +4,18 @@ const json=schema=>({required:true,content:{'application/json':{schema}}});
 const object=properties=>({type:'object',additionalProperties:false,properties});
 const reason={type:'string',minLength:1,maxLength:1000};
 const datetime={type:'string',example:'2026-11-16 08:15:00',description:'Vietnam wall time: YYYY-MM-DD HH:mm:ss.'};
+const scheduledShift = {
+  ...object({
+    source:{type:'string',enum:['SNAPSHOT','CATALOG']},
+    shift_type:{type:'string',nullable:true},
+    start_time:{type:'string',example:'08:00:00'},
+    end_time:{type:'string',example:'17:00:00'},
+    break_start:{type:'string',nullable:true},
+    break_end:{type:'string',nullable:true}
+  }),
+  nullable:true,
+  description:'Saved shift snapshot when available, otherwise the current catalog entry identified by the record. Null when neither is available.'
+};
 function op(summary,extra={}) {return {tags:['Attendance'],security:[{bearerAuth:[]}],summary,responses:{200:{description:'Success'},400:{description:'Invalid input'},401:{description:'Authentication required'},403:{description:'Insufficient permission'},409:{description:'Stale preview, unresolved rows, or concurrent update'}},...extra};}
 const filters=[['from','string'],['to','string'],['employee_id','integer'],['limit','integer'],['offset','integer']].map(([name,type])=>({name,in:'query',schema:{type}}));
 function uploadRequest(confirm){return {required:true,content:{'multipart/form-data':{schema:{type:'object',required:['file',...(confirm?['options']:[])],properties:{file:{type:'string',format:'binary',description:'Columns: employee_code, employee_name, shift_type, work_date, check_in, check_out. work_date is required to classify rows without punches.'},options:{type:'string',description:'JSON object with choices and confirm_complete (boolean). '+(confirm?'Include preview_token, confirm_warnings, and optional skip_invalid (boolean). ':'')+'choices=[{excel_row,work_date?,exclude?}].'}}}}}};}
@@ -17,7 +29,17 @@ const attendancePaths={
   [base]:{get:op('HR lists attendance',{parameters:filters})},
   [base+'/me']:{get:op('Employee views own attendance',{parameters:filters.filter(f=>f.name!=='employee_id')})},
   [base+'/summary']:{get:op('Summary of ACTIVE attendance; employees are scoped to themselves',{parameters:filters,description:'Recorded days are actual rows, not inferred absences. Overtime is measured after assigned shift end, excluding break overlap; early arrival is not overtime.'})},
-  [base+'/{id}']:{get:op('HR or owner reads attendance detail',{parameters:[param('id')]})},
+  [base+'/{id}']:{get:op('HR or owner reads attendance detail',{
+    parameters:[param('id')],
+    responses:{
+      200:{description:'Attendance detail',content:{'application/json':{schema:object({
+        data:{type:'object',required:['scheduled_shift'],properties:{scheduled_shift:scheduledShift}}
+      })}}},
+      400:{description:'Invalid input'},
+      401:{description:'Authentication required'},
+      404:{description:'Active record not found or outside caller access'}
+    }
+  })},
   [base+'/{id}/audit-logs']:{get:op('HR reads CREATE / CANCEL audit history',{parameters:[param('id'),...filters.slice(-2)]})}
 };
 attendancePaths[base+'/{id}/cancel']={patch:op('HR cancels ACTIVE attendance with a reason',{parameters:[param('id')],requestBody:json({...object({reason}),required:['reason']})})};

@@ -43,6 +43,27 @@ class AttendanceImportRepository {
     return (await db.query(`SELECT ${projection},e.employee_code,e.full_name FROM attendance a JOIN employees e ON e.id=a.employee_id
       WHERE a.id=$1 ${lock ? 'FOR UPDATE OF a' : ''}`, [id])).rows[0] || null;
   }
+  async findScheduledShift(db, attendanceId, scheduleId) {
+    const { rows } = await db.query(`
+      SELECT 'SNAPSHOT' AS source,
+        snapshot->>'shift_type' AS shift_type,
+        snapshot->>'start_time' AS start_time, snapshot->>'end_time' AS end_time,
+        snapshot->>'break_start' AS break_start, snapshot->>'break_end' AS break_end
+      FROM (
+        SELECT new_value->'calculation_schedule' AS snapshot
+        FROM audit_logs
+        WHERE entity_type='attendance' AND entity_id=$1 AND action='CREATE'
+          AND jsonb_typeof(new_value::jsonb->'calculation_schedule'->'start_time')='string'
+          AND jsonb_typeof(new_value::jsonb->'calculation_schedule'->'end_time')='string'
+        ORDER BY id DESC LIMIT 1
+      ) AS saved
+      UNION ALL
+      SELECT 'CATALOG', shift_type::text, start_time::text, end_time::text,
+        break_start::text, break_end::text
+      FROM work_schedules WHERE id=$2
+      ORDER BY source DESC LIMIT 1`, [attendanceId, scheduleId ?? null]);
+    return rows[0] ?? null;
+  }
   async cancellations(db, {employeeId, from, to, limit, offset}, id) {
     const {rows}=await db.query(`SELECT ${projection},e.employee_code,e.full_name,
       s.name AS schedule_name,s.shift_type,

@@ -10,6 +10,33 @@ function fixture(){
  const repo={pool:db,actor:async(_db,id)=>{if(![1,2].includes(id))throw new AppError(403,'Only HR');return {id,role_name:'HR'};},references:async()=>({employees:[state.employee],schedules:[state.schedule]}),transaction:async work=>work(db),current:async()=>state.stored,overlapping:async()=>[],lockKey:async()=>{},write:async(_db,row)=>{state.writes++;state.stored={...row,id:99,version:1,record_status:'ACTIVE',check_in:row.check_in,check_out:row.check_out,work_schedule_id:row.work_schedule_id,schedule_snapshot:row.schedule_snapshot,calculation_version:'excel-v1'};return {id:99};}};
  return {state,repo,service:new AttendanceImportService(repo,{previewSecret:secret,clock:()=>new Date('2026-11-19T12:00:00+07:00')})};
 }
+test('attendance detail reads shift data only for HR or the record owner', async () => {
+ const row = { id: 99, employee_id: 12, work_schedule_id: 3, record_status: 'ACTIVE', working_minutes: 480 };
+ const snapshot = { source: 'SNAPSHOT', shift_type: 'DAY', start_time: '08:00:00', end_time: '17:00:00', break_start: '12:00:00', break_end: '13:00:00' };
+ let shift = snapshot;
+ let reads = 0;
+ const repo = {
+  pool: { query: async () => ({ rows: [] }) },
+  actor: async (_db, id) => ({ role_name: id === 1 ? 'HR' : 'EMPLOYEE', employeeId: id === 2 ? 12 : 13 }),
+  find: async () => row,
+  findScheduledShift: async (_db, id, scheduleId) => {
+   assert.deepEqual([id, scheduleId], [99, 3]);
+   reads++;
+   return shift;
+  }
+ };
+ const service = new AttendanceImportService(repo, { previewSecret: secret });
+ await assert.rejects(service.detail({ id: 3 }, 99), { code: 'NOT_FOUND' });
+ assert.equal(reads, 0);
+ assert.deepEqual((await service.detail({ id: 2 }, 99)).data, { ...row, scheduled_shift: snapshot });
+ shift = { ...snapshot, source: 'CATALOG' };
+ assert.deepEqual((await service.detail({ id: 1 }, 99)).data.scheduled_shift, shift);
+ shift = null;
+ assert.equal((await service.detail({ id: 2 }, 99)).data.scheduled_shift, null);
+ row.record_status = 'CANCEL';
+ await assert.rejects(service.detail({ id: 2 }, 99), { code: 'NOT_FOUND' });
+ assert.equal(reads, 3);
+});
 test('preview is stateless; confirm resubmits file and no import metadata is persisted',async()=>{
  const {state,service}=fixture(),f=await file(),p=await service.preview({id:1},f);assert.equal(p.status,'READY');assert.equal(state.writes,0);assert.equal(p.batch_id,undefined);assert.equal(typeof p.preview_token,'string');
  const r=await service.confirm({id:1},f,{preview_token:p.preview_token});assert.equal(r.inserted,1);assert.equal(state.writes,1);assert.equal(r.batch_id,undefined);
